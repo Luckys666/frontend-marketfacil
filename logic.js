@@ -127,12 +127,17 @@
         getVisits: async function (itemId, lastDays) {
             let token = this.getConfig().token;
 
+            // Fallback: Fetch token if not in config
             if (!token) {
                 try {
                     const tokenResponse = await fetch('https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2');
                     const tokenData = await tokenResponse.json();
                     if (tokenData?.response?.access_token) {
                         token = tokenData.response.access_token;
+
+                        // FIX: Persist to global config so other Core methods (like getSellerId) can use it
+                        if (!window.appConfig) window.appConfig = {};
+                        window.appConfig.token = token;
                     }
                 } catch (err) {
                     console.warn('Core: Failed to fetch fallback token', err);
@@ -202,5 +207,5 @@
     };
 
     window.MarketFacilCore = Core;
-    console.log('MarketFacil Core Initialized (v10 - MLBU Support)');
+    console.log('MarketFacil Core Initialized (v11 - MLBU Support + Auth Fix)');
 })();
