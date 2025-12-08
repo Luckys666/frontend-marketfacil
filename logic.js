@@ -7,13 +7,12 @@
     const API_BASE_URL = "https://mlb-proxy-fdb71524fd60.herokuapp.com";
 
     const Core = {
+        _sellerId: null,
+
         getConfig: function () {
             return window.appConfig || {};
         },
 
-        /**
-         * Generic API fetch wrapper
-         */
         apiFetch: async function (endpoint, options = {}) {
             const config = this.getConfig();
             const headers = {
@@ -37,9 +36,6 @@
             }
         },
 
-        /**
-         * Test Status Logic (Shared)
-         */
         checkApiStatus: async function (targetElementId) {
             const statusDisplay = document.getElementById(targetElementId);
             if (statusDisplay) statusDisplay.innerHTML = '<span class="status-indicator" style="background-color: #e0f2fe; color: #0284c7;">Verificando...</span>';
@@ -67,15 +63,14 @@
         },
 
         /**
-         * Normalize MLB ID
-         * Extracts MLB ID from URL or string
+         * Normalize ID (MLB or MLBU)
          */
         normalizeMlbId: function (input) {
             if (!input || typeof input !== 'string') {
-                console.error('Core: Invalid input for MLB ID normalization');
                 return null;
             }
-            const regex = /(MLB-?\d+)/i;
+            // Matches MLB-123, MLB123, MLBU-123, MLBU123
+            const regex = /(MLBU?-?\d+)/i;
             const match = input.match(regex);
             if (match) {
                 return match[1].replace('-', '').toUpperCase();
@@ -84,68 +79,59 @@
         },
 
         /**
-         * Get Current User Info (ID, Nickname) via /users/me
+         * Get Seller ID (for User Product queries)
          */
-        getUserInfo: async function () {
-            if (this._userInfo) return this._userInfo;
+        getSellerId: async function () {
+            if (this._sellerId) return this._sellerId;
 
-            const response = await this.apiFetch('/api/users/me');
-            if (!response.ok) throw new Error('Falha ao obter identificar usuário.');
+            // Try from Config
+            const config = this.getConfig();
+            if (config.seller_id || config.user_id) {
+                this._sellerId = config.seller_id || config.user_id;
+                return this._sellerId;
+            }
 
-            this._userInfo = await response.json();
-            return this._userInfo;
-        },
-
-        /**
-         * Get User Products (Catalog/MLBU)
-         */
-        getUserProducts: async function (sellerId) {
-            if (!sellerId) {
-                try {
-                    const me = await this.getUserInfo();
-                    sellerId = me.id;
-                } catch (e) {
-                    throw new Error('Necessário ID do vendedor (seller_id).');
+            // Try API
+            try {
+                const response = await this.apiFetch('/api/users/me'); // Proxies to /users/me
+                if (response.ok) {
+                    const data = await response.json();
+                    this._sellerId = data.id;
+                    return data.id;
                 }
+            } catch (e) {
+                console.warn('Failed to fetch seller_id', e);
             }
-
-            const query = new URLSearchParams({ seller_id: sellerId, limit: 100 });
-            const response = await this.apiFetch(`/api/user-products/list?${query.toString()}`);
-
-            if (!response.ok) {
-                throw new Error('Falha ao listar produtos do usuário.');
-            }
-            return response.json();
+            return null;
         },
 
         /**
-         * Get Items (MLB) linked to a User Product (MLBU)
+         * Resolve MLBU (User Product) to list of MLB IDs
          */
-        getProductItems: async function (productId, sellerId) {
+        resolveUserProduct: async function (mlbuId) {
+            const sellerId = await this.getSellerId();
             if (!sellerId) {
-                const me = await this.getUserInfo();
-                sellerId = me.id;
+                throw new Error('Seller ID not found. Cannot resolve User Product.');
             }
 
-            const query = new URLSearchParams({ seller_id: sellerId });
-            const response = await this.apiFetch(`/api/user-products/${productId}/items?${query.toString()}`);
+            const response = await this.apiFetch(`/api/user-products/${mlbuId}/items?seller_id=${sellerId}`);
+            if (!response.ok) {
+                throw new Error('Failed to resolve User Product items.');
+            }
 
-            if (!response.ok) throw new Error('Falha ao buscar itens vinculados.');
-            return response.json();
+            const data = await response.json();
+            // API returns { results: ["MLB1", "MLB2"] }
+            return data.results || [];
         },
 
-        /**
-         * Fetch Visits Data using Proxy
-         */
         getVisits: async function (itemId, lastDays) {
             let token = this.getConfig().token;
 
-            // Fallback: Fetch token if not in config
             if (!token) {
                 try {
                     const tokenResponse = await fetch('https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2');
                     const tokenData = await tokenResponse.json();
-                    if (tokenData && tokenData.response && tokenData.response.access_token) {
+                    if (tokenData?.response?.access_token) {
                         token = tokenData.response.access_token;
                     }
                 } catch (err) {
@@ -153,25 +139,30 @@
                 }
             }
 
-            if (!token) {
-                throw new Error('Usuário não autenticado (Token não encontrado).');
+            if (!token) throw new Error('Usuário não autenticado.');
+
+            // --- USER PRODUCT HANDLING ---
+            if (itemId.startsWith('MLBU')) {
+                const childIds = await this.resolveUserProduct(itemId);
+                if (!childIds || childIds.length === 0) {
+                    throw new Error('Nenhum item encontrado para este produto de catálogo.');
+                }
+
+                // Fetch all in parallel
+                const promises = childIds.map(id => this.getVisits(id, lastDays));
+                const results = await Promise.all(promises);
+
+                return this.aggregateVisits(results);
             }
 
-            // Construct Query
+            // --- STANDARD ITEM HANDLING ---
             const query = new URLSearchParams({
                 item_id: itemId,
                 last: lastDays,
                 unit: 'day'
             });
 
-            // Call API
-            // Note: apiFetch automatically handles content-type, but we need to ensure Auth header helps if token was just fetched manually
-            const options = {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            };
-
+            const options = { headers: { 'Authorization': `Bearer ${token}` } };
             const response = await this.apiFetch(`/api/fetch-visits?${query.toString()}`, options);
 
             if (!response.ok) {
@@ -180,10 +171,36 @@
             }
 
             return response.json();
+        },
+
+        /**
+         * Aggregate multiple visit results into one (Sum by Date)
+         */
+        aggregateVisits: function (resultsList) {
+            const dateMap = {};
+
+            resultsList.forEach(data => {
+                if (data.results) {
+                    data.results.forEach(point => {
+                        const date = point.date.split('T')[0]; // Ensure simplistic date key
+                        if (!dateMap[date]) {
+                            dateMap[date] = { date: point.date, total: 0 };
+                        }
+                        dateMap[date].total += point.total;
+                    });
+                }
+            });
+
+            // Convert back to array
+            const aggregatedResults = Object.values(dateMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            return {
+                item_id: 'AGGREGATED_MLBU',
+                results: aggregatedResults
+            };
         }
     };
 
-    // Expose Global
     window.MarketFacilCore = Core;
-    console.log('MarketFacil Core Initialized');
+    console.log('MarketFacil Core Initialized (v10 - MLBU Support)');
 })();
