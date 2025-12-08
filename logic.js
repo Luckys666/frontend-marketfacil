@@ -84,6 +84,57 @@
         },
 
         /**
+         * Get Current User Info (ID, Nickname) via /users/me
+         */
+        getUserInfo: async function () {
+            if (this._userInfo) return this._userInfo;
+
+            const response = await this.apiFetch('/api/users/me');
+            if (!response.ok) throw new Error('Falha ao obter identificar usuário.');
+
+            this._userInfo = await response.json();
+            return this._userInfo;
+        },
+
+        /**
+         * Get User Products (Catalog/MLBU)
+         */
+        getUserProducts: async function (sellerId) {
+            if (!sellerId) {
+                try {
+                    const me = await this.getUserInfo();
+                    sellerId = me.id;
+                } catch (e) {
+                    throw new Error('Necessário ID do vendedor (seller_id).');
+                }
+            }
+
+            const query = new URLSearchParams({ seller_id: sellerId, limit: 100 });
+            const response = await this.apiFetch(`/api/user-products/list?${query.toString()}`);
+
+            if (!response.ok) {
+                throw new Error('Falha ao listar produtos do usuário.');
+            }
+            return response.json();
+        },
+
+        /**
+         * Get Items (MLB) linked to a User Product (MLBU)
+         */
+        getProductItems: async function (productId, sellerId) {
+            if (!sellerId) {
+                const me = await this.getUserInfo();
+                sellerId = me.id;
+            }
+
+            const query = new URLSearchParams({ seller_id: sellerId });
+            const response = await this.apiFetch(`/api/user-products/${productId}/items?${query.toString()}`);
+
+            if (!response.ok) throw new Error('Falha ao buscar itens vinculados.');
+            return response.json();
+        },
+
+        /**
          * Fetch Visits Data using Proxy
          */
         getVisits: async function (itemId, lastDays) {
