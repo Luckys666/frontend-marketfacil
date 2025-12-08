@@ -109,17 +109,25 @@
          * Resolve MLBU (User Product) to list of MLB IDs
          */
         resolveUserProduct: async function (mlbuId) {
-            const sellerId = await this.getSellerId();
+            // 1. Fetch User Product Details to get the correct Owner (seller_id)
+            const detailsResponse = await this.apiFetch(`/api/user-products/${mlbuId}`);
+            if (!detailsResponse.ok) {
+                throw new Error('Falha ao buscar detalhes do Produto de Catálogo (MLBU).');
+            }
+            const details = await detailsResponse.json();
+
+            const sellerId = details.user_id;
             if (!sellerId) {
-                throw new Error('Seller ID not found. Cannot resolve User Product.');
+                throw new Error('Dono do produto não identificado.');
             }
 
-            const response = await this.apiFetch(`/api/user-products/${mlbuId}/items?seller_id=${sellerId}`);
-            if (!response.ok) {
-                throw new Error('Failed to resolve User Product items.');
+            // 2. Fetch Items linked to this User Product using the correct seller_id
+            const itemsResponse = await this.apiFetch(`/api/user-products/${mlbuId}/items?seller_id=${sellerId}`);
+            if (!itemsResponse.ok) {
+                throw new Error('Falha ao buscar itens do Produto de Catálogo.');
             }
 
-            const data = await response.json();
+            const data = await itemsResponse.json();
             // API returns { results: ["MLB1", "MLB2"] }
             return data.results || [];
         },
@@ -207,5 +215,5 @@
     };
 
     window.MarketFacilCore = Core;
-    console.log('MarketFacil Core Initialized (v11 - MLBU Support + Auth Fix)');
+    console.log('MarketFacil Core Initialized (v12 - MLBU Logic Fixed)');
 })();
