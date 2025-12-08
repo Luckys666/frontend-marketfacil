@@ -1,13 +1,12 @@
 /**
  * View: Visits Analytics
- * Description: Displays visit statistics. Self-contained module that loads its own dependencies.
+ * Description: Displays visit statistics with premium UI. Self-contained module.
  */
 
-console.log('View loaded: Visits Analytics');
+console.log('View loaded: Visits Analytics (Premium)');
 
-// --- Expose Global Immediately (No IIFE to prevent scope issues) ---
+// --- Expose Global Immediately ---
 window.renderVisitsApp = initVisitsView;
-console.log('Global exposed: window.renderVisitsApp');
 
 // --- UTILS: Dynamic Script Loader ---
 function loadVisitsDependency(url, globalName) {
@@ -34,11 +33,9 @@ async function initVisitsView(containerId) {
 
     // 1. Show Loading State
     container.innerHTML = `
-        <div class="flex items-center justify-center h-64 bg-white rounded-lg border border-gray-200">
-            <div class="text-center">
-                <div class="inline-block animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mb-2"></div>
-                <p class="text-gray-500 font-medium">Carregando módulos...</p>
-            </div>
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Carregando Módulos...</p>
         </div>
     `;
 
@@ -56,9 +53,8 @@ async function initVisitsView(containerId) {
     } catch (error) {
         console.error(error);
         container.innerHTML = `
-            <div class="p-6 bg-red-50 text-red-700 rounded-lg text-center">
-                <p class="font-bold">Erro ao carregar dependências</p>
-                <p class="text-sm">${error.message}</p>
+            <div class="feedback-msg feedback-error" style="display:block">
+                Erro crítico ao carregar dependências: ${error.message}
             </div>
         `;
     }
@@ -66,42 +62,40 @@ async function initVisitsView(containerId) {
 
 function renderVisitsTemplate(container) {
     container.innerHTML = `
-        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 font-sans">
-            <div class="border-b border-gray-100 pb-4 mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">Visitas do Anúncio</h2>
-                <p class="text-gray-500 text-sm mt-1">Acompanhe a evolução de acessos.</p>
+        <div class="widget-header">
+            <h2 class="widget-title">Panorama de Visitas</h2>
+            <p class="widget-subtitle">Cole o link completo do anúncio (MLB ou MLBU com wid).</p>
+        </div>
+
+        <div class="controls-grid">
+            <div class="input-group">
+                <label>Link do Anúncio</label>
+                <input type="text" id="iptAnuncio" class="status-input" placeholder="Cole o link aqui...">
+            </div>
+            
+            <div class="input-group">
+                <label>Período</label>
+                <select id="selPeriodo" class="status-input">
+                    <option value="15">15 dias</option>
+                    <option value="30">30 dias</option>
+                    <option value="60" selected>60 dias</option>
+                    <option value="90">90 dias</option>
+                </select>
             </div>
 
-            <!-- Controls -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-6">
-                <div class="md:col-span-2">
-                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Link ou ID (MLB)</label>
-                    <input type="text" id="inputAnuncio" placeholder="Ex: MLB12345..." 
-                        class="w-full h-10 px-3 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Período</label>
-                    <select id="periodoSelect" class="w-full h-10 px-3 border border-gray-300 rounded-lg bg-white focus:border-blue-500 outline-none">
-                        <option value="7">Últimos 7 dias</option>
-                        <option value="15">Últimos 15 dias</option>
-                        <option value="30">Últimos 30 dias</option>
-                        <option value="60" selected>Últimos 60 dias</option>
-                        <option value="90">Últimos 90 dias</option>
-                    </select>
-                </div>
-                <button id="buscarVisitasBtn" 
-                    class="h-10 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition shadow-sm flex items-center justify-center focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <div class="input-group" style="display:flex; align-items:flex-end;">
+                <button id="btnBuscar" class="btn-search">
                     Buscar
                 </button>
             </div>
+        </div>
 
-            <!-- Feedback Area -->
-            <div id="resultadoVisitas" class="hidden mb-4 p-3 rounded-lg text-sm text-center"></div>
+        <!-- Feedback Area -->
+        <div id="feedbackApp" class="feedback-msg"></div>
 
-            <!-- Chart Area -->
-            <div class="relative w-full h-[350px] bg-gray-50 rounded-xl border border-gray-100 p-4">
-                <canvas id="visitasChart"></canvas>
-            </div>
+        <!-- Chart Area -->
+        <div class="chart-wrapper">
+            <canvas id="chartCanvas"></canvas>
         </div>
     `;
 
@@ -109,17 +103,17 @@ function renderVisitsTemplate(container) {
 }
 
 function attachVisitsListeners() {
-    const btn = document.getElementById('buscarVisitasBtn');
+    const btn = document.getElementById('btnBuscar');
 
     btn.addEventListener('click', async () => {
-        const input = document.getElementById('inputAnuncio').value;
-        const days = document.getElementById('periodoSelect').value;
-        const feedback = document.getElementById('resultadoVisitas');
+        const input = document.getElementById('iptAnuncio').value;
+        const days = document.getElementById('selPeriodo').value;
+        const feedback = document.getElementById('feedbackApp');
 
         // Reset UI
-        feedback.className = 'hidden mb-4 p-3 rounded-lg text-sm text-center';
+        feedback.style.display = 'none';
         btn.disabled = true;
-        btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+        btn.innerHTML = '<div class="spinner" style="width:20px; height:20px; border-width:2px; margin:0; border-top-color:white;"></div>';
 
         try {
             // Ensure Core is loaded
@@ -128,23 +122,25 @@ function attachVisitsListeners() {
             }
 
             const itemId = window.MarketFacilCore.normalizeMlbId(input);
-            if (!itemId) throw new Error('ID do anúncio inválido.');
+            if (!itemId) throw new Error('ID ou WID não encontrado. Cole o link completo.');
 
             const data = await window.MarketFacilCore.getVisits(itemId, days);
 
             if (!data.results || !data.results.length) {
-                throw new Error('Nenhum dado encontrado para este período.');
+                throw new Error('Nenhuma visita encontrada para este período.');
             }
 
             renderVisitsChart(data.results);
 
-            feedback.textContent = 'Dados carregados com sucesso!';
-            feedback.className = 'mb-4 p-3 rounded-lg text-sm text-center bg-green-50 text-green-700 border border-green-200 block';
+            feedback.textContent = `Sucesso! Exibindo dados: ${itemId}`;
+            feedback.className = 'feedback-msg feedback-success';
+            feedback.style.display = 'block';
 
         } catch (err) {
             console.error(err);
-            feedback.textContent = err.message;
-            feedback.className = 'mb-4 p-3 rounded-lg text-sm text-center bg-red-50 text-red-700 border border-red-200 block';
+            feedback.textContent = err.message || 'Erro desconhecido';
+            feedback.className = 'feedback-msg feedback-error';
+            feedback.style.display = 'block';
         } finally {
             btn.disabled = false;
             btn.textContent = 'Buscar';
@@ -158,7 +154,12 @@ function renderVisitsChart(results) {
     // Sort by date
     results.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    const ctx = document.getElementById('visitasChart').getContext('2d');
+    const ctx = document.getElementById('chartCanvas').getContext('2d');
+
+    // Gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.25)');
+    gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
 
     if (visitsChartInstance) {
         visitsChartInstance.destroy();
@@ -171,21 +172,16 @@ function renderVisitsChart(results) {
             datasets: [{
                 label: 'Visitas',
                 data: results.map(r => r.total),
-                borderColor: '#2563eb',
-                backgroundColor: (context) => {
-                    const ctx = context.chart.ctx;
-                    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
-                    gradient.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
-                    return gradient;
-                },
+                borderColor: '#3B82F6',
+                backgroundColor: gradient,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.3,
-                pointBackgroundColor: '#ffffff',
-                pointBorderColor: '#2563eb',
+                tension: 0.35,
                 pointRadius: 4,
-                pointHoverRadius: 6
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#FFFFFF',
+                pointBorderColor: '#3B82F6',
+                pointBorderWidth: 2
             }]
         },
         options: {
@@ -201,9 +197,12 @@ function renderVisitsChart(results) {
                     backgroundColor: 'rgba(17, 24, 39, 0.9)',
                     padding: 12,
                     cornerRadius: 8,
-                    titleFont: { size: 13 },
-                    bodyFont: { size: 13 },
-                    displayColors: false
+                    titleFont: { family: 'Inter', size: 13 },
+                    bodyFont: { family: 'Inter', size: 14, weight: 'bold' },
+                    displayColors: false,
+                    callbacks: {
+                        label: (ctx) => `${ctx.formattedValue} acessos`
+                    }
                 }
             },
             scales: {
@@ -215,12 +214,12 @@ function renderVisitsChart(results) {
                         displayFormats: { day: 'DD/MM' }
                     },
                     grid: { display: false, drawBorder: false },
-                    ticks: { font: { size: 11 }, color: '#6b7280' }
+                    ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7280' }
                 },
                 y: {
                     beginAtZero: true,
                     grid: { borderDash: [4, 4], color: '#f3f4f6' },
-                    ticks: { font: { size: 11 }, color: '#6b7280' }
+                    ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7280' }
                 }
             }
         }
