@@ -2,8 +2,11 @@
  * View: Visits Analytics
  * Description: Displays visit statistics. Self-contained module that loads its own dependencies.
  */
-(async function () {
+(function () {
     console.log('View loaded: Visits Analytics');
+
+    // --- Expose Global Immediately (Prevent Race Conditions) ---
+    window.renderVisitsApp = initVisitsView;
 
     // --- UTILS: Dynamic Script Loader ---
     function loadScript(url, globalName) {
@@ -222,8 +225,4 @@
             }
         });
     }
-
-    // Expose Init Function Globaly
-    window.renderVisitsApp = initVisitsView;
-
 })();
