@@ -104,8 +104,8 @@ body {
     opacity: 0.9;
 }
 
-/* --- PREMIUM VISITS WIDGET STYLES --- */
-.visits-widget-container {
+/* --- PREMIUM VISITS WIDGET STYLES (Namespaced) --- */
+.mf-widget .visits-widget-container {
     font-family: 'Inter', sans-serif;
     min-height: 450px;
     background: #ffffff;
@@ -116,26 +116,28 @@ body {
     overflow: hidden;
 }
 
-.widget-header {
+.mf-widget .widget-header {
     position: relative;
     z-index: 10;
     margin-bottom: 30px;
 }
 
-.widget-title {
+.mf-widget .widget-title {
     font-size: 1.5rem;
     font-weight: 700;
     color: #111827;
     letter-spacing: -0.02em;
+    margin-bottom: 0;
+    /* Override potential defaults */
 }
 
-.widget-subtitle {
+.mf-widget .widget-subtitle {
     color: #6B7280;
     font-size: 0.875rem;
     margin-top: 4px;
 }
 
-.controls-grid {
+.mf-widget .controls-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 16px;
@@ -143,12 +145,12 @@ body {
 }
 
 @media (min-width: 768px) {
-    .controls-grid {
+    .mf-widget .controls-grid {
         grid-template-columns: 2fr 1fr 120px;
     }
 }
 
-.input-group label {
+.mf-widget .input-group label {
     display: block;
     font-size: 0.75rem;
     font-weight: 600;
@@ -158,7 +160,7 @@ body {
     letter-spacing: 0.05em;
 }
 
-.status-input {
+.mf-widget .status-input {
     width: 100%;
     height: 48px;
     padding: 0 16px;
@@ -171,13 +173,13 @@ body {
     outline: none;
 }
 
-.status-input:focus {
+.mf-widget .status-input:focus {
     background: #fff;
     border-color: #3B82F6;
     box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
 }
 
-.btn-search {
+.mf-widget .btn-search {
     height: 48px;
     border-radius: 12px;
     background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
@@ -193,22 +195,22 @@ body {
     width: 100%;
 }
 
-.btn-search:hover {
+.mf-widget .btn-search:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
 }
 
-.btn-search:active {
+.mf-widget .btn-search:active {
     transform: translateY(1px);
 }
 
-.btn-search:disabled {
+.mf-widget .btn-search:disabled {
     opacity: 0.7;
     cursor: not-allowed;
     transform: none;
 }
 
-.chart-wrapper {
+.mf-widget .chart-wrapper {
     background: #fff;
     border: 1px solid #F3F4F6;
     border-radius: 16px;
@@ -217,29 +219,29 @@ body {
     position: relative;
 }
 
-.feedback-msg {
+.mf-widget .feedback-msg {
     padding: 12px;
     border-radius: 10px;
     font-size: 0.875rem;
     text-align: center;
     margin-bottom: 20px;
     display: none;
-    animation: fadeIn 0.3s ease;
+    animation: mf-fadeIn 0.3s ease;
 }
 
-.feedback-success {
+.mf-widget .feedback-success {
     background: #ECFDF5;
     color: #065F46;
     border: 1px solid #D1FAE5;
 }
 
-.feedback-error {
+.mf-widget .feedback-error {
     background: #FEF2F2;
     color: #991B1B;
     border: 1px solid #FEE2E2;
 }
 
-.loading-state {
+.mf-widget .loading-state {
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -248,23 +250,23 @@ body {
     color: #6B7280;
 }
 
-.spinner {
+.mf-widget .spinner {
     width: 40px;
     height: 40px;
     border: 4px solid #E5E7EB;
     border-top-color: #3B82F6;
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: mf-spin 1s linear infinite;
     margin-bottom: 16px;
 }
 
-@keyframes spin {
+@keyframes mf-spin {
     to {
         transform: rotate(360deg);
     }
 }
 
-@keyframes fadeIn {
+@keyframes mf-fadeIn {
     from {
         opacity: 0;
         transform: translateY(-5px);

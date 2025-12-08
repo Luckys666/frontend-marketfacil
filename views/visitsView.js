@@ -31,6 +31,9 @@ async function initVisitsView(containerId) {
         return;
     }
 
+    // Add namespace class for isolated styles
+    container.classList.add('mf-widget');
+
     // 1. Show Loading State
     container.innerHTML = `
         <div class="loading-state">
@@ -177,6 +180,8 @@ function renderVisitsChart(results) {
                 borderWidth: 2,
                 fill: true,
                 tension: 0.35,
+
+                // Interaction Improvements
                 pointRadius: 4,
                 pointHoverRadius: 7,
                 pointBackgroundColor: '#FFFFFF',
