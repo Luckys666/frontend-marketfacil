@@ -66,9 +66,16 @@
          * Normalize ID (MLB or MLBU)
          */
         normalizeMlbId: function (input) {
-            if (!input || typeof input !== 'string') {
-                return null;
+            if (!input || typeof input !== 'string') return null;
+
+            // 1. Priority: Extract 'wid' from URL (Bypass for MLBU links)
+            // Example: .../p/MLBU123?wid=MLB999
+            const widMatch = input.match(/[?&]wid=(MLB-?\d+)/i);
+            if (widMatch) {
+                return widMatch[1].replace('-', '').toUpperCase();
             }
+
+            // 2. Standard: Extract MLB/MLBU from string or path
             // Matches MLB-123, MLB123, MLBU-123, MLBU123
             const regex = /(MLBU?-?\d+)/i;
             const match = input.match(regex);
@@ -215,5 +222,5 @@
     };
 
     window.MarketFacilCore = Core;
-    console.log('MarketFacil Core Initialized (v12 - MLBU Logic Fixed)');
+    console.log('MarketFacil Core Initialized (v13 - MLBU Priority WID)');
 })();
