@@ -64,6 +64,71 @@
                     `;
                 }
             }
+        },
+
+        /**
+         * Normalize MLB ID
+         * Extracts MLB ID from URL or string
+         */
+        normalizeMlbId: function (input) {
+            if (!input || typeof input !== 'string') {
+                console.error('Core: Invalid input for MLB ID normalization');
+                return null;
+            }
+            const regex = /(MLB-?\d+)/i;
+            const match = input.match(regex);
+            if (match) {
+                return match[1].replace('-', '').toUpperCase();
+            }
+            return null;
+        },
+
+        /**
+         * Fetch Visits Data using Proxy
+         */
+        getVisits: async function (itemId, lastDays) {
+            let token = this.getConfig().token;
+
+            // Fallback: Fetch token if not in config
+            if (!token) {
+                try {
+                    const tokenResponse = await fetch('https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2');
+                    const tokenData = await tokenResponse.json();
+                    if (tokenData && tokenData.response && tokenData.response.access_token) {
+                        token = tokenData.response.access_token;
+                    }
+                } catch (err) {
+                    console.warn('Core: Failed to fetch fallback token', err);
+                }
+            }
+
+            if (!token) {
+                throw new Error('Usuário não autenticado (Token não encontrado).');
+            }
+
+            // Construct Query
+            const query = new URLSearchParams({
+                item_id: itemId,
+                last: lastDays,
+                unit: 'day'
+            });
+
+            // Call API
+            // Note: apiFetch automatically handles content-type, but we need to ensure Auth header helps if token was just fetched manually
+            const options = {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+
+            const response = await this.apiFetch(`/api/fetch-visits?${query.toString()}`, options);
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || errData.error || response.statusText);
+            }
+
+            return response.json();
         }
     };
 
