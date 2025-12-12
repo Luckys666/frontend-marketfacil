@@ -154,6 +154,19 @@ function attachVisitsListeners() {
 let visitsChartInstance = null;
 
 function renderVisitsChart(results) {
+    // Ensure "Today" is present (if API only returns up to yesterday)
+    // We rely on moment being loaded globally by initVisitsView
+    const todayStr = moment().format('YYYY-MM-DD');
+    const hasToday = results.some(r => r.date && r.date.startsWith(todayStr));
+
+    if (!hasToday) {
+        // Appends "Today" with 0 visits so the chart goes up to current day
+        results.push({
+            date: moment().toISOString(),
+            total: 0
+        });
+    }
+
     // Sort by date
     results.sort((a, b) => new Date(a.date) - new Date(b.date));
 
