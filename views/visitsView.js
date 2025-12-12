@@ -171,7 +171,7 @@ function renderVisitsChart(results) {
     visitsChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: results.map(r => r.date),
+            labels: results.map(r => r.date.split('T')[0]),
             datasets: [{
                 label: 'Visitas',
                 data: results.map(r => r.total),
