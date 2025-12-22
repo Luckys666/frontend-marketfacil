@@ -90,7 +90,7 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto") {
         // Regra MLBU: >= 50 é bom. Não tem limite máximo ruim (dentro do razoável).
         if (len >= 50) {
             cor = 'green';
-            expl = `[Ideal: Pelo menos 50 caracteres. Títulos longos são aceitos no MLBU.]`;
+            expl = `[Ideal: Pelo menos 50 caracteres. Títulos longos são aceitos em Produtos de Usuário (User Products).]`;
         } else {
             cor = 'red'; // ou gray/orange dependendo do quão curto
             expl = `[Curto demais: Utilize pelo menos 50 caracteres para melhor indexação.]`;
@@ -556,7 +556,16 @@ function transformMlbuData(mlbuData) {
 }
 
 async function fetchVisits(itemId, accessToken) {
-    // Busca visitas dos últimos 30 dias para cálculo de tendência
+    // Tenta usar o Core se disponível (mesmo usado pelo visits.js)
+    if (window.MarketFacilCore && typeof window.MarketFacilCore.getVisits === 'function') {
+        try {
+            console.log('Utilizando MarketFacilCore.getVisits...');
+            return await window.MarketFacilCore.getVisits(itemId, '30'); // '30' dias como string para garantir compatibilidade
+        } catch (e) {
+            console.warn('Falha no Core, tentando rota direta...', e);
+        }
+    }
+    // Busca visitas dos últimos 30 dias para cálculo de tendência via rota direta
     return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&days=30`, accessToken);
 }
 
@@ -571,7 +580,9 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     el.innerHTML = `<h4 class="section-title-underlined">Análise de Tendência de Visitas (30 dias)</h4>`;
 
     if (!visitsData || !visitsData.results || visitsData.results.length === 0) {
-        el.innerHTML += '<p class="status-message" style="color:gray;">Dados de visitas insuficientes para análise de tendência.</p>';
+        // Tenta diagnosticar o motivo
+        const motivo = !visitsData ? "Erro ao carregar dados." : "Nenhuma visita registrada no período.";
+        el.innerHTML += `<p class="status-message" style="color:gray;">${motivo}</p>`;
         return;
     }
 
@@ -593,9 +604,15 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     let icon = '➡️';
     let color = 'gray';
 
-    // Margem de erro de 5% para considerar estável
-    const diff = totalSecond - totalFirst;
-    const percentChange = totalFirst > 0 ? (diff / totalFirst) * 100 : 0;
+    // Tratamento para divisão por zero se o primeiro período for 0
+    let percentChange = 0;
+    if (totalFirst === 0) {
+        if (totalSecond > 0) percentChange = 100; // Crescimento infinito/novo
+        else percentChange = 0; // 0 para 0
+    } else {
+        const diff = totalSecond - totalFirst;
+        percentChange = (diff / totalFirst) * 100;
+    }
 
     if (percentChange > 5) {
         trend = 'Subindo';
@@ -607,6 +624,9 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
         color = 'red';
     }
 
+    // Se houver poucas visitas (ex: < 10 no total), alertar que a análise pode ser imprecisa
+    const lowDataWarning = totalVisits < 10 ? '<br><small style="color:orange">Poucas visitas para determinar tendência confiável.</small>' : '';
+
     const html = `
         <div class="visits-trend-card" style="display: flex; align-items: center; justify-content: space-around; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
             <div style="text-align: center;">
@@ -617,7 +637,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
                 <p><strong>Total (30d):</strong> ${totalVisits}</p>
                 <p><strong>1ª Quinzena:</strong> ${totalFirst}</p>
                 <p><strong>2ª Quinzena:</strong> ${totalSecond}</p>
-                <p style="color: ${color}; font-size: 0.85em;">(${percentChange.toFixed(1)}% vs período anterior)</p>
+                <p style="color: ${color}; font-size: 0.85em;">(${percentChange === 100 && totalFirst === 0 ? 'Novo' : percentChange.toFixed(1) + '%'} vs período anterior)${lowDataWarning}</p>
             </div>
         </div>
     `;
@@ -753,7 +773,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                 }
             } catch (e) { console.warn(`Erro na API principal: ${e.message}`); fetchError = e; }
         } else if (!fetchError) {
-            fetchError = new Error("Access Token indisponível para usar a API.");
+            fetchError = new Error("Para analisar, você precisa conectar sua conta do Mercado Livre na seção 'Minha Conta'.");
             console.log(fetchError.message);
         }
 
