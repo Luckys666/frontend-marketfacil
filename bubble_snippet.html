@@ -1,0 +1,48 @@
+<!-- 
+  BUBBLE.IO HTML ELEMENT SNIPPET
+  
+  Instructions:
+  1. Upload 'style.css' and 'analyzer.js' to your Bubble File Manager (or host them elsewhere).
+  2. Replace "URL_TO_YOUR_STYLE_CSS" and "URL_TO_YOUR_ANALYZER_JS" with the actual URLs.
+  3. Paste this entire block into an HTML element in your Bubble page.
+-->
+
+<!-- CSS Link -->
+<link rel="stylesheet" href="URL_TO_YOUR_STYLE_CSS/style.css">
+
+<!-- Main Wrapper (Namespaced) -->
+<div class="mf-dashboard-wrapper">
+    <div class="ml-analyzer-widget">
+        <div class="input-area">
+            <input type="text" id="input-url" placeholder="Cole o link ou ID do anúncio MLB ou MLBU...">
+            <button id="analyzeButton" onclick="handleAnalysisClick()">Analisar</button>
+        </div>
+
+        <div class="info-box">
+            <p><strong>Observação:</strong> Esta função foi desenvolvida para analisar os dados dos anúncios e produtos
+                da <b>conta vinculada ao aplicativo.</b></p>
+            <p>A análise não se aplica a anúncios de catálogo, apenas a anúncios comuns (MLB) e produtos (MLBU).</p>
+            <details style="margin-top: 10px; font-size: 0.9em;">
+                <summary>Ver exemplos de links</summary>
+                <p><strong>Anúncio Comum (MLB):</strong>
+                    https://produto.mercadolivre.com.br/MLB-5365306260-blusinha-feminina-com-decote-quadrado-canelada-basica-blusa-_JM
+                </p>
+                <p><strong>Produto (MLBU):</strong>
+                    https://www.mercadolivre.com.br/kit-impressora-termica-knup--suporte--100etiqueta-adesiva/up/MLBU1164018775
+                </p>
+                <p><strong>Anúncio de Catálogo:</strong>
+                    https://www.mercadolivre.com.br/impressora-de-etiquetas-adesivas-branco-knup-kp-im600/p/MLB39023499
+                </p>
+            </details>
+        </div>
+
+        <div id="resultsContainer">
+            <p class="initial-text">Insira um link de anúncio e clique em 'Analisar' para ver os resultados.</p>
+        </div>
+
+        <div id="loadingIndicator" style="display: none;"><span>Analisando, por favor aguarde... ⏳</span></div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="URL_TO_YOUR_ANALYZER_JS/analyzer.js"></script>

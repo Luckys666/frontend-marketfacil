@@ -1,4 +1,5 @@
-:root {
+/* Scoped Variables - applied to wrapper */
+.mf-dashboard-wrapper {
     --bg-color: #f4f6f8;
     --card-bg: #ffffff;
     --primary-color: #3b82f6;
@@ -11,49 +12,41 @@
     --spacing-lg: 24px;
     --radius: 8px;
     --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-}
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
+    /* Font applied only to wrapper */
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--bg-color);
     color: var(--text-primary);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
 }
 
-#app-root {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: var(--spacing-lg);
+.mf-dashboard-wrapper * {
+    box-sizing: border-box;
 }
 
-.dashboard-header {
+/* Replaced body/global styles with wrapper-scoped styles */
+.mf-dashboard-wrapper .dashboard-header {
     margin-bottom: var(--spacing-lg);
 }
 
-.dashboard-header h1 {
+.mf-dashboard-wrapper .dashboard-header h1 {
     font-size: 2rem;
     font-weight: 700;
     color: var(--text-primary);
+    margin: 0;
 }
 
-.dashboard-header p {
+.mf-dashboard-wrapper .dashboard-header p {
     color: var(--text-secondary);
 }
 
-.card-grid {
+.mf-dashboard-wrapper .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--spacing-lg);
 }
 
-.card {
+.mf-dashboard-wrapper .card {
     background: var(--card-bg);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
@@ -62,21 +55,21 @@ body {
     transition: transform 0.2s ease;
 }
 
-.card:hover {
+.mf-dashboard-wrapper .card:hover {
     transform: translateY(-2px);
 }
 
-.card h2 {
+.mf-dashboard-wrapper .card h2 {
     font-size: 1.25rem;
     margin-bottom: var(--spacing-md);
     color: var(--text-primary);
 }
 
-.card p {
+.mf-dashboard-wrapper .card p {
     color: var(--text-secondary);
 }
 
-.status-indicator {
+.mf-dashboard-wrapper .status-indicator {
     display: inline-flex;
     align-items: center;
     padding: 4px 8px;
@@ -87,7 +80,7 @@ body {
     margin-top: var(--spacing-md);
 }
 
-.btn {
+.mf-dashboard-wrapper .btn {
     display: inline-block;
     background-color: var(--primary-color);
     color: white;
@@ -100,7 +93,7 @@ body {
     border: none;
 }
 
-.btn:hover {
+.mf-dashboard-wrapper .btn:hover {
     opacity: 0.9;
 }
 
@@ -275,5 +268,842 @@ body {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+
+/* --- AD ANALYZER WIDGET STYLES --- */
+
+/*
+* Estilos Globais e Layout (Encapsulados)
+*/
+.ml-analyzer-widget {
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    color: #333;
+    background-color: #f8f9fa;
+    padding: 15px;
+    width: 100%;
+    /* Ajustado para ocupar o contêiner pai */
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+    position: relative;
+    /* Adicionado para o posicionamento do loader */
+}
+
+.ml-analyzer-widget h2,
+.ml-analyzer-widget h4,
+.ml-analyzer-widget h5,
+.ml-analyzer-widget p,
+.ml-analyzer-widget ul,
+.ml-analyzer-widget li {
+    margin: 0;
+    padding: 0;
+}
+
+.ml-analyzer-widget ul {
+    list-style: none;
+}
+
+/* Estilo comum para títulos de seção com sublinhado */
+.ml-analyzer-widget .section-title-underlined {
+    margin-bottom: 10px;
+    border-bottom: 2px solid #007bff;
+    /* Sublinhado azul padrão */
+    padding-bottom: 5px;
+    display: inline-block;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+/* Cor específica para o título de Detalhes da Qualidade */
+.ml-analyzer-widget #performanceTexto .section-title-underlined {
+    border-bottom-color: #28a745;
+    /* Verde para detalhes da qualidade */
+}
+
+
+/* Área de Input */
+.ml-analyzer-widget .input-area {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Caixa de Observação */
+.ml-analyzer-widget .info-box {
+    background-color: #e9ecef;
+    border-left: 4px solid #007bff;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    font-size: 0.9em;
+    color: #495057;
+    border-radius: 4px;
+}
+
+.ml-analyzer-widget .info-box p {
+    margin: 5px 0;
+}
+
+.ml-analyzer-widget .info-box details summary {
+    cursor: pointer;
+    color: #007bff;
+    font-weight: 500;
+}
+
+.ml-analyzer-widget .info-box details p {
+    margin-top: 8px;
+    word-break: break-all;
+    padding-left: 10px;
+    border-left: 2px solid #ced4da;
+}
+
+
+.ml-analyzer-widget #input-url {
+    flex-grow: 1;
+    padding: 10px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 1rem;
+    box-sizing: border-box;
+    min-width: 180px;
+}
+
+.ml-analyzer-widget #input-url:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.ml-analyzer-widget button {
+    padding: 10px 18px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s ease-in-out;
+    flex-shrink: 0;
+}
+
+.ml-analyzer-widget button:hover {
+    background-color: #0056b3;
+}
+
+/* Container de Resultados */
+.ml-analyzer-widget #resultsContainer {
+    margin-top: 15px;
+    padding: 15px;
+    border: 1px solid #e9ecef;
+    border-radius: 5px;
+    background-color: #fff;
+    min-height: 80px;
+    /* Altura mínima para manter o container visível mesmo vazio */
+    position: relative;
+    box-sizing: border-box;
+}
+
+.ml-analyzer-widget #resultsContainer .initial-text {
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+    padding: 20px;
+}
+
+
+/* Indicador de Carregamento */
+.ml-analyzer-widget #loadingIndicator {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: #6c757d;
+    font-size: 1em;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(248, 249, 250, 0.85);
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+.ml-analyzer-widget #loadingIndicator span {
+    background-color: #fff;
+    padding: 12px 25px;
+    border-radius: 20px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+    font-weight: bold;
+    color: #007bff;
+}
+
+/* Imagem do Produto */
+.ml-analyzer-widget #productImage {
+    max-width: 120px;
+    max-height: 120px;
+    float: right;
+    margin: 0 0 12px 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    padding: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    object-fit: contain;
+    display: none;
+    /* Começa escondida e só é mostrada via JS */
+}
+
+
+/* Seções de Informação */
+.ml-analyzer-widget #tituloTexto,
+.ml-analyzer-widget #descricaoIndicator,
+.ml-analyzer-widget #fichaTecnicaTexto,
+.ml-analyzer-widget #categoryAttributes,
+/* Nova seção */
+.ml-analyzer-widget #warrantyInfo,
+.ml-analyzer-widget #tagsTexto,
+.ml-analyzer-widget #upTagsTexto,
+/* Nova seção */
+.ml-analyzer-widget #mlbuItemsList,
+/* Nova seção */
+.ml-analyzer-widget #performanceTexto {
+    margin-bottom: 15px;
+}
+
+/* Seção de Título */
+.ml-analyzer-widget #tituloTexto p {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-top: 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+.ml-analyzer-widget #tituloTexto small {
+    font-size: 0.75em;
+    color: #555;
+    font-weight: normal;
+    display: block;
+    margin-top: 4px;
+}
+
+.ml-analyzer-widget #tituloTexto p[style*="color: gray"] {
+    color: #6c757d !important;
+}
+
+/* Indicadores de Descrição e Garantia - Estilo dos parágrafos de status */
+.ml-analyzer-widget #descricaoIndicator .status-message,
+.ml-analyzer-widget #warrantyInfo .status-message {
+    margin-top: 8px;
+    margin-bottom: 6px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 0.9em;
+}
+
+.ml-analyzer-widget .status-message[style*="color: red"] {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24 !important;
+}
+
+.ml-analyzer-widget .status-message[style*="color: green"] {
+    background-color: #d1e7dd;
+    border-color: #badbcc;
+    color: #0f5132 !important;
+}
+
+.ml-analyzer-widget .status-message[style*="color: gray"] {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    color: #495057 !important;
+}
+
+
+/* Ficha Técnica e Atributos da Categoria */
+.ml-analyzer-widget #fichaTecnicaTexto,
+.ml-analyzer-widget #categoryAttributes {
+    margin-top: 15px;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p,
+.ml-analyzer-widget #categoryAttributes li {
+    margin-bottom: 8px;
+    padding: 4px 0 4px 8px;
+    border-left: 3px solid #eee;
+    position: relative;
+    font-size: 0.95em;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p:has(> strong[style*="color: green"]),
+.ml-analyzer-widget #categoryAttributes li.filled {
+    border-left-color: #198754;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p:has(> strong[style*="color: gray"]) {
+    border-left-color: #adb5bd;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p:has(> strong[style*="color: red"]),
+.ml-analyzer-widget #categoryAttributes li.not-filled {
+    border-left-color: #dc3545;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p:has(> strong[style*="color: inherit"]) {
+    border-left-color: #eee;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p>strong[style*="color: green"] {
+    color: #198754 !important;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p>strong[style*="color: gray"] {
+    color: #6c757d !important;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p>strong[style*="color: red"] {
+    color: #dc3545 !important;
+}
+
+.ml-analyzer-widget #fichaTecnicaTexto p>strong[style*="color: inherit"] {
+    color: #333 !important;
+}
+
+/* Estilos para a lista de itens MLBU */
+.ml-analyzer-widget #mlbuItemsList ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.ml-analyzer-widget #mlbuItemsList li {
+    margin-bottom: 5px;
+}
+
+.ml-analyzer-widget #mlbuItemsList button {
+    width: 100%;
+    text-align: left;
+    background-color: #e9ecef;
+    color: #007bff;
+    border: 1px solid #dee2e6;
+    padding: 8px 12px;
+    font-size: 0.95em;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s, border-color 0.2s;
+    display: flex;
+    /* Adicionado para alinhar imagem e texto */
+    align-items: center;
+    /* Adicionado para alinhar imagem e texto */
+    gap: 10px;
+    /* Espaço entre imagem e texto */
+}
+
+.ml-analyzer-widget #mlbuItemsList button:hover {
+    background-color: #d1e7ff;
+    border-color: #b8daff;
+}
+
+.ml-analyzer-widget #mlbuItemsList button img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: 4px;
+    background-color: #fff;
+}
+
+.ml-analyzer-widget #mlbuItemsList button .item-details {
+    flex-grow: 1;
+}
+
+.ml-analyzer-widget #mlbuItemsList button .item-listing-type {
+    font-style: italic;
+    color: #6c757d;
+    font-size: 0.9em;
+}
+
+
+/* Avisos (Comprimento e Repetição) */
+.ml-analyzer-widget .length-warning,
+.ml-analyzer-widget .repeticao-info {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.75em;
+    font-style: italic;
+    margin-left: 6px;
+    cursor: help;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.ml-analyzer-widget .length-warning:before {
+    content: "⚠️ ";
+    font-style: normal;
+}
+
+.ml-analyzer-widget .repeticao-info {
+    background-color: rgba(220, 53, 69, 0.08);
+    color: #dc3545;
+    border: 1px dashed rgba(220, 53, 69, 0.3);
+}
+
+/* Seção Detalhes da Qualidade do Anúncio (anteriormente Performance) */
+.ml-analyzer-widget #performanceTexto {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.ml-analyzer-widget #performanceTexto>p.overall-performance-score {
+    font-size: 1.05em;
+    margin-bottom: 15px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ml-analyzer-widget #performanceTexto>p.overall-performance-score>.score-details {
+    flex-grow: 1;
+}
+
+.ml-analyzer-widget #performanceTexto>p.overall-performance-score>.circular-progress.medium {
+    margin-left: auto;
+}
+
+.ml-analyzer-widget .performance-mode {
+    font-size: 0.9em;
+    font-weight: normal;
+    margin-left: 5px;
+}
+
+.ml-analyzer-widget .performance-mode.opportunity {
+    color: #28a745;
+}
+
+.ml-analyzer-widget .performance-mode.warning {
+    color: #ffc107;
+}
+
+.ml-analyzer-widget .performance-mode.critical-warning {
+    color: #dc3545;
+}
+
+.ml-analyzer-widget .performance-bucket {
+    margin-top: 10px;
+    padding-left: 12px;
+    border-left: 3px solid #ccc;
+    background-color: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 0.95em;
+}
+
+.ml-analyzer-widget .performance-bucket[data-score-level="good"] {
+    border-left-color: #198754;
+}
+
+.ml-analyzer-widget .performance-bucket[data-score-level="neutral"] {
+    border-left-color: #ffc107;
+}
+
+.ml-analyzer-widget .performance-bucket[data-score-level="bad"] {
+    border-left-color: #dc3545;
+}
+
+.ml-analyzer-widget .performance-bucket h5 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 1em;
+    font-weight: bold;
+    color: #333;
+    border-bottom: 1px dashed #eee;
+    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ml-analyzer-widget .performance-variable {
+    margin-bottom: 6px;
+    padding-left: 8px;
+    border-left: 2px solid transparent;
+    font-size: 0.9em;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.ml-analyzer-widget .performance-variable[data-status="COMPLETED"] {
+    border-left-color: #28a745;
+}
+
+.ml-analyzer-widget .performance-variable[data-status="PENDING"] {
+    border-left-color: #ffc107;
+}
+
+.ml-analyzer-widget .performance-variable[data-status="ERROR"] {
+    border-left-color: #dc3545;
+}
+
+.ml-analyzer-widget .performance-variable[data-status="UNKNOWN"] {
+    border-left-color: #ccc;
+}
+
+.ml-analyzer-widget .performance-variable strong {
+    font-weight: 600;
+    margin-right: 5px;
+}
+
+.ml-analyzer-widget .performance-variable span.score,
+.ml-analyzer-widget .performance-variable span.status {
+    display: none;
+}
+
+.ml-analyzer-widget .performance-variable .suggestion {
+    display: none;
+    font-size: 0.85em;
+    color: #555;
+    margin-top: 4px;
+    font-style: normal;
+    flex-basis: 100%;
+    padding-left: calc(30px + 8px);
+}
+
+.ml-analyzer-widget .performance-variable .suggestion::before {
+    content: "💡 Sugestão: ";
+    font-weight: bold;
+    color: #007bff;
+}
+
+.ml-analyzer-widget .performance-variable.active .suggestion {
+    display: block;
+}
+
+.ml-analyzer-widget .variable-dropdown-arrow {
+    margin-left: auto;
+    font-size: 0.8em;
+    color: #555;
+    transition: transform 0.3s ease;
+}
+
+.ml-analyzer-widget .performance-variable.active .variable-dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+/* Pontuação de Qualidade e Indicadores Circulares */
+.ml-analyzer-widget #qualityScore {
+    padding-top: 15px;
+    border-top: 2px solid #e9ecef;
+    margin-top: 20px;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.ml-analyzer-widget #qualityScore p {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 0 0 10px 0;
+}
+
+.ml-analyzer-widget .circular-progress {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background-color: #e0e0e0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: conic-gradient(var(--progress-color, #e0e0e0) 0% var(--score-percent, 0%), #e0e0e0 var(--score-percent, 0%) 100%);
+    --score: 0;
+    --score-percent: calc(var(--score) * 1%);
+    --progress-color: #e0e0e0;
+    transition: background 1s ease-in-out, --progress-color 1s ease-in-out;
+}
+
+.ml-analyzer-widget .circular-progress::before {
+    content: "";
+    position: absolute;
+    width: 80%;
+    height: 80%;
+    border-radius: 50%;
+    background-color: #fff;
+}
+
+.ml-analyzer-widget .circular-progress .score-text {
+    position: relative;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #333;
+    z-index: 1;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="good"] {
+    --progress-color: #4CAF50;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="good"] .score-text {
+    color: #4CAF50;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="neutral"] {
+    --progress-color: #FFC107;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="neutral"] .score-text {
+    color: #FF8F00;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="bad"] {
+    --progress-color: #F44336;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="bad"] .score-text {
+    color: #F44336;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="unknown"] {
+    --progress-color: #9e9e9e;
+}
+
+.ml-analyzer-widget .circular-progress[data-score-level="unknown"] .score-text {
+    color: #757575;
+}
+
+.ml-analyzer-widget .circular-progress.medium {
+    width: 70px;
+    height: 70px;
+}
+
+.ml-analyzer-widget .circular-progress.medium .score-text {
+    font-size: 1.2em;
+}
+
+.ml-analyzer-widget .circular-progress.medium::before {
+    width: 75%;
+    height: 75%;
+}
+
+.ml-analyzer-widget .circular-progress.small {
+    width: 50px;
+    height: 50px;
+    font-size: 1em;
+    flex-shrink: 0;
+}
+
+.ml-analyzer-widget .circular-progress.small::before {
+    width: 70%;
+    height: 70%;
+}
+
+.ml-analyzer-widget .circular-progress.small .score-text {
+    font-size: 0.8em;
+}
+
+.ml-analyzer-widget .circular-progress.tiny {
+    width: 30px;
+    height: 30px;
+    font-size: 0.8em;
+    flex-shrink: 0;
+}
+
+.ml-analyzer-widget .circular-progress.tiny::before {
+    content: "";
+    position: absolute;
+    width: 60%;
+    height: 60%;
+    border-radius: 50%;
+    background-color: #fff;
+}
+
+.ml-analyzer-widget .circular-progress.tiny .score-text {
+    font-size: 0.6em;
+}
+
+/* Mensagens de Erro */
+.ml-analyzer-widget .error-message {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #842029 !important;
+    padding: 12px;
+    margin: 12px 0;
+    border-radius: 4px;
+    font-weight: normal !important;
+    clear: both;
+    font-size: 0.95em;
+}
+
+.ml-analyzer-widget .error-message::before {
+    content: "⚠️ ";
+    font-weight: bold;
+    font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+}
+
+/* Container para análise de item específico */
+.ml-analyzer-widget .item-analysis-container {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #007bff;
+    border-radius: 5px;
+    background-color: #f0f8ff;
+}
+
+
+/* Design Responsivo */
+@media (max-width: 768px) {
+    .ml-analyzer-widget {
+        padding: 20px;
+        margin: 15px auto;
+    }
+
+    .ml-analyzer-widget .performance-bucket {
+        padding-left: 10px;
+    }
+
+    .ml-analyzer-widget .performance-variable {
+        padding-left: 6px;
+    }
+
+    .ml-analyzer-widget .circular-progress {
+        width: 80px;
+        height: 80px;
+    }
+
+    .ml-analyzer-widget .circular-progress .score-text {
+        font-size: 1.2em;
+    }
+
+    .ml-analyzer-widget .circular-progress.medium {
+        width: 60px;
+        height: 60px;
+    }
+
+    .ml-analyzer-widget .circular-progress.medium .score-text {
+        font-size: 1em;
+    }
+
+    .ml-analyzer-widget .performance-bucket .circular-progress.small {
+        width: 40px;
+        height: 40px;
+    }
+
+    .ml-analyzer-widget .performance-bucket .circular-progress.small .score-text {
+        font-size: 0.7em;
+    }
+
+    .ml-analyzer-widget .circular-progress.tiny {
+        width: 25px;
+        height: 25px;
+    }
+
+    .ml-analyzer-widget .circular-progress.tiny .score-text {
+        font-size: 0.5em;
+    }
+}
+
+@media (max-width: 600px) {
+    .ml-analyzer-widget {
+        padding: 15px;
+        margin: 10px auto;
+    }
+
+    .ml-analyzer-widget .input-area {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ml-analyzer-widget #input-url {
+        margin-right: 0;
+        margin-bottom: 8px;
+    }
+
+    .ml-analyzer-widget #tituloTexto,
+    .ml-analyzer-widget #descricaoIndicator,
+    .ml-analyzer-widget #fichaTecnicaTexto,
+    .ml-analyzer-widget #warrantyInfo,
+    .ml-analyzer-widget #tagsTexto,
+    .ml-analyzer-widget #performanceTexto,
+    .ml-analyzer-widget #qualityScore {
+        clear: both;
+    }
+
+    .ml-analyzer-widget #tituloTexto p,
+    .ml-analyzer-widget #qualityScore p {
+        font-size: 1.1em;
+    }
+
+    .ml-analyzer-widget .length-warning,
+    .ml-analyzer-widget .repeticao-info {
+        display: block;
+        margin-left: 0;
+        margin-top: 4px;
+        white-space: normal;
+        width: fit-content;
+    }
+
+    .ml-analyzer-widget .performance-bucket {
+        padding: 6px 10px;
+    }
+
+    .ml-analyzer-widget .performance-bucket h5 {
+        margin-bottom: 6px;
+    }
+
+    .ml-analyzer-widget .performance-variable {
+        margin-bottom: 4px;
+        padding-left: 4px;
+        font-size: 0.85em;
+    }
+
+    .ml-analyzer-widget .circular-progress {
+        width: 70px;
+        height: 70px;
+    }
+
+    .ml-analyzer-widget .circular-progress .score-text {
+        font-size: 1em;
+    }
+
+    .ml-analyzer-widget .circular-progress.medium {
+        width: 50px;
+        height: 50px;
+    }
+
+    .ml-analyzer-widget .circular-progress.medium .score-text {
+        font-size: 0.9em;
+    }
+
+    .ml-analyzer-widget .performance-bucket .circular-progress.small {
+        width: 35px;
+        height: 35px;
+    }
+
+    .ml-analyzer-widget .performance-bucket .circular-progress.small .score-text {
+        font-size: 0.6em;
+    }
+
+    .ml-analyzer-widget .circular-progress.tiny {
+        width: 20px;
+        height: 20px;
+    }
+
+    .ml-analyzer-widget .circular-progress.tiny .score-text {
+        font-size: 0.4em;
     }
 }
