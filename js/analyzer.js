@@ -263,30 +263,41 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
     const stringAttributes = Array.isArray(categoryAttributes) ? categoryAttributes.filter(attr => attr.value_type === 'string' && !attr.tags?.read_only) : [];
 
     if (!Array.isArray(categoryAttributes) || stringAttributes.length === 0) {
+        // Hide completely if no relevant attributes to show, or show message
         contentHtml = '<p class="text-small">Sem campos adicionais sugeridos para esta categoria.</p>';
     } else {
         const adAttributesMap = new Map(adAttributes.map(attr => [attr.id, attr.value_name]));
-        contentHtml = '<ul style="list-style:none; padding:0; margin:0;">';
+
+        // Sort: Faltando first
+        stringAttributes.sort((a, b) => {
+            const valA = adAttributesMap.get(a.id);
+            const valB = adAttributesMap.get(b.id);
+            const filledA = valA && valA.trim() !== '';
+            const filledB = valB && valB.trim() !== '';
+            return filledA === filledB ? 0 : (filledA ? 1 : -1);
+        });
+
+        contentHtml = '<div style="display:flex; flex-direction:column; gap:8px;">';
 
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
             const isFilled = adValue && adValue.trim() !== '';
 
-            const icon = isFilled ? '✅' : '❌';
-            const colorClass = isFilled ? 'success' : 'error';
-            const textClass = isFilled ? 'text-value' : 'text-small';
-
             contentHtml += `
-                <li style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #f1f5f9;">
-                    <span style="font-size:0.9rem;">${catAttr.name}</span>
-                    <span class="status-badge ${colorClass}">${isFilled ? 'Preenchido' : 'Faltando'}</span>
-                </li>`;
+                 <div class="attribute-item" style="${!isFilled ? 'background:#fff1f2; border-color:#fda4af;' : ''}">
+                    <div>
+                        <span class="text-label" style="margin-bottom:2px;">${catAttr.name}</span>
+                        ${isFilled ? `<span class="text-value">${adValue}</span>` : '<span class="text-small" style="color:#ef4444;">Não preenchido</span>'}
+                    </div>
+                    ${isFilled ? '<span style="color:#10b981;">✔</span>' : '<span class="status-badge error">Faltando</span>'}
+                </div>
+            `;
         });
-        contentHtml += '</ul>';
+        contentHtml += '</div>';
     }
 
     el.innerHTML = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.25s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📂</span>
                 <span class="ana-card-title">Campos da Categoria</span>
