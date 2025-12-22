@@ -228,12 +228,8 @@ function renderVisitsChart(results) {
                     type: 'time',
                     time: {
                         unit: 'day',
-                        parser: 'YYYY-MM-DD', // Force strict parsing
                         tooltipFormat: 'DD/MM/YYYY',
                         displayFormats: { day: 'DD/MM' }
-                    },
-                    adapters: {
-                        date: { zone: 'local' }
                     },
                     grid: { display: false, drawBorder: false },
                     ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7280' }
