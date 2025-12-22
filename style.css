@@ -1107,3 +1107,53 @@
         font-size: 0.4em;
     }
 }
+
+/* --- Visits Trend Styles --- */
+.ml-analyzer-widget .visits-trend-card {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ml-analyzer-widget .visits-trend-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+/* --- Reviews Styles --- */
+.ml-analyzer-widget .reviews-summary {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+.ml-analyzer-widget .reviews-list {
+    margin-top: 10px;
+}
+
+.ml-analyzer-widget .review-item {
+    transition: background-color 0.2s;
+    border-left: 3px solid transparent !important;
+}
+
+.ml-analyzer-widget .review-item:hover {
+    background-color: #f8f9fa !important;
+    border-left-color: #3b82f6 !important;
+}
+
+/* Scrollbar estilizada para review list */
+.ml-analyzer-widget .reviews-list::-webkit-scrollbar {
+    width: 6px;
+}
+.ml-analyzer-widget .reviews-list::-webkit-scrollbar-track {
+    background: #f1f1f1; 
+}
+.ml-analyzer-widget .reviews-list::-webkit-scrollbar-thumb {
+    background: #c1c1c1; 
+    border-radius: 3px;
+}
+.ml-analyzer-widget .reviews-list::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8; 
+}

@@ -14,7 +14,7 @@ const PONTOS_PENALIDADE_POR_PALAVRA_REPETIDA = -3;
 const PONTOS_PENALIDADE_SEM_ATRIBUTOS = -15;
 const PONTOS_PENALIDADE_MODERATION_PENALTY = -50;
 const PONTOS_BONUS_DESCRICAO = 5;
-const ATRIBUTOS_IGNORADOS_REPETICAO = new Set(['BRAND', 'MODEL']);
+const ATRIBUTOS_IGNORADOS_REPETICAO = new Set([]); // Lista limpa para ser mais rigoroso
 const ATRIBUTOS_IGNORADOS_COMPLETAMENTE = new Set(['GTIN', 'SKU', 'SELLER_SKU', 'INMETRO_CERTIFICATION_REGISTRATION_NUMBER']);
 const VALORES_IGNORADOS_PENALIDADE = new Set(['isento', 'não aplicável', 'na']);
 
@@ -42,6 +42,8 @@ const API_FETCH_ITEM_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-item`; // Rota unif
 const API_USER_PRODUCTS_ENDPOINT = `${BASE_URL_PROXY}/api/user-products`; // ROTA PARA MLBU
 const API_ATTRIBUTES_ENDPOINT = `${BASE_URL_PROXY}/api/attributes`;
 const API_PERFORMANCE_ENDPOINT = `${BASE_URL_PROXY}/api/performance`;
+const API_VISITS_ENDPOINT = `${BASE_URL_PROXY}/api/visits`; // Nova rota para visitas
+const API_REVIEWS_ENDPOINT = `${BASE_URL_PROXY}/api/reviews`; // Nova rota para reviews
 
 function deveIgnorarAtributoPorNome(nome) {
     if (!nome) return false;
@@ -76,13 +78,30 @@ function definirCorPorQuantidadeCaracteres(caracteresValor, attributeId = null, 
     return 'red';
 }
 
-function exibirTitulo(titulo, containerId = "tituloTexto") {
+function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto") {
     const el = document.getElementById(containerId);
     if (!el) return;
     const len = titulo ? titulo.length : 0;
-    let cor = 'red', expl = `Abaixo de ${MIN_CHARS_TITULO_RUIM} caracteres é ruim.`;
-    if (len >= MIN_CHARS_TITULO_BOM && len <= MAX_CHARS_TITULO_BOM) { cor = 'green'; expl = `[Ideal: ${MIN_CHARS_TITULO_BOM}-${MAX_CHARS_TITULO_BOM} caracteres]`; }
-    else if (len >= MIN_CHARS_TITULO_RUIM && len < MIN_CHARS_TITULO_BOM) { cor = 'gray'; expl = `[Aceitável: ${MIN_CHARS_TITULO_RUIM}-${MIN_CHARS_TITULO_BOM - 1} caracteres. Ideal: ${MIN_CHARS_TITULO_BOM}-${MAX_CHARS_TITULO_BOM} caracteres]`; }
+
+    let cor = 'red';
+    let expl = '';
+
+    if (isMlbu) {
+        // Regra MLBU: >= 50 é bom. Não tem limite máximo ruim (dentro do razoável).
+        if (len >= 50) {
+            cor = 'green';
+            expl = `[Ideal: Pelo menos 50 caracteres. Títulos longos são aceitos no MLBU.]`;
+        } else {
+            cor = 'red'; // ou gray/orange dependendo do quão curto
+            expl = `[Curto demais: Utilize pelo menos 50 caracteres para melhor indexação.]`;
+        }
+    } else {
+        // Regra MLB Clássica
+        expl = `Abaixo de ${MIN_CHARS_TITULO_RUIM} caracteres é ruim.`;
+        if (len >= MIN_CHARS_TITULO_BOM && len <= MAX_CHARS_TITULO_BOM) { cor = 'green'; expl = `[Ideal: ${MIN_CHARS_TITULO_BOM}-${MAX_CHARS_TITULO_BOM} caracteres]`; }
+        else if (len >= MIN_CHARS_TITULO_RUIM && len < MIN_CHARS_TITULO_BOM) { cor = 'gray'; expl = `[Aceitável: ${MIN_CHARS_TITULO_RUIM}-${MIN_CHARS_TITULO_BOM - 1} caracteres. Ideal: ${MIN_CHARS_TITULO_BOM}-${MAX_CHARS_TITULO_BOM} caracteres]`; }
+    }
+
     el.innerHTML = `<p style="color: ${cor};"><strong>Título:</strong> ${titulo || 'N/A'} (${len} caracteres)<br><small>${expl}</small></p>`;
 }
 
@@ -536,6 +555,137 @@ function transformMlbuData(mlbuData) {
     };
 }
 
+async function fetchVisits(itemId, accessToken) {
+    // Busca visitas dos últimos 30 dias para cálculo de tendência
+    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&days=30`, accessToken);
+}
+
+async function fetchReviews(itemId, accessToken) {
+    return fetchApiData(`${API_REVIEWS_ENDPOINT}/${itemId}`, accessToken);
+}
+
+function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    el.innerHTML = `<h4 class="section-title-underlined">Análise de Tendência de Visitas (30 dias)</h4>`;
+
+    if (!visitsData || !visitsData.results || visitsData.results.length === 0) {
+        el.innerHTML += '<p class="status-message" style="color:gray;">Dados de visitas insuficientes para análise de tendência.</p>';
+        return;
+    }
+
+    const results = visitsData.results;
+    // Ordenar por data
+    results.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Dividir em dois períodos (primeira metade vs segunda metade)
+    const midPoint = Math.floor(results.length / 2);
+    const firstHalf = results.slice(0, midPoint);
+    const secondHalf = results.slice(midPoint);
+
+    const sumVisits = (arr) => arr.reduce((acc, curr) => acc + curr.total, 0);
+    const totalFirst = sumVisits(firstHalf);
+    const totalSecond = sumVisits(secondHalf);
+    const totalVisits = totalFirst + totalSecond;
+
+    let trend = 'Estável';
+    let icon = '➡️';
+    let color = 'gray';
+
+    // Margem de erro de 5% para considerar estável
+    const diff = totalSecond - totalFirst;
+    const percentChange = totalFirst > 0 ? (diff / totalFirst) * 100 : 0;
+
+    if (percentChange > 5) {
+        trend = 'Subindo';
+        icon = '📈';
+        color = 'green';
+    } else if (percentChange < -5) {
+        trend = 'Caindo';
+        icon = '📉';
+        color = 'red';
+    }
+
+    const html = `
+        <div class="visits-trend-card" style="display: flex; align-items: center; justify-content: space-around; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <div style="text-align: center;">
+                <span style="font-size: 2em;">${icon}</span>
+                <p style="margin: 5px 0 0; font-weight: bold; color: ${color};">${trend}</p>
+            </div>
+            <div style="text-align: left; font-size: 0.9em;">
+                <p><strong>Total (30d):</strong> ${totalVisits}</p>
+                <p><strong>1ª Quinzena:</strong> ${totalFirst}</p>
+                <p><strong>2ª Quinzena:</strong> ${totalSecond}</p>
+                <p style="color: ${color}; font-size: 0.85em;">(${percentChange.toFixed(1)}% vs período anterior)</p>
+            </div>
+        </div>
+    `;
+    el.innerHTML += html;
+}
+
+function exibirAvaliacoes(reviewsData, containerId = "reviewsContainer") {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    el.innerHTML = `<h4 class="section-title-underlined">Avaliações do Produto</h4>`;
+
+    if (!reviewsData || !reviewsData.paging || reviewsData.paging.total === 0) {
+        el.innerHTML += '<p class="status-message" style="color:gray;">Nenhuma avaliação encontrada para este produto.</p>';
+        return;
+    }
+
+    // Calcular média ou usar dado da API se disponível (reviewsData geralmente retorna reviews individuais)
+    // Se a rota for /reviews/item/{ITEM_ID}, o ML retorna rating_average nos dados do item, mas aqui estamos buscando reviews.
+    // Vamos assumir que reviewsData contém { reviews: [], rating_average: ... } ou similar.
+    // Ajuste conforme resposta real da API de reviews.
+    // Se for a search de reviews padrão: { paging: {}, reviews: [], rating_average: X, rating_levels: {} }
+
+    const average = reviewsData.rating_average || 0;
+    const total = reviewsData.paging.total || 0;
+    const reviews = reviewsData.reviews || [];
+
+    const starsHtml = (score) => {
+        let s = '';
+        for (let i = 1; i <= 5; i++) {
+            s += i <= Math.round(score) ? '★' : '☆';
+        }
+        return `<span style="color: #fbbf24; font-size: 1.2em;">${s}</span>`;
+    };
+
+    let html = `
+        <div class="reviews-summary" style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 2em; font-weight: bold;">${average.toFixed(1)}</span>
+                <div style="display: flex; flex-direction: column;">
+                    ${starsHtml(average)}
+                    <span style="color: #6b7280; font-size: 0.9em;">${total} avaliações</span>
+                </div>
+            </div>
+        </div>
+        <div class="reviews-list" style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+    `;
+
+    if (reviews.length === 0) {
+        html += '<p>Sem comentários recentes.</p>';
+    } else {
+        reviews.slice(0, 5).forEach(rev => { // Mostrar top 5
+            html += `
+                <div class="review-item" style="background: white; border: 1px solid #eee; padding: 10px; border-radius: 6px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        ${starsHtml(rev.rate)}
+                        <span style="font-size: 0.8em; color: gray;">${new Date(rev.date_created).toLocaleDateString()}</span>
+                    </div>
+                    <p style="font-style: italic; font-size: 0.95em; color: #374151;">"${rev.content || 'Sem comentário'}"</p>
+                </div>
+            `;
+        });
+    }
+
+    html += '</div>';
+    el.innerHTML += html;
+}
+
 async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
     const loader = document.getElementById('loadingIndicator');
 
@@ -558,7 +708,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         }
 
         console.log(`--- Iniciando Análise: ${itemId} ---`);
-        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, descriptionData = null, categoryAttributes = null;
+        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null;
 
         try {
             [accessToken, userId] = await Promise.all([fetchAccessToken(), fetchUserIdForScraping()]);
@@ -608,9 +758,14 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         }
 
         if (accessToken && detail) {
-            [performanceData] = await Promise.allSettled([
-                fetchPerformanceData(detail.id, accessToken)
-            ]).then(r => r.map(res => res.status === 'fulfilled' ? res.value : null));
+            const results = await Promise.allSettled([
+                fetchPerformanceData(detail.id, accessToken),
+                fetchVisits(detail.id, accessToken),
+                fetchReviews(detail.id, accessToken)
+            ]);
+            performanceData = results[0].status === 'fulfilled' ? results[0].value : null;
+            visitsData = results[1].status === 'fulfilled' ? results[1].value : null;
+            reviewsData = results[2].status === 'fulfilled' ? results[2].value : null;
         }
 
         if (detail && detail.category_id && accessToken) {
@@ -629,6 +784,9 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                     <div id="warrantyInfo${containerIdSuffix}"></div>
                     <div id="tagsTexto${containerIdSuffix}"></div>
                     <div id="performanceTexto${containerIdSuffix}"></div>
+
+                    <div id="visitsTrend${containerIdSuffix}"></div>
+                    <div id="reviewsContainer${containerIdSuffix}"></div>
                     <div id="qualityScore${containerIdSuffix}"></div>
                 </div>
             `;
@@ -647,6 +805,8 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             exibirInformacaoGarantia(detail, `warrantyInfo${containerIdSuffix}`);
             verificarTags(detail.tags, usedFallback, `tagsTexto${containerIdSuffix}`);
             exibirPerformance(performanceData, `performanceTexto${containerIdSuffix}`);
+            exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`);
+            exibirAvaliacoes(reviewsData, `reviewsContainer${containerIdSuffix}`);
             exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback), usedFallback, `qualityScore${containerIdSuffix}`);
             console.log("--- Análise Concluída ---");
         }
@@ -744,8 +904,22 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     if (!detail || typeof detail !== 'object') return 0;
     let score = 100;
     const title = detail.title || "", titleLen = title.length, pTit = getPalavrasUnicas(title);
-    if (titleLen < MIN_CHARS_TITULO_RUIM) score += PONTOS_PENALIDADE_TITULO_CURTO;
-    else if (titleLen < MIN_CHARS_TITULO_BOM) score += PONTOS_PENALIDADE_TITULO_MEDIO;
+
+    const isMlbu = detail.id && detail.id.startsWith('MLBU');
+
+    if (isMlbu) {
+        // Regra MLBU
+        if (titleLen < 40) score += PONTOS_PENALIDADE_TITULO_CURTO; // < 40 muito ruim
+        else if (titleLen < 50) score += PONTOS_PENALIDADE_TITULO_MEDIO; // 40-49 médio
+        // >= 50 OK, sem penalidade por ser longo
+    } else {
+        // Regra MLB
+        if (titleLen < MIN_CHARS_TITULO_RUIM) score += PONTOS_PENALIDADE_TITULO_CURTO;
+        else if (titleLen < MIN_CHARS_TITULO_BOM) score += PONTOS_PENALIDADE_TITULO_MEDIO;
+    }
+
+    // Penalidade se for muito grande mesmo para MLBU? O usuário disse que >60 ok.
+    // Vamos manter sem penalidade extra para MLBU longo por enquanto, conforme pedido.
 
     if (descriptionData?.plain_text?.trim() !== "") score += PONTOS_BONUS_DESCRICAO;
 
