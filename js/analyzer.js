@@ -210,7 +210,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
                         }
                     }
                 });
-                if (reptOutros) issues.push('Repetição Interna');
+                if (reptOutros) issues.push('Valor Duplicado');
             }
         }
 
@@ -872,7 +872,13 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         }
 
         if (accessToken && detail) {
-            const isOwner = (userId && detail.seller_id && String(detail.seller_id) === String(userId));
+            console.log(`Checking ownership: UserID=${userId}, SellerID=${detail.seller_id}`);
+            // Ensure both are treated as strings for comparison and handle potential undefined
+            const isOwner = (userId && detail.seller_id && String(detail.seller_id).trim() === String(userId).trim());
+
+            if (isOwner) console.log("Usuário É o dono do anúncio. Buscando visitas...");
+            else console.log("Usuário NÃO é o dono do anúncio. Visitas restritas.");
+
             const results = await Promise.allSettled([
                 fetchPerformanceData(detail.id, accessToken),
                 isOwner ? fetchVisits(detail.id, accessToken) : Promise.resolve({ error: 'not_owner' }),
