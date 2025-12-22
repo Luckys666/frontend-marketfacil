@@ -187,9 +187,14 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
 
         if (!ignorarPenalidades) {
             // Check Length
-            if (len > TAMANHO_IDEAL_ATRIBUTO && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
-                issues.push('Muito Longo');
+            if (!VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
+                if (len > TAMANHO_IDEAL_ATRIBUTO) {
+                    issues.push('Não Indexa (>30)');
+                } else if (len < 20 && attr.id !== 'BRAND') {
+                    issues.push('Muito Curto (<20)');
+                }
             }
+
             // Check Repetition
             if (!ATRIBUTOS_IGNORADOS_REPETICAO.has(attr.id) && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
                 const pAtuais = pPorAttr.get(attr.id);
