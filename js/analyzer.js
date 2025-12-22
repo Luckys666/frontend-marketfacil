@@ -83,29 +83,58 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto") {
     if (!el) return;
     const len = titulo ? titulo.length : 0;
 
-    let badgeClass = 'error';
-    let expl = '';
+    // Configura ranges baseados em MLBU ou MLB
+    const idealMin = isMlbu ? 50 : MIN_CHARS_TITULO_BOM;
+    const idealMax = isMlbu ? 999 : MAX_CHARS_TITULO_BOM; // MLBU sem limite max
 
-    if (isMlbu) {
-        if (len >= 50) { badgeClass = 'success'; expl = 'Tamanho Ideal (MLBU)'; }
-        else { badgeClass = 'error'; expl = 'Curto (Min 50)'; }
+    let state = 'bad';
+    let progressPercent = 0;
+
+    if (len >= idealMin && (isMlbu || len <= idealMax)) {
+        state = 'good';
+        progressPercent = 100;
+    } else if (len >= 40) { // Regra genérica de aceitável
+        state = 'neutral';
+        progressPercent = 70;
     } else {
-        if (len >= MIN_CHARS_TITULO_BOM && len <= MAX_CHARS_TITULO_BOM) { badgeClass = 'success'; expl = 'Tamanho Ideal'; }
-        else if (len >= MIN_CHARS_TITULO_RUIM && len < MIN_CHARS_TITULO_BOM) { badgeClass = 'muted'; expl = 'Aceitável'; }
-        else { badgeClass = 'error'; expl = 'Ruim'; }
+        progressPercent = Math.max(10, (len / 60) * 100);
     }
 
+    const badgeClass = state;
+    const badgeText = state === 'good' ? 'Excelente' : (state === 'neutral' ? 'Aceitável' : 'Muito Curto');
+
     el.innerHTML = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📝</span>
                 <span class="ana-card-title">Análise do Título</span>
-                <span class="status-badge ${badgeClass}" style="margin-left:auto;">${expl}</span>
+                <span class="status-badge ${badgeClass}" style="margin-left:auto;">${badgeText}</span>
             </div>
-            <p class="text-value" style="font-size: 1.25rem; font-weight:700;">${titulo || 'N/A'}</p>
-            <p class="text-small" style="margin-top:5px;">${len} caracteres</p>
+            
+            <div style="margin-bottom: 20px;">
+                <p class="title-display">${titulo || 'Nenhum título encontrado'}</p>
+                <div class="char-counter-bar">
+                    <div class="char-progress ${state}" style="width: ${progressPercent}%"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:5px;">
+                     <span class="text-small">${len} caracteres</span>
+                     <span class="text-small">Meta: ${idealMin}+</span>
+                </div>
+            </div>
+
+            ${state !== 'good' ? `
+            <div class="info-box" style="margin-bottom:0; background:#fff7ed; border-color:#fed7aa; color:#9a3412;">
+                 <p><strong>Dica:</strong> Títulos detalhados entre ${idealMin} e ${idealMax || 60} caracteres ajudam na busca do Mercado Livre.</p>
+            </div>
+            ` : ''}
         </div>
     `;
+
+    // Animate progress bar width after render
+    setTimeout(() => {
+        const bar = el.querySelector('.char-progress');
+        if (bar) bar.style.width = `${Math.min(100, (len / 60) * 100)}%`;
+    }, 300);
 }
 
 function exibirDescricaoIndicator(descriptionData, containerId = "descricaoIndicator") {
@@ -129,84 +158,99 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
     const el = document.getElementById(containerId);
     if (!el) return;
 
-    let contentHtml = '';
-
     if (!Array.isArray(fichaTecnica) || fichaTecnica.length === 0) {
-        contentHtml = '<p class="text-small">Nenhuma ficha técnica disponível.</p>';
-    } else {
-        const pTit = getPalavrasUnicas(titulo);
-        const validAttrs = fichaTecnica.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
-
-        if (validAttrs.length === 0) {
-            contentHtml = '<p class="text-small">Nenhum atributo válido para análise.</p>';
-        } else {
-            const pPorAttr = new Map();
-            validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
-
-            contentHtml = '<div style="display:flex; flex-direction:column; gap:12px;">';
-
-            validAttrs.forEach(attr => {
-                const nome = attr.name || attr.id, valor = attr.value_name.trim(), vLow = valor.toLowerCase(), len = valor.length;
-                const ignorarPenalidades = deveIgnorarAtributoPorNome(nome);
-                let cor = definirCorPorQuantidadeCaracteres(len, attr.id, valor);
-                let reptTxt = '', tamTxt = '', temRept = false;
-
-                // Lógica de penalidades (mantida)
-                if (ignorarPenalidades) {
-                    if (len > 0) cor = 'inherit';
-                } else {
-                    if (len > TAMANHO_IDEAL_ATRIBUTO && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
-                        tamTxt = `<span class="status-badge muted" title="Pode ser considerado longo">Longo</span>`;
-                        if (cor === 'green') cor = 'gray';
-                    }
-                    if (!ATRIBUTOS_IGNORADOS_REPETICAO.has(attr.id) && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
-                        const pAtuais = pPorAttr.get(attr.id);
-                        const reptTit = encontrarIntersecao(pAtuais, pTit);
-                        if (reptTit.length > 0) {
-                            reptTxt += `<span class="status-badge error" title="Repete título: ${reptTit.join(', ')}">Repetição</span>`;
-                            temRept = true;
-                        }
-                        // Verifica repetição com outros atributos... (Simplificado para UX)
-                        let reptOutros = new Set();
-                        pPorAttr.forEach((pOutro, outroId) => {
-                            const oAttr = validAttrs.find(a => a.id === outroId);
-                            if (oAttr && attr.id !== outroId && !ATRIBUTOS_IGNORADOS_REPETICAO.has(outroId)) {
-                                const oValLow = oAttr.value_name?.trim().toLowerCase();
-                                if (oValLow && !VALORES_IGNORADOS_PENALIDADE.has(oValLow)) encontrarIntersecao(pAtuais, pOutro).forEach(p => reptOutros.add(p));
-                            }
-                        });
-                        if (reptOutros.size > 0) {
-                            reptTxt += `<span class="status-badge error" title="Repete outros campos: ${Array.from(reptOutros).join(', ')}">Repetição Interna</span>`;
-                            temRept = true;
-                        }
-                    }
-                    if (temRept) cor = 'red';
-                }
-
-                const styleColor = cor === 'green' ? 'var(--ana-success)' : (cor === 'red' ? 'var(--ana-danger)' : 'var(--ana-text-main)');
-
-                contentHtml += `
-                    <div style="padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
-                        <span class="text-label">${nome}</span>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="text-value" style="color:${styleColor};">${valor}</span>
-                            <div style="display:flex; gap:5px;">${tamTxt}${reptTxt}</div>
-                        </div>
-                    </div>`;
-            });
-            contentHtml += '</div>';
-        }
+        el.innerHTML = `
+        <div class="ana-card" style="animation-delay: 0.2s;">
+            <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Ficha Técnica</span></div>
+            <p class="text-small">Nenhuma ficha técnica disponível.</p>
+        </div>`;
+        return;
     }
 
-    if (usedFallback) contentHtml += '<p class="text-small" style="margin-top:10px;">ℹ️ Dados parciais (Scraper)</p>';
+    const pTit = getPalavrasUnicas(titulo);
+    const validAttrs = fichaTecnica.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
+
+    const problemAttrs = [];
+    const okAttrs = [];
+
+    const pPorAttr = new Map();
+    validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
+
+    validAttrs.forEach(attr => {
+        const nome = attr.name || attr.id;
+        const valor = attr.value_name.trim();
+        const vLow = valor.toLowerCase();
+        const len = valor.length;
+        const ignorarPenalidades = deveIgnorarAtributoPorNome(nome);
+
+        let issues = [];
+
+        if (!ignorarPenalidades) {
+            // Check Length
+            if (len > TAMANHO_IDEAL_ATRIBUTO && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
+                issues.push('Muito Longo');
+            }
+            // Check Repetition
+            if (!ATRIBUTOS_IGNORADOS_REPETICAO.has(attr.id) && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
+                const pAtuais = pPorAttr.get(attr.id);
+                if (encontrarIntersecao(pAtuais, pTit).length > 0) issues.push('Repete Título');
+
+                // Repetition Internal
+                let reptOutros = false;
+                pPorAttr.forEach((pOutro, outroId) => {
+                    if (attr.id !== outroId && !ATRIBUTOS_IGNORADOS_REPETICAO.has(outroId)) {
+                        const otherAttr = validAttrs.find(a => a.id === outroId);
+                        if (otherAttr && !VALORES_IGNORADOS_PENALIDADE.has(otherAttr.value_name.toLowerCase())) {
+                            if (encontrarIntersecao(pAtuais, pOutro).length > 0) reptOutros = true;
+                        }
+                    }
+                });
+                if (reptOutros) issues.push('Repetição Interna');
+            }
+        }
+
+        if (issues.length > 0) {
+            problemAttrs.push({ name: nome, value: valor, issues });
+        } else {
+            okAttrs.push({ name: nome, value: valor });
+        }
+    });
+
+    const renderList = (list, isProblem) => {
+        if (list.length === 0) return '';
+        return list.map(item => `
+            <div class="attribute-item ${isProblem ? 'problem' : ''}">
+                <div>
+                    <span class="text-label" style="margin-bottom:2px;">${item.name}</span>
+                    <span class="text-value">${item.value}</span>
+                </div>
+                ${isProblem ? `<div class="status-badge error" style="font-size:0.75rem;">${item.issues.join(', ')}</div>` : '<span style="color:#cbd5e1;">✔</span>'}
+            </div>
+        `).join('');
+    };
 
     el.innerHTML = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.2s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📋</span>
                 <span class="ana-card-title">Ficha Técnica</span>
             </div>
-            ${contentHtml}
+            
+            ${problemAttrs.length > 0 ? `
+                <div class="specs-group">
+                    <div class="specs-group-title problem">⚠️ Atenção Necessária (${problemAttrs.length})</div>
+                    ${renderList(problemAttrs, true)}
+                </div>
+            ` : ''}
+
+            ${okAttrs.length > 0 ? `
+                <div class="specs-group">
+                     <div class="specs-group-title valid">✅ Tudo Certo (${okAttrs.length})</div>
+                    ${renderList(okAttrs, false)}
+                </div>
+            ` : ''}
+            
+             ${usedFallback ? '<p class="text-small" style="margin-top:10px;">ℹ️ Dados via Scraper (Parcial)</p>' : ''}
         </div>
     `;
 }
@@ -330,7 +374,7 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
 
     if (!performanceData || typeof performanceData !== 'object' || Object.keys(performanceData).length === 0) {
         perfEl.innerHTML = `
-            <div class="ana-card">
+            <div class="ana-card" style="animation-delay: 0.3s;">
                 <div class="ana-card-header"><span class="ana-card-icon">⚡</span><span class="ana-card-title">Qualidade Detalhada</span></div>
                 <p class="text-small">Sem detalhes avançados disponíveis.</p>
             </div>`;
@@ -377,7 +421,7 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
             });
 
             bucketsHtml += `
-                <div style="margin-bottom:20px; border:1px solid #e2e8f0; border-radius:8px; padding:15px; border-left:4px solid ${color};">
+                <div style="margin-bottom:20px; border:1px solid #e2e8f0; border-radius:8px; padding:15px; border-left:4px solid ${color}; background:#fff;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px dashed #e2e8f0; padding-bottom:10px;">
                         <span style="font-weight:700; color:${color};">${bucket.title || bucket.key}</span>
                         <span style="font-weight:700; font-size:1.1rem; color:${color};">${bScore}%</span>
@@ -389,10 +433,10 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
     }
 
     perfEl.innerHTML = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.3s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">⚡</span>
-                <span class="ana-card-title">Diagnóstico de Qualidade</span>
+                <span class="ana-card-title">Diagnóstico</span>
             </div>
             <div>
                  <p class="text-small" style="margin-bottom:15px;">
@@ -408,18 +452,56 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
 function exibirPontuacao(score, usedFallback = false, containerId = "qualityScore") {
     const el = document.getElementById(containerId);
     if (!el) return;
+
     let level = 'bad';
     if (score >= 75) level = 'good'; else if (score >= 50) level = 'neutral';
 
+    // SVG Gradient Definition (one-time injection if needed, but here inline is safer)
+    const defs = `
+        <defs>
+            <linearGradient id="gradientGood" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+            </linearGradient>
+        </defs>
+    `;
+
+    // Calculate Dash Array for SVG stroke
+    // RADIUS = 18. Circle length = 2 * PI * 18 approx 113.
+    const radius = 15.9155;
+    const circumference = 100; // Normalized to 100 for easy calc
+    const strokeDasharray = `${score}, 100`;
+
+    const celebration = score === 100 ? '<div class="celebration-confetti">🎉</div>' : '';
+
     el.innerHTML = `
-        <div class="ana-card" style="align-items: center; text-align: center; justify-content: center;">
+        <div class="ana-card" style="align-items: center; text-align: center; justify-content: center; animation-delay: 0s;">
             <div class="ana-card-header" style="width:100%; justify-content:center; border-bottom:none;">
                 <span class="ana-card-title">Qualidade do Anúncio</span>
             </div>
-            <div class="circular-progress" data-score-level="${level}" style="--score: 0; width: 100px; height: 100px;">
-                <span class="score-text" style="font-size: 2em;">${score}</span>
+            
+            <div class="score-container">
+                ${celebration}
+                 <div class="score-circle-outer">
+                    <svg viewBox="0 0 36 36" class="circular-chart">
+                        ${defs}
+                        <path class="circle-bg"
+                            d="M18 2.0845
+                                a 15.9155 15.9155 0 0 1 0 31.831
+                                a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path class="circle ${level}"
+                            stroke-dasharray="0, 100"
+                            d="M18 2.0845
+                                a 15.9155 15.9155 0 0 1 0 31.831
+                                a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                    </svg>
+                    <span class="score-number">${score}</span>
+                 </div>
             </div>
-            <div style="margin-top: 15px;">
+
+            <div style="margin-top: 10px;">
                 <span class="status-badge ${level === 'good' ? 'success' : (level === 'neutral' ? 'muted' : 'error')}">
                     ${level === 'good' ? 'Excelente' : (level === 'neutral' ? 'Regular' : 'Precisa Melhorar')}
                 </span>
@@ -428,11 +510,11 @@ function exibirPontuacao(score, usedFallback = false, containerId = "qualityScor
         </div>
     `;
 
-    // Animate
+    // Animate stroke
     setTimeout(() => {
-        const circle = el.querySelector('.circular-progress');
-        if (circle) circle.style.setProperty('--score', score);
-    }, 100);
+        const circle = el.querySelector('.circle');
+        if (circle) circle.setAttribute('stroke-dasharray', strokeDasharray);
+    }, 200);
 }
 
 function appendError(message, containerId = 'resultsContainer') {
@@ -617,7 +699,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     const lowDataWarning = totalVisits < 10 ? '<div class="margin-top:8px;"><span class="status-badge muted">⚠️ Poucos dados</span></div>' : '';
 
     el.innerHTML = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📊</span>
                 <span class="ana-card-title">Tendência Visitas</span>
@@ -663,7 +745,7 @@ function exibirAvaliacoes(reviewsData, containerId = "reviewsContainer") {
     };
 
     let html = `
-        <div class="ana-card">
+        <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header"><span class="ana-card-icon">⭐</span><span class="ana-card-title">Avaliações</span></div>
             <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
                 <span class="review-score-big">${average.toFixed(1)}</span>
