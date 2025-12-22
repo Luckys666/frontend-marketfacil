@@ -670,15 +670,19 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     const el = document.getElementById(containerId);
     if (!el) return;
 
-    if (!visitsData || !visitsData.results || visitsData.results.length === 0) {
-        const motivo = !visitsData ? "Erro ao carregar dados." : "Sem visitas no período.";
+    if (!visitsData || visitsData.error || !visitsData.results || visitsData.results.length === 0) {
+        let motivo = "Sem visitas no período.";
+        if (!visitsData) motivo = "Indisponível no momento.";
+        else if (visitsData.error === 'not_owner') motivo = "Restrito ao vendedor.";
+        else if (visitsData.error) motivo = "Erro na busca.";
+
         el.innerHTML = `
-            <div class="ana-card">
+            <div class="ana-card" style="animation-delay: 0.1s;">
                 <div class="ana-card-header">
                     <span class="ana-card-icon">📊</span>
                     <span class="ana-card-title">Visitas (30 dias)</span>
                 </div>
-                <p class="text-small" style="color: var(--ana-text-muted);">${motivo}</p>
+                <p class="text-small" style="color: var(--ana-text-muted); font-style:italic;">${motivo}</p>
             </div>`;
         return;
     }
@@ -860,9 +864,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         }
 
         if (accessToken && detail) {
+            const isOwner = (userId && detail.seller_id && String(detail.seller_id) === String(userId));
             const results = await Promise.allSettled([
                 fetchPerformanceData(detail.id, accessToken),
-                fetchVisits(detail.id, accessToken),
+                isOwner ? fetchVisits(detail.id, accessToken) : Promise.resolve({ error: 'not_owner' }),
                 fetchReviews(detail.id, accessToken)
             ]);
             performanceData = results[0].status === 'fulfilled' ? results[0].value : null;
