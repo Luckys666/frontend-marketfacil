@@ -678,11 +678,10 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     const el = document.getElementById(containerId);
     if (!el) return;
 
-    if (!visitsData || visitsData.error || !visitsData.results || visitsData.results.length === 0) {
-        let motivo = "Sem visitas no período.";
-        if (!visitsData) motivo = "Indisponível no momento.";
-        else if (visitsData.error === 'not_owner') motivo = "Restrito ao vendedor.";
-        else if (visitsData.error) motivo = "Erro na busca.";
+    if (!visitsData || visitsData.error) {
+        let motivo = "Indisponível no momento.";
+        if (visitsData && visitsData.error === 'not_owner') motivo = "Restrito ao vendedor.";
+        else if (visitsData && visitsData.error) motivo = "Erro na busca.";
 
         el.innerHTML = `
             <div class="ana-card" style="animation-delay: 0.1s;">
@@ -695,15 +694,25 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
         return;
     }
 
-    const results = visitsData.results;
+    // Even if results are empty, if we didn't get an error, we might want to show "0 visits" instead of hiding/erroring if we want to be explicit.
+    // But usually results=[] means no data found. Let's assume valid results array.
+    const results = visitsData.results || [];
+    // Ensure chronological order for trend calculation
     results.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate totals first to decide if we show "No visits" or just 0
+    // If we have an empty array, that's effectively 0 visits.
+
     const midPoint = Math.floor(results.length / 2);
     const firstHalf = results.slice(0, midPoint);
     const secondHalf = results.slice(midPoint);
-    const sumVisits = (arr) => arr.reduce((acc, curr) => acc + curr.total, 0);
+    const sumVisits = (arr) => arr.reduce((acc, curr) => acc + (curr.total || 0), 0);
     const totalFirst = sumVisits(firstHalf);
     const totalSecond = sumVisits(secondHalf);
     const totalVisits = totalFirst + totalSecond;
+
+    // Show card even for 0 visits if we successfully queried
+
 
     let trend = 'Estável';
     let icon = '➡️';
@@ -899,25 +908,31 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             const containerHtml = `
                 <div class="item-analysis-container" id="analysis-container${containerIdSuffix}">
                     <div class="analysis-grid">
-                        <!-- Linha 1: Título e Identificação -->
+                        <!-- 1. Título (First) -->
                         <div class="grid-full" id="tituloTexto${containerIdSuffix}"></div>
 
-                        <!-- Linha 2: Métricas Principais (3 colunas) -->
-                        <div class="grid-third" id="qualityScore${containerIdSuffix}"></div>
-                        <div class="grid-third" id="visitsTrend${containerIdSuffix}"></div>
-                        <div class="grid-third" id="reviewsContainer${containerIdSuffix}"></div>
+                        <!-- 2. Ficha Técnica -->
+                        <div class="grid-full" id="fichaTecnicaTexto${containerIdSuffix}"></div>
 
-                        <!-- Linha 3: Detalhes Técnicos e Performance -->
-                        <div class="grid-half" style="display:flex; flex-direction:column; gap:20px;">
-                            <div id="fichaTecnicaTexto${containerIdSuffix}"></div>
-                            <div id="categoryAttributes${containerIdSuffix}"></div>
-                            <div id="tagsTexto${containerIdSuffix}"></div>
-                        </div>
-                        <div class="grid-half" style="display:flex; flex-direction:column; gap:20px;">
-                             <div id="performanceTexto${containerIdSuffix}"></div>
-                             <div id="descricaoIndicator${containerIdSuffix}"></div>
-                             <div id="warrantyInfo${containerIdSuffix}"></div>
-                        </div>
+                        <!-- 3. Descrição e Garantia -->
+                        <div class="grid-half" id="descricaoIndicator${containerIdSuffix}"></div>
+                        <div class="grid-half" id="warrantyInfo${containerIdSuffix}"></div>
+
+                        <!-- 4. Visitas e Avaliações -->
+                        <div class="grid-half" id="visitsTrend${containerIdSuffix}"></div>
+                        <div class="grid-half" id="reviewsContainer${containerIdSuffix}"></div>
+
+                        <!-- 5. Tags -->
+                        <div class="grid-full" id="tagsTexto${containerIdSuffix}"></div>
+
+                        <!-- 6. Qualidade do Anúncio -->
+                        <div class="grid-full" id="qualityScore${containerIdSuffix}"></div>
+                         
+                         <!-- Performance escondido ou reposicionado se necessário, mas não pedido explicitamente na ordem nova exceto "Qualidade". Vou manter performanceTexto junto com Ficha Tecnica ou no final? O usuário pediu "qualidade do anúncio" (score) antes de Categoria. "Performance" é o detalhe da qualidade. Vou colocar junto com o Score em visualização full ou abaixo dele. -->
+                        <div class="grid-full" id="performanceTexto${containerIdSuffix}"></div>
+
+                        <!-- 7. Campos da Categoria (Last) -->
+                        <div class="grid-full" id="categoryAttributes${containerIdSuffix}"></div>
                     </div>
                 </div>
             `;
