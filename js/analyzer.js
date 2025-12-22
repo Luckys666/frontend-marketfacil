@@ -725,6 +725,8 @@ async function displayMlbuResults(mlbuDetail, mlbItems, accessToken) {
 function handleAnalysisClick(itemId = null, append = false) {
     analisarAnuncio(itemId, append);
 }
+// Expose to window for Bubble's HTML element scope
+window.handleAnalysisClick = handleAnalysisClick;
 
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('input-url');

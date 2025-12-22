@@ -1,0 +1,77 @@
+<!-- 
+  BUBBLE.IO COMPONENT: VISITS ANALYTICS WIDGET
+  Repository: Luckys666/frontend-marketfacil
+  Branch: main (Atualize para um hash de commit específico para produção, ex: @abcdef)
+-->
+
+<!-- CONTAINER -->
+<div id="visitas-app-container">
+    <div class="loading-state" style="text-align: center; padding: 40px; color: #666; font-family: sans-serif;">
+        <div class="spinner"
+            style="display:inline-block; width:30px; height:30px; border:3px solid #ccc; border-top-color:#333; border-radius:50%; animation:spin 1s linear infinite;">
+        </div>
+        <p style="margin-top:10px;">Carregando...</p>
+    </div>
+</div>
+
+<style>
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+
+<script type="module">
+    // CONFIGURAÇÃO: Repo Base URL (CDN)
+    const REPO_BASE = 'https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@main';
+
+    // 1. Carregar CSS (Namespaced)
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `${REPO_BASE}/style.css`;
+    document.head.appendChild(link);
+
+    // 2. Helper: Carregador de Scripts
+    const loadScript = (src) => new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) return resolve(); // Evita duplicidade
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(`Erro ao carregar ${src}`);
+        document.body.appendChild(s);
+    });
+
+    // 3. Boot: Inicialização
+    async function boot() {
+        try {
+            // A. Core Logic (Auth & API) - NOVO CAMINHO js/logic.js
+            if (!window.MarketFacilCore) await loadScript(`${REPO_BASE}/js/logic.js`);
+
+            // B. View Logic - NOVO CAMINHO js/visits.js (antigo visitsView.js)
+            await loadScript(`${REPO_BASE}/js/visits.js`);
+
+            // C. Aguardar var global (caso haja delay na execução do script)
+            const waitForGlobal = () => new Promise(resolve => {
+                const check = () => window.renderVisitsApp ? resolve() : setTimeout(check, 50);
+                check();
+            });
+            await waitForGlobal();
+
+            // D. Inicia o App no container
+            window.renderVisitsApp('visitas-app-container');
+
+        } catch (err) {
+            console.error(err);
+            const container = document.getElementById('visitas-app-container');
+            if (container) {
+                container.innerHTML = `<div style="color: #dc2626; background: #fee2e2; padding: 15px; border-radius: 8px; text-align: center; font-family: sans-serif;">
+                    <p><strong>Erro ao inicializar o widget:</strong></p>
+                    <p>${err.message || err}</p>
+                </div>`;
+            }
+        }
+    }
+
+    boot();
+</script>
