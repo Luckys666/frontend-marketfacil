@@ -184,10 +184,10 @@ function renderVisitsChart(results) {
     visitsChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: results.map(r => r.date), // Use raw date string, adapter handles parsing
+            labels: results.map(r => r.date),
             datasets: [{
                 label: 'Visitas',
-                data: results.map(r => ({ x: r.date.split('T')[0], y: r.total })), // Explicit ID for X axis matching
+                data: results.map(r => ({ x: r.date.split('T')[0] + 'T12:00:00', y: r.total })), // Noon to avoid TZ shifts
                 borderColor: '#3B82F6',
                 backgroundColor: gradient,
                 borderWidth: 2,
