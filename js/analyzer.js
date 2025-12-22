@@ -229,7 +229,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
                     <span class="text-label" style="margin-bottom:2px;">${item.name}</span>
                     <span class="text-value">${item.value}</span>
                 </div>
-                ${isProblem ? `<div class="status-badge error" style="font-size:0.75rem;">${item.issues.join(', ')}</div>` : '<span style="color:#cbd5e1;">✔</span>'}
+                ${isProblem ? `<div class="status-badge error" style="font-size:0.75rem;">${item.issues.join(', ')}</div>` : '<span style="color:#10b981; font-weight:bold;">✔ OK</span>'}
             </div>
         `).join('');
     };
@@ -425,11 +425,14 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
                     });
                 }
 
+                const statusMap = { 'COMPLETED': 'Concluído', 'PENDING': 'Pendente', 'ERROR': 'Erro' };
+                const translatedStatus = statusMap[vStatus] || vStatus;
+
                 varsHtml += `
                     <div style="margin-bottom:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span style="font-size:0.9rem; color:${vColor}; font-weight:600;">${v.title || v.key}</span>
-                            <span class="text-small" style="background:${vColor}20; color:${vColor}; padding:2px 8px; border-radius:10px;">${vStatus}</span>
+                            <span class="text-small" style="background:${vColor}20; color:${vColor}; padding:2px 8px; border-radius:10px;">${translatedStatus}</span>
                         </div>
                         ${rulesHtml}
                     </div>
