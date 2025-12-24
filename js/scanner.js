@@ -323,7 +323,9 @@ function renderScannerGrid(items) {
 
         const div = document.createElement('div');
         div.className = 'ana-card';
-        div.style.cssText = 'animation:fadeIn 0.3s ease; display:flex; flex-direction:column; gap:10px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        // FIX: 'ana-card' css has opacity:0. We must force opacity:1 or use the correct animation 'slideUpFade' or 'mf-fadeIn'.
+        // Adding opacity: 1 explicitly to guarantee visibility.
+        div.style.cssText = 'opacity: 1; animation: slideUpFade 0.5s ease forwards; display:flex; flex-direction:column; gap:10px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
 
         const thumb = safeItem.thumbnail || 'https://http2.mlstatic.com/D_NQ_NP_906934-MLA47913349685_102021-O.webp'; // Fallback img
         const price = safeItem.price ? `R$ ${safeItem.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
