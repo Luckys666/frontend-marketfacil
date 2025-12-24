@@ -1,0 +1,68 @@
+<!-- 
+  BUBBLE.IO COMPONENT: ACCOUNT SCANNER WIDGET
+  Repository: Luckys666/frontend-marketfacil
+  
+  Description: Scans all products in the account and filters by tags.
+-->
+
+<!-- CSS (Shared with Ad Analyzer) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/style.css">
+
+<div class="mf-dashboard-wrapper">
+    <div class="ml-analyzer-widget">
+        <!-- Header -->
+        <div class="scanner-header" style="margin-bottom: 20px;">
+            <h2 style="font-size: 1.5rem; font-weight: 700; color: #1e293b; margin-bottom: 5px;">Scanner de Conta 🔎
+            </h2>
+            <p class="text-small" style="color: #64748b;">Analise todos os seus anúncios em busca de tags específicas.
+            </p>
+        </div>
+
+        <!-- Controls -->
+        <div class="input-area" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <div style="flex-grow: 1;">
+                <label for="tagFilter" class="text-label" style="display:block; margin-bottom:5px;">Filtrar por
+                    Tag:</label>
+                <select id="tagFilter"
+                    style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <option value="all">Todas as Tags (Mostrar tudo)</option>
+                    <option value="poor_quality_thumbnail">📸 Foto de Capa Ruim (poor_quality_thumbnail)</option>
+                    <option value="poor_quality_picture">📷 Fotos de Baixa Qualidade (poor_quality_picture)</option>
+                    <option value="incomplete_technical_specs">📋 Ficha Técnica Incompleta (incomplete_technical_specs)
+                    </option>
+                    <option value="moderation_penalty">👮 Penalidade de Moderação (moderation_penalty)</option>
+                    <option value="immediate_payment">💳 Pagamento Imediato (immediate_payment)</option>
+                    <option value="cart_eligible">🛒 Elegível Pro Carrinho (cart_eligible)</option>
+                    <option value="brand_verified">🏷️ Marca Verificada (brand_verified)</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+                <button id="scanButton" onclick="startAccountScan()" style="height: 42px;">Escanear Conta</button>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div id="scanProgress" style="display: none; margin: 20px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span id="scanStatusText" class="text-small" style="font-weight: 600;">Iniciando...</span>
+                <span id="scanCountText" class="text-small">0 encontrados</span>
+            </div>
+            <div class="char-counter-bar">
+                <div id="scanProgressBar" class="char-progress" style="width: 0%; background: #3b82f6;"></div>
+            </div>
+        </div>
+
+        <!-- Results Area -->
+        <div id="scannerResults"
+            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 20px;">
+            <!-- Cards will be injected here -->
+            <div class="ana-card initial-placeholder"
+                style="grid-column: 1 / -1; text-align: center; color: #94a3b8; padding: 40px;">
+                Selecione um filtro e clique em "Escanear Conta" para começar.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/analyzer.js"></script>
