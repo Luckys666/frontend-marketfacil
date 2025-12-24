@@ -453,6 +453,7 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     background: linear-gradient(90deg, #1e293b, #3b82f6);
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -924,17 +925,15 @@
 
 
 /* Seções de Informação */
+/* Seções de Informação */
 .ml-analyzer-widget #tituloTexto,
 .ml-analyzer-widget #descricaoIndicator,
 .ml-analyzer-widget #fichaTecnicaTexto,
 .ml-analyzer-widget #categoryAttributes,
-/* Nova seção */
 .ml-analyzer-widget #warrantyInfo,
 .ml-analyzer-widget #tagsTexto,
 .ml-analyzer-widget #upTagsTexto,
-/* Nova seção */
 .ml-analyzer-widget #mlbuItemsList,
-/* Nova seção */
 .ml-analyzer-widget #performanceTexto {
     margin-bottom: 15px;
 }
