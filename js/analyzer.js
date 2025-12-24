@@ -356,7 +356,7 @@ function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
         contentHtml += '</div>';
     }
 
-    el.innerHTML = `
+    div.innerHTML = `
          <div class="ana-card">
             <div class="ana-card-header">
                 <span class="ana-card-icon">🏷️</span>

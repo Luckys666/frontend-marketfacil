@@ -359,8 +359,11 @@ function renderScannerGrid(items) {
                     <div style="color:#64748b; font-size:0.75rem;">${id}</div>
                 </div>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; max-height:60px; overflow:hidden; margin-top:5px;">${tagsHtml}</div>
-            <button onclick="if(window.handleAnalysisClick) window.handleAnalysisClick('${id}', true)" style="margin-top:auto; width:100%; padding:8px; background:#eff6ff; color:#3b82f6; border:none; border-radius:6px; font-weight:600; cursor:pointer; transition: background 0.2s;">Analisar Detalhes</button>
+            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e2e8f0;">
+                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    ${tagsHtml || '<span style="font-size:0.7rem; color:#cbd5e1; font-style:italic; padding:2px 0;">Nenhuma tag relevante.</span>'}
+                </div>
+            </div>
         `;
         fragment.appendChild(div);
     });
