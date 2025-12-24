@@ -190,16 +190,21 @@
 }
 
 /* Input Area - Neumorphism-ish */
+/* Input Area - Neumorphism-ish */
 .ml-analyzer-widget .input-area {
     background: white;
-    padding: 8px;
-    border-radius: 60px;
+    padding: 16px;
+    /* Increased padding */
+    border-radius: 16px;
+    /* Reduced from 60px to match cards */
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     display: flex;
-    align-items: center;
+    align-items: flex-end;
+    /* Align items to bottom/baseline */
     border: 1px solid var(--ana-border);
-    max-width: 800px;
-    margin: 0 auto 40px auto;
+    max-width: 100%;
+    /* Allow full width */
+    margin: 0 0 30px 0;
     transition: box-shadow 0.3s ease;
 }
 
