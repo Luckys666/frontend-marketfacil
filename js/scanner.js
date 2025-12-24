@@ -72,6 +72,7 @@ async function getScannerUserId(token) {
 // --- Core Logic ---
 
 async function startAccountScan() {
+    console.log("Scanner v2.0 - Forced Visibility Update");
     if (window.scannerState.isScanning) return;
 
     // UI Elements
