@@ -313,33 +313,45 @@ function renderScannerGrid(items) {
     const fragment = document.createDocumentFragment();
 
     items.forEach(item => {
+        if (!item) return;
+
+        // Double-check normalização (caso algo tenha passado errado)
+        let safeItem = item;
+        if (item.body) safeItem = { ...item.body, description: item.description };
+
+        console.log('Rendering item:', safeItem.id, safeItem.title); // DEBUG
+
         const div = document.createElement('div');
         div.className = 'ana-card';
-        div.style.cssText = 'animation:fadeIn 0.3s ease; display:flex; flex-direction:column; gap:10px;';
+        div.style.cssText = 'animation:fadeIn 0.3s ease; display:flex; flex-direction:column; gap:10px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
 
-        const thumb = item.thumbnail || '';
-        const price = item.price ? `R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
+        const thumb = safeItem.thumbnail || 'https://http2.mlstatic.com/D_NQ_NP_906934-MLA47913349685_102021-O.webp'; // Fallback img
+        const price = safeItem.price ? `R$ ${safeItem.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
 
         let tagsHtml = '';
-        if (item.tags) {
-            item.tags.forEach(t => {
+        if (safeItem.tags) {
+            safeItem.tags.forEach(t => {
                 const isBad = SCANNER_TAGS_NEGATIVAS.has(t);
                 const color = isBad ? 'error' : 'muted';
                 tagsHtml += `<span class="status-badge ${color}" style="font-size:0.7rem;">${t}</span>`;
             });
         }
 
+        const title = safeItem.title || 'Sem título';
+        const id = safeItem.id || 'N/A';
+        const permalink = safeItem.permalink || '#';
+
         div.innerHTML = `
             <div style="display:flex; gap:12px;">
-                <img src="${thumb}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; background:#f8fafc;">
+                <img src="${thumb}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; background:#f8fafc; border:1px solid #eee;">
                 <div style="flex:1; min-width:0;">
-                    <a href="${item.permalink}" target="_blank" class="text-value" style="font-size:0.9rem; margin-bottom:4px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.title}">${item.title}</a>
+                    <a href="${permalink}" target="_blank" class="text-value" style="font-size:0.9rem; margin-bottom:4px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none; color:#1e293b; font-weight:600;" title="${title}">${title}</a>
                     <div style="color:#10b981; font-weight:700; font-size:0.95rem;">${price}</div>
-                    <div style="color:#64748b; font-size:0.75rem;">${item.id}</div>
+                    <div style="color:#64748b; font-size:0.75rem;">${id}</div>
                 </div>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:4px; max-height:60px; overflow:hidden;">${tagsHtml}</div>
-            <button onclick="if(window.handleAnalysisClick) window.handleAnalysisClick('${item.id}', true)" style="margin-top:auto; width:100%; padding:8px; background:#eff6ff; color:#3b82f6; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Analisar Detalhes</button>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; max-height:60px; overflow:hidden; margin-top:5px;">${tagsHtml}</div>
+            <button onclick="if(window.handleAnalysisClick) window.handleAnalysisClick('${id}', true)" style="margin-top:auto; width:100%; padding:8px; background:#eff6ff; color:#3b82f6; border:none; border-radius:6px; font-weight:600; cursor:pointer; transition: background 0.2s;">Analisar Detalhes</button>
         `;
         fragment.appendChild(div);
     });
