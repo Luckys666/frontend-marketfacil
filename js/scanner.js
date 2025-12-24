@@ -36,7 +36,20 @@ async function getScannerAccessToken() {
 }
 
 async function getScannerUserId(token) {
-    // Tenta via Proxy (/users/me) que é mais confiável para obter o ID numérico do MLB
+    // 1. Método Preferencial: Extrair ID diretamente do Token
+    // Formato Mercado Livre: APP_USR-Seq-Seq-Seq-UserId (O último segmento é o ID)
+    if (token && typeof token === 'string') {
+        const parts = token.split('-');
+        const possibleId = parts[parts.length - 1]; // Pega o último pedaço
+
+        // Verifica se parece um ID numérico válido
+        if (possibleId && /^\d+$/.test(possibleId)) {
+            console.log('Scanner: ID extraído do token:', possibleId);
+            return parseInt(possibleId, 10);
+        }
+    }
+
+    // 2. Fallback: Tenta via Proxy (/users/me)
     if (token) {
         try {
             const r = await fetch(`${SCANNER_API_BASE}/api/users/me`, {
@@ -51,7 +64,7 @@ async function getScannerUserId(token) {
         }
     }
 
-    // Fallback: Tentativa via Bubble (pode retornar ID interno errado)
+    // 3. Fallback: Tentativa via Bubble (pode retornar ID interno errado, use com cuidado)
     if (typeof fetchUserIdForScraping === 'function') return fetchUserIdForScraping();
     try {
         const r = await fetch('https://app.marketfacil.com.br/api/1.1/wf/get-user-id', { method: 'POST' });
