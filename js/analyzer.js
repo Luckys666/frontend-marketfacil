@@ -822,8 +822,15 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             clearResults();
         }
 
-        const inputVal = document.getElementById('input-url').value.trim();
-        const itemId = itemIdToAnalyze || normalizeMlbId(inputVal);
+        let itemId = itemIdToAnalyze;
+
+        if (!itemId) {
+            const inputEl = document.getElementById('input-url');
+            if (inputEl) {
+                const val = inputEl.value.trim();
+                if (val) itemId = normalizeMlbId(val);
+            }
+        }
 
         if (!itemId) {
             appendError('ID ou link inválido. Formato: MLB/MLBU123456789 ou link.');

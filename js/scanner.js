@@ -316,11 +316,17 @@ function renderScannerGrid(items) {
     items.forEach(item => {
         if (!item) return;
 
-        // Double-check normalização (caso algo tenha passado errado)
+        // Normalização defensiva: O item pode vir já normalizado ou ainda aninhado em .body
         let safeItem = item;
-        if (item.body) safeItem = { ...item.body, description: item.description };
+        if (item.body) {
+            safeItem = { ...item.body, description: item.description };
+        }
 
-        console.log('Rendering item:', safeItem.id, safeItem.title); // DEBUG
+        // Debug para entender o que está chegando
+        if (!safeItem.title && safeItem.result) safeItem = safeItem.result; // Possível estrutura alternativa?
+
+        console.log('Rendering item:', safeItem.id, safeItem.title, safeItem);
+
 
         const div = document.createElement('div');
         div.className = 'ana-card';
