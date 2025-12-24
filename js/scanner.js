@@ -212,7 +212,20 @@ async function scannerFetchDetails(ids, token) {
         if (!res.ok) throw new Error(`Status ${res.status}`);
 
         const data = await res.json();
-        return Array.isArray(data) ? data : [];
+
+        // Normaliza a resposta: O endpoint /fetch-item (Multiget) retorna [{ code, body, description }]
+        // Precisamos extrair o 'body' para ter os dados planos do item (id, title, price, etc).
+        if (Array.isArray(data)) {
+            return data.map(item => {
+                // Se tiver a estrutura de multiget (com body), extraímos.
+                if (item.body) {
+                    // Preservamos a description se ela tiver sido injetada pelo Proxy
+                    return { ...item.body, description: item.description };
+                }
+                return item;
+            });
+        }
+        return [];
 
     } catch (e) {
         console.warn('Batch detail err:', e);
