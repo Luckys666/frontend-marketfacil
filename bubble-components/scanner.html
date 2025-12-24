@@ -23,17 +23,9 @@
             <div style="flex-grow: 1;">
                 <label for="tagFilter" class="text-label" style="display:block; margin-bottom:5px;">Filtrar por
                     Tag:</label>
-                <select id="tagFilter"
+                <select id="tagFilter" onchange="handleScannerFilterChange()"
                     style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                    <option value="all">Todas as Tags (Mostrar tudo)</option>
-                    <option value="poor_quality_thumbnail">📸 Foto de Capa Ruim (poor_quality_thumbnail)</option>
-                    <option value="poor_quality_picture">📷 Fotos de Baixa Qualidade (poor_quality_picture)</option>
-                    <option value="incomplete_technical_specs">📋 Ficha Técnica Incompleta (incomplete_technical_specs)
-                    </option>
-                    <option value="moderation_penalty">👮 Penalidade de Moderação (moderation_penalty)</option>
-                    <option value="immediate_payment">💳 Pagamento Imediato (immediate_payment)</option>
-                    <option value="cart_eligible">🛒 Elegível Pro Carrinho (cart_eligible)</option>
-                    <option value="brand_verified">🏷️ Marca Verificada (brand_verified)</option>
+                    <option value="all">Ver Tudo (Inicie o Scanner)</option>
                 </select>
             </div>
             <div style="display: flex; align-items: flex-end;">
@@ -66,3 +58,4 @@
 
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/analyzer.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/scanner.js"></script>
