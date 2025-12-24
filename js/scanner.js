@@ -2,7 +2,7 @@
  * MarketFácil - Account Scanner Widget
  * Repositório: Luckys666/frontend-marketfacil
  * 
- * Este script gerencia a busca massiva de anúncios e filtragem local.
+ * Este script gerencia a busca massiva de anúncios e filtragem local via Proxy.
  */
 
 // Estado Global do Scanner
@@ -12,8 +12,8 @@ window.scannerState = {
     isScanning: false
 };
 
-// --- Configuração & Constantes (Duplicadas para garantir independência) ---
-const SCANNER_API_BASE = 'https://mlb-proxy-fdb71524fd60.herokuapp.com'; // Ou usar a do analyzer se garantido
+// --- Configuração & Constantes ---
+const SCANNER_API_BASE = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
 const SCANNER_TAGS_NEGATIVAS = new Set([
     "poor_quality_picture", "poor_quality_thumbnail",
     "incomplete_technical_specs", "moderation_penalty"
@@ -22,7 +22,6 @@ const SCANNER_TAGS_NEGATIVAS = new Set([
 // --- Funções de API (Autocontidas) ---
 
 async function getScannerAccessToken() {
-    // Tenta reusar do analyzer se disponível, senão busca
     if (typeof fetchAccessToken === 'function') return fetchAccessToken();
 
     try {
@@ -60,7 +59,6 @@ async function startAccountScan() {
     const statusText = document.getElementById('scanStatusText');
     const countText = document.getElementById('scanCountText');
     const resultsContainer = document.getElementById('scannerResults');
-    const filterSelect = document.getElementById('tagFilter');
 
     // Reset UI
     window.scannerState.isScanning = true;
@@ -79,7 +77,7 @@ async function startAccountScan() {
 
         if (!token || !userId) throw new Error('Falha de autenticação. Recarregue a página.');
 
-        // 1. Fetch All IDs
+        // 1. Fetch All IDs via Proxy
         if (statusText) statusText.textContent = 'Mapeando conta (pode demorar)...';
 
         const allIds = await scannerFetchAllIds(userId, token, (progress) => {
@@ -89,8 +87,8 @@ async function startAccountScan() {
         const total = allIds.length;
         if (statusText) statusText.textContent = `Processando detalhes de ${total} anúncios...`;
 
-        // 2. Fetch Details in Batches
-        const BATCH_SIZE = 50;
+        // 2. Fetch Details in Batches (Max 20 per batch for this Proxy Endpoint)
+        const BATCH_SIZE = 20;
         let processed = 0;
 
         for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -110,19 +108,14 @@ async function startAccountScan() {
 
             if (progressBar) progressBar.style.width = `${percent}%`;
             if (statusText) statusText.textContent = `Processando: ${processed}/${total} (${percent}%)`;
-
-            // Render partial results (optional, but good for feedback)
-            // renderScannerGrid(window.scannerState.allItems); // Might be too heavy to re-render all every time
-            // Let's just wait for end to render ALL, or render batch?
-            // User prefers "filter after", so showing all initially is fine.
         }
 
         // 3. Finalize
         updateFilterDropdown();
         renderScannerGrid(window.scannerState.allItems);
+        updateCount(window.scannerState.allItems.length);
 
         if (statusText) statusText.textContent = 'Varredura Completa!';
-        if (countText) countText.textContent = `${window.scannerState.allItems.length} anúncios analisados`;
         if (progressBar) progressBar.style.width = '100%';
 
     } catch (e) {
@@ -140,22 +133,43 @@ async function scannerFetchAllIds(userId, token, onProgress) {
     let offset = 0;
     let total = 1;
     const LIMIT = 50;
-    const SEARCH_URI = `https://api.mercadolibre.com/users/${userId}/items/search`;
+    let scrollId = null;
+
+    // Use Proxy Route for Ads
+    const PROXY_ADS_URL = `${SCANNER_API_BASE}/api/fetch-ads`;
 
     while (offset < total) {
         try {
-            const res = await fetch(`${SEARCH_URI}?search_type=scan&limit=${LIMIT}&offset=${offset}`, {
+            let url = `${PROXY_ADS_URL}?seller_id=${userId}&limit=${LIMIT}`;
+
+            // Logic to handle Proxy's scroll/scan support
+            if (scrollId) {
+                url += `&scroll_id=${scrollId}`;
+            } else {
+                url += `&offset=${offset}`;
+            }
+
+            const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            if (!res.ok) {
+                const errTxt = await res.text();
+                throw new Error(`Erro Proxy (${res.status}): ${errTxt}`);
+            }
+
             const data = await res.json();
 
             if (data.results) ids = ids.concat(data.results);
             if (data.paging) total = data.paging.total;
+            if (data.scroll_id) scrollId = data.scroll_id; // Capture scroll_id if API returns it
 
             offset += LIMIT;
+
             if (onProgress) onProgress({ loaded: ids.length, total });
 
-            await new Promise(r => setTimeout(r, 50)); // Rate limit guard
+            await new Promise(r => setTimeout(r, 100)); // Rate limit guard
+
         } catch (e) {
             console.warn('Erro fetch IDs:', e);
             break;
@@ -167,16 +181,16 @@ async function scannerFetchAllIds(userId, token, onProgress) {
 async function scannerFetchDetails(ids, token) {
     if (!ids.length) return [];
     try {
-        // Reuse proxy endpoint if possible, or direct API
-        // Using direct API for multimidget if proxy handles it? 
-        // Analyzer uses: `${BASE_URL_PROXY}/api/fetch-item?item_id=${ids.join(',')}`
-        // Let's try to use the same pattern as analyzer.
-        const proxyUrl = `https://mlb-proxy-fdb71524fd60.herokuapp.com/api/fetch-item?item_id=${ids.join(',')}`;
+        // Use Proxy Endpoint: /fetch-item (Max 20 IDs)
+        // returns array of items with 'description' property injected
+        const proxyUrl = `${SCANNER_API_BASE}/api/fetch-item?item_id=${ids.join(',')}`;
         const res = await fetch(proxyUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-        const data = await res.json();
 
-        // Data format from proxy: [{ code: 200, body: {...} }, ...]
-        return data.map(d => (d.code === 200 ? d.body : null)).filter(Boolean);
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+
     } catch (e) {
         console.warn('Batch detail err:', e);
         return [];
@@ -189,17 +203,11 @@ function updateFilterDropdown() {
     const select = document.getElementById('tagFilter');
     if (!select) return;
 
-    // Keep "All" and static options, or rebuild?
-    // User wants to see tags that appeared.
-    // Let's append detected tags that aren't already there.
-
-    // Clear and set default
     select.innerHTML = '<option value="all">Ver Tudo</option>';
 
     // Sort tags
     const sortedTags = Array.from(window.scannerState.uniqueTags).sort();
 
-    // Add common critical tags pinned to top if found
     const critical = ['poor_quality_picture', 'poor_quality_thumbnail', 'incomplete_technical_specs', 'moderation_penalty'];
 
     const groups = {
@@ -266,11 +274,6 @@ function renderScannerGrid(items) {
         return;
     }
 
-    // Limit render for performance if huge? 
-    // Render first 100? or lazy load?
-    // For now render all, browser handles 1-2k DOM nodes okay usually, but pagination would be better.
-    // Let's stick to full render for MVP "all in one page".
-
     const fragment = document.createDocumentFragment();
 
     items.forEach(item => {
@@ -281,7 +284,6 @@ function renderScannerGrid(items) {
         const thumb = item.thumbnail || '';
         const price = item.price ? `R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
 
-        // Tags Badges
         let tagsHtml = '';
         if (item.tags) {
             item.tags.forEach(t => {
@@ -301,7 +303,7 @@ function renderScannerGrid(items) {
                 </div>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:4px; max-height:60px; overflow:hidden;">${tagsHtml}</div>
-            <button onclick="if(window.handleAnalysisClick) window.handleAnalysisClick('${item.id}')" style="margin-top:auto; width:100%; padding:8px; background:#eff6ff; color:#3b82f6; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Analisar Detalhes</button>
+            <button onclick="if(window.handleAnalysisClick) window.handleAnalysisClick('${item.id}', true)" style="margin-top:auto; width:100%; padding:8px; background:#eff6ff; color:#3b82f6; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Analisar Detalhes</button>
         `;
         fragment.appendChild(div);
     });
@@ -311,4 +313,4 @@ function renderScannerGrid(items) {
 
 // Bind events global
 window.startAccountScan = startAccountScan;
-window.handleScannerFilterChange = handleScannerFilterChange; 
+window.handleScannerFilterChange = handleScannerFilterChange;
