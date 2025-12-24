@@ -35,9 +35,24 @@ async function getScannerAccessToken() {
     }
 }
 
-async function getScannerUserId() {
-    if (typeof fetchUserIdForScraping === 'function') return fetchUserIdForScraping();
+async function getScannerUserId(token) {
+    // Tenta via Proxy (/users/me) que é mais confiável para obter o ID numérico do MLB
+    if (token) {
+        try {
+            const r = await fetch(`${SCANNER_API_BASE}/api/users/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (r.ok) {
+                const data = await r.json();
+                return data.id; // Retorna o ID numérico do MLB
+            }
+        } catch (e) {
+            console.warn('Erro ao buscar ID via Proxy:', e);
+        }
+    }
 
+    // Fallback: Tentativa via Bubble (pode retornar ID interno errado)
+    if (typeof fetchUserIdForScraping === 'function') return fetchUserIdForScraping();
     try {
         const r = await fetch('https://app.marketfacil.com.br/api/1.1/wf/get-user-id', { method: 'POST' });
         const d = await r.json();
@@ -73,7 +88,8 @@ async function startAccountScan() {
     try {
         if (statusText) statusText.textContent = 'Autenticando...';
 
-        const [token, userId] = await Promise.all([getScannerAccessToken(), getScannerUserId()]);
+        const token = await getScannerAccessToken();
+        const userId = await getScannerUserId(token);
 
         if (!token || !userId) throw new Error('Falha de autenticação. Recarregue a página.');
 
