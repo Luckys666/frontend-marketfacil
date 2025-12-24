@@ -20,8 +20,11 @@
                     <option value="all">Ver Tudo (Inicie o Scanner)</option>
                 </select>
             </div>
-            <div style="display: flex; align-items: flex-end;">
+            <div style="display: flex; align-items: flex-end; gap: 10px;">
                 <button id="scanButton" onclick="startAccountScan()" style="height: 42px;">Escanear Conta</button>
+                <button id="exportCsvButton" onclick="exportToCSV()"
+                    style="height: 42px; background: #fff !important; color: #3b82f6; border: 1px solid #3b82f6 !important;"
+                    title="Exportar resultados atuais para planilha">📥 CSV</button>
             </div>
         </div>
 

@@ -1421,3 +1421,24 @@
     transform: none;
     box-shadow: none;
 }
+
+.ml-analyzer-widget #exportCsvButton {
+    background: #ffffff !important;
+    color: #3b82f6;
+    border: 1px solid #3b82f6 !important;
+    border-radius: 12px !important;
+    padding: 0 20px !important;
+    font-weight: 600;
+    font-size: 0.9rem;
+    height: 48px !important;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ml-analyzer-widget #exportCsvButton:hover {
+    background: #eff6ff !important;
+    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1);
+}

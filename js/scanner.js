@@ -374,3 +374,55 @@ function renderScannerGrid(items) {
 // Bind events global
 window.startAccountScan = startAccountScan;
 window.handleScannerFilterChange = handleScannerFilterChange;
+
+function exportToCSV() {
+    const filter = document.getElementById('tagFilter').value;
+    const all = window.scannerState.allItems;
+    let itemsToExport = [];
+
+    if (filter === 'all') {
+        itemsToExport = all;
+    } else {
+        itemsToExport = all.filter(item => item.tags && item.tags.includes(filter));
+    }
+
+    if (itemsToExport.length === 0) {
+        alert("Nenhum item para exportar com o filtro atual.");
+        return;
+    }
+
+    // CSV Headers
+    let csvContent = "ID,Título,Preço,Link,Tags\n";
+
+    itemsToExport.forEach(item => {
+        // Defensive normalization
+        let safeItem = item;
+        if (item.body) {
+            safeItem = { ...item.body, description: item.description };
+        }
+        if (!safeItem.title && safeItem.result) safeItem = safeItem.result;
+
+        const id = safeItem.id || '';
+        // Escape quotes in title
+        const title = (safeItem.title || '').replace(/"/g, '""');
+        const price = safeItem.price ? safeItem.price.toString().replace('.', ',') : '0';
+        const permalink = safeItem.permalink || '';
+        const tags = (safeItem.tags || []).join('; ');
+
+        // Construct CSV row
+        csvContent += `"${id}","${title}","${price}","${permalink}","${tags}"\n`;
+    });
+
+    // Create Download Link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const date = new Date().toISOString().slice(0, 10);
+    link.setAttribute("download", `marketfacil_scanner_${filter}_${date}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+window.exportToCSV = exportToCSV;
