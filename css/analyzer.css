@@ -102,7 +102,8 @@
     color: var(--ana-text-main);
     background-color: var(--ana-bg-page);
     padding: 30px;
-    border-radius: var(--ana-radius);
+    border-radius: 20px;
+    /* Updated from var(--ana-radius) */
     box-sizing: border-box;
     width: 100%;
     line-height: 1.6;
@@ -188,7 +189,8 @@
 /* Input Area - Container Box */
 .ml-analyzer-widget .input-area {
     background: #ffffff;
-    padding: 24px;
+    padding: 25px 50px;
+    /* User specified: 25px vertical, 50px horizontal */
     border-radius: 16px;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     display: flex;
@@ -197,7 +199,8 @@
     border: 1px solid #e2e8f0;
     width: 100%;
     box-sizing: border-box;
-    margin: 0 0 30px 0;
+    margin: 0 0 20px 0;
+    /* User specified: 20px bottom margin */
     transition: all 0.3s ease;
     flex-wrap: wrap;
     /* Allows wrapping on small screens */
