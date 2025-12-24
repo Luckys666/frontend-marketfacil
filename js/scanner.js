@@ -64,15 +64,9 @@ async function getScannerUserId(token) {
         }
     }
 
-    // 3. Fallback: Tentativa via Bubble (pode retornar ID interno errado, use com cuidado)
-    if (typeof fetchUserIdForScraping === 'function') return fetchUserIdForScraping();
-    try {
-        const r = await fetch('https://app.marketfacil.com.br/api/1.1/wf/get-user-id', { method: 'POST' });
-        const d = await r.json();
-        return d.response.user_id || d.user_id;
-    } catch (e) {
-        return null;
-    }
+    // 3. Fallback: Removido para evitar erros de CORS e IDs inválidos (Bubble ID vs MLB ID).
+    console.warn('Scanner: Não foi possível obter ID numérico via Token ou Proxy.');
+    return null;
 }
 
 // --- Core Logic ---
