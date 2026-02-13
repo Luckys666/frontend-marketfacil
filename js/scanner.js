@@ -391,11 +391,27 @@ function exportToCSV() {
         return;
     }
 
-    // CSV Headers
-    let csvContent = "ID,Título,Preço,Link,Tags\n";
+    // Mapa de Tradução Simplificado - Foco em Problemas
+    const translations = {
+        "poor_quality_picture": "Foto de Baixa Qualidade",
+        "poor_quality_thumbnail": "Miniatura Ruim",
+        "incomplete_technical_specs": "Ficha Técnica Incompleta",
+        "moderation_penalty": "Penalidade (Infração)",
+        "brand_verified": "Marca Verificada",
+        "extended_warranty_eligible": "Elegível Garantia Est.",
+        "good_quality_picture": "Foto Boa",
+        "good_quality_thumbnail": "Thumb Boa",
+        "immediate_payment": "Pgto Imediato",
+        "cart_eligible": "Carrinho",
+        "free_shipping": "Frete Grátis",
+        "catalog_product_candidate": "Candidato a Catálogo"
+    };
+
+    // CSV Headers - Ponto e vírgula para Excel PT-BR
+    let csvContent = "ID;Título;Preço;Status;Erros Encontrados;Link para Editar\r\n";
 
     itemsToExport.forEach(item => {
-        // Defensive normalization
+        // Normalização defensiva
         let safeItem = item;
         if (item.body) {
             safeItem = { ...item.body, description: item.description };
@@ -403,23 +419,40 @@ function exportToCSV() {
         if (!safeItem.title && safeItem.result) safeItem = safeItem.result;
 
         const id = safeItem.id || '';
-        // Escape quotes in title
-        const title = (safeItem.title || '').replace(/"/g, '""');
-        const price = safeItem.price ? safeItem.price.toString().replace('.', ',') : '0';
-        const permalink = safeItem.permalink || '';
-        const tags = (safeItem.tags || []).join('; ');
+        // Tratar aspas e quebras de linha para não quebrar o CSV
+        let title = (safeItem.title || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
-        // Construct CSV row
-        csvContent += `"${id}","${title}","${price}","${permalink}","${tags}"\n`;
+        // Formatar preço PT-BR
+        const price = safeItem.price ? safeItem.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00';
+
+        const permalink = safeItem.permalink || '';
+        const tags = safeItem.tags || [];
+
+        // Filtrar Problemas
+        const problemas = tags.filter(t => SCANNER_TAGS_NEGATIVAS.has(t));
+        const temErro = problemas.length > 0;
+
+        const status = temErro ? "COM ERROS" : "OK";
+
+        // Lista legível de erros
+        const listaErros = temErro
+            ? problemas.map(p => translations[p] || p).join(', ')
+            : "Nenhum";
+
+        // Montar linha com aspas em todos os campos
+        csvContent += `"${id}";"${title}";"${price}";"${status}";"${listaErros}";"${permalink}"\r\n`;
     });
 
-    // Create Download Link
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // BOM para UTF-8 no Excel
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
+
     const link = document.createElement("a");
     link.setAttribute("href", url);
     const date = new Date().toISOString().slice(0, 10);
-    link.setAttribute("download", `marketfacil_scanner_${filter}_${date}.csv`);
+    link.setAttribute("download", `Relatorio_Scanner_${filter === 'all' ? 'Geral' : filter}_${date}.csv`);
+
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
