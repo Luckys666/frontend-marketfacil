@@ -36,7 +36,7 @@ const TAG_TRANSLATIONS = {
     "cart_eligible": "Carrinho",
     "free_shipping": "Frete Grátis",
     "catalog_product_candidate": "Candidato a Catálogo",
-    "dragged_bids_and_visits": "Lances e Visitas",
+    "dragged_bids_and_visits": "Este anúncio já foi finalizado e recriado",
     "shipping_discount_item": "Desconto no Frete"
 };
 
