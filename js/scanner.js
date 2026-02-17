@@ -126,7 +126,11 @@ async function startAccountScan() {
         const token = await getScannerAccessToken();
         const userId = await getScannerUserId(token);
 
-        if (!token || !userId) throw new Error('Falha de autenticação. Recarregue a página.');
+        if (!token || !userId) {
+            const authErr = new Error('AUTH_FAILED');
+            authErr.isAuthError = true;
+            throw authErr;
+        }
 
         if (statusText) statusText.textContent = 'Mapeando conta (pode demorar)...';
 
@@ -173,8 +177,40 @@ async function startAccountScan() {
 
     } catch (e) {
         console.error('Scanner Error:', e);
-        if (statusText) statusText.textContent = `Erro: ${e.message}`;
-        alert('Erro ao escanear: ' + e.message);
+        if (progressDiv) progressDiv.style.display = 'none';
+
+        if (e.isAuthError) {
+            // Mensagem amigável de autenticação
+            if (statusText) statusText.textContent = 'Conta não conectada';
+            if (resultsContainer) {
+                resultsContainer.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🔗</div>
+                        <h3 style="color: #991b1b; margin: 0 0 8px 0; font-size: 1.1rem;">Conta do Mercado Livre não conectada</h3>
+                        <p style="color: #64748b; font-size: 0.9rem; margin: 0 0 16px 0; line-height: 1.5;">Para usar o Scanner, você precisa conectar sua conta do Mercado Livre ao MarketFácil.</p>
+                        <a href="https://app.marketfacil.com.br/minha-conta" target="_blank"
+                           style="display: inline-block; padding: 12px 28px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; text-decoration: none; border-radius: 50px; font-weight: 600; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(37,99,235,0.3); transition: all 0.2s;"
+                           onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(37,99,235,0.4)'"
+                           onmouseout="this.style.transform='';this.style.boxShadow='0 4px 12px rgba(37,99,235,0.3)'"
+                        >Conectar Conta →</a>
+                        <p style="color: #94a3b8; font-size: 0.75rem; margin-top: 12px;">Após conectar, volte aqui e clique em "Escanear Conta".</p>
+                    </div>
+                `;
+            }
+        } else {
+            // Erro genérico (API, rede, etc.)
+            if (statusText) statusText.textContent = `Erro: ${e.message}`;
+            if (resultsContainer) {
+                resultsContainer.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 30px 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;">
+                        <div style="font-size: 2rem; margin-bottom: 8px;">⚠️</div>
+                        <p style="color: #991b1b; font-weight: 600; margin: 0 0 8px 0;">Erro ao escanear</p>
+                        <p style="color: #64748b; font-size: 0.85rem; margin: 0 0 12px 0;">${e.message}</p>
+                        <p style="color: #94a3b8; font-size: 0.75rem; margin: 0;">Se o problema persistir, verifique se sua conta está conectada em <a href="https://app.marketfacil.com.br/minha-conta" target="_blank" style="color: #3b82f6; text-decoration: underline;">Minha Conta</a>.</p>
+                    </div>
+                `;
+            }
+        }
     } finally {
         window.scannerState.isScanning = false;
         if (scanBtn) scanBtn.disabled = false;
