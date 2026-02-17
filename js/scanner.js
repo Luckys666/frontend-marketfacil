@@ -31,7 +31,7 @@ const TAG_TRANSLATIONS = {
     "brand_verified": "Marca Verificada",
     "extended_warranty_eligible": "Elegível Garantia Est.",
     "good_quality_picture": "Foto Boa",
-    "good_quality_thumbnail": "Thumb Boa",
+    "good_quality_thumbnail": "Miniatura Boa",
     "immediate_payment": "Pgto Imediato",
     "cart_eligible": "Carrinho",
     "free_shipping": "Frete Grátis",
