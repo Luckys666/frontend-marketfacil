@@ -1,13 +1,19 @@
-<!-- 
-  BUBBLE.IO COMPONENT: ACCOUNT SCANNER WIDGET
+﻿<!-- 
+  BUBBLE.IO COMPONENT: SCANNER WIDGET
   Repository: Luckys666/frontend-marketfacil
   
-  Description: Scans all products in the account and filters by tags.
+  INSTRUCTIONS:
+  1. Copy this entire code block.
+  2. Paste it into an "HTML Element" in your Bubble app.
+  3. Ensure "Display as an iframe" is UNCHECKED (unless you handle sizing manually).
 -->
 
-<!-- CSS (Shared with Ad Analyzer) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/style.css?v=2.1">
+<!-- CSS do Widget -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/css/core.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/css/analyzer.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/css/scanner.css">
 
+<!-- COMPONENT WRAPPER -->
 <div class="mf-dashboard-wrapper">
     <div class="ml-analyzer-widget">
         <!-- Controls -->
@@ -23,8 +29,8 @@
             <div style="display: flex; align-items: flex-end; gap: 10px;">
                 <button id="scanButton" onclick="startAccountScan()" style="height: 42px;">Escanear Conta</button>
                 <button id="exportCsvButton" onclick="exportToCSV()"
-                    style="height: 42px; background: #fff !important; color: #3b82f6; border: 1px solid #3b82f6 !important;"
-                    title="Exportar resultados atuais para planilha">📥 CSV</button>
+                    style="height: 42px; background: #fff !important; color: #3b82f6; border: 1px solid #3b82f6 !important; white-space: nowrap;"
+                    title="Gerar planilha com todos os anúncios e problemas encontrados">📊 Exportar Relatório</button>
             </div>
         </div>
 
@@ -39,18 +45,33 @@
             </div>
         </div>
 
+        <!-- Tag Legend -->
+        <div id="tagLegend"
+            style="display: none; margin-top: 16px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8rem; color: #64748b; flex-wrap: wrap; align-items: center; gap: 4px;">
+            <span style="font-weight: 600; margin-right: 12px;">Legenda:</span>
+            <span class="status-badge error" style="font-size: 0.7rem; vertical-align: middle;">Problema</span>
+            <span style="margin: 0 6px;">= Erro que precisa de atenção</span>
+            <span class="status-badge muted"
+                style="margin-left: 12px; font-size: 0.7rem; vertical-align: middle;">Neutra</span>
+            <span style="margin: 0 6px;">= Informação sem impacto negativo</span>
+        </div>
+
         <!-- Results Area -->
         <div id="scannerResults"
             style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 20px;">
-            <!-- Cards will be injected here -->
             <div class="ana-card initial-placeholder"
                 style="grid-column: 1 / -1; text-align: center; color: #94a3b8; padding: 40px;">
                 Selecione um filtro e clique em "Escanear Conta" para começar.
             </div>
         </div>
+
+        <!-- Pagination Controls -->
+        <div id="scannerPagination"
+            style="display: none; margin-top: 16px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; align-items: center; justify-content: center; gap: 12px; text-align: center;">
+        </div>
     </div>
 </div>
 
-<!-- Scripts -->
-<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/analyzer.js?v=2.1"></script>
-<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/scanner.js?v=2.1"></script>
+<!-- JS do Widget (carregado via jsDelivr CDN) -->
+<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/analyzer.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@latest/js/scanner.js"></script>
