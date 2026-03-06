@@ -6,8 +6,9 @@
 <div class="mf-dashboard-wrapper">
     <div class="ml-analyzer-widget">
         <!-- Controls -->
-        <div class="input-area" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
-            <div style="flex-grow: 1;">
+        <div class="input-area responsive-controls"
+            style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+            <div class="filter-wrapper" style="flex-grow: 1; min-width: 250px;">
                 <label for="tagFilter" class="text-label" style="display:block; margin-bottom:5px;">Filtrar por
                     Tag:</label>
                 <select id="tagFilter" onchange="handleScannerFilterChange()"
@@ -15,8 +16,10 @@
                     <option value="all">Ver Tudo (Inicie o Scanner)</option>
                 </select>
             </div>
-            <div style="display: flex; align-items: flex-end; gap: 10px;">
-                <button id="scanButton" onclick="startAccountScan()" style="height: 42px;">Escanear Conta</button>
+            <div class="buttons-wrapper"
+                style="display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; flex-grow: 1;">
+                <button id="scanButton" onclick="startAccountScan()"
+                    style="height: 42px; flex: 1; min-width: 160px;">Escanear Conta</button>
                 <button id="exportCsvButton" onclick="exportToCSV()"
                     style="height: 42px; background: #fff !important; color: #3b82f6; border: 1px solid #3b82f6 !important; white-space: nowrap;"
                     title="Gerar planilha com todos os anúncios e problemas encontrados">📊 Exportar Relatório</button>
@@ -468,6 +471,12 @@
 
     .ml-analyzer-widget .grid-third {
         grid-column: span 4;
+    }
+
+    @media (max-width: 1200px) {
+        .ml-analyzer-widget .grid-third {
+            grid-column: span 6;
+        }
     }
 
     @media (max-width: 900px) {
@@ -1501,8 +1510,16 @@
     /* Design Responsivo */
     @media (max-width: 768px) {
         .ml-analyzer-widget {
+            padding: 15px;
+            margin: 10px auto;
+        }
+
+        .ml-analyzer-widget .ana-card {
+            padding: 15px;
+        }
+
+        .ml-analyzer-widget .input-area {
             padding: 20px;
-            margin: 15px auto;
         }
 
         .ml-analyzer-widget .performance-bucket {
@@ -1552,13 +1569,28 @@
 
     @media (max-width: 600px) {
         .ml-analyzer-widget {
-            padding: 15px;
-            margin: 10px auto;
+            padding: 12px;
+            margin: 8px auto;
+        }
+
+        .ml-analyzer-widget .ana-card {
+            padding: 12px;
         }
 
         .ml-analyzer-widget .input-area {
+            padding: 15px;
             flex-direction: column;
             align-items: stretch;
+            gap: 15px !important;
+        }
+
+        .ml-analyzer-widget .buttons-wrapper {
+            flex-direction: column;
+            align-items: stretch !important;
+        }
+
+        .ml-analyzer-widget .buttons-wrapper button {
+            width: 100%;
         }
 
         .ml-analyzer-widget #input-url {
@@ -2864,64 +2896,70 @@
         }
     });
 
-    function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = false) {
-        if (!detail || typeof detail !== 'object') return 0;
-        let score = 100;
-        const title = detail.title || "", titleLen = title.length, pTit = getPalavrasUnicas(title);
-
+    function _calcularSubpontuacaoTitulo(detail) {
+        let score = 0;
+        const titleLen = (detail.title || "").length;
         const isMlbu = detail.id && detail.id.startsWith('MLBU');
 
         if (isMlbu) {
             // Regra MLBU
-            if (titleLen < 40) score += PONTOS_PENALIDADE_TITULO_CURTO; // < 40 muito ruim
-            else if (titleLen < 50) score += PONTOS_PENALIDADE_TITULO_MEDIO; // 40-49 mÃ©dio
-            // >= 50 OK, sem penalidade por ser longo
+            if (titleLen < 40) score += PONTOS_PENALIDADE_TITULO_CURTO;
+            else if (titleLen < 50) score += PONTOS_PENALIDADE_TITULO_MEDIO;
         } else {
             // Regra MLB
             if (titleLen < MIN_CHARS_TITULO_RUIM) score += PONTOS_PENALIDADE_TITULO_CURTO;
             else if (titleLen < MIN_CHARS_TITULO_BOM) score += PONTOS_PENALIDADE_TITULO_MEDIO;
         }
+        return score;
+    }
 
-        // Penalidade se for muito grande mesmo para MLBU? O usuÃ¡rio disse que >60 ok.
-        // Vamos manter sem penalidade extra para MLBU longo por enquanto, conforme pedido.
+    function _calcularSubpontuacaoAtributos(detail, pTit) {
+        let score = 0;
+        if (!Array.isArray(detail.attributes) || detail.attributes.length === 0) {
+            return PONTOS_PENALIDADE_SEM_ATRIBUTOS * 1.5;
+        }
 
-        if (descriptionData?.plain_text?.trim() !== "") score += PONTOS_BONUS_DESCRICAO;
+        let validCount = 0;
+        const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
+        const pPorAttr = new Map();
 
-        if (Array.isArray(detail.attributes) && detail.attributes.length > 0) {
-            let validCount = 0;
-            const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
-            const pPorAttr = new Map(); validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
-            validAttrs.forEach(attr => {
-                validCount++;
-                const nome = attr.name || attr.id;
-                const val = attr.value_name.trim(), vLow = val.toLowerCase(), len = val.length, pAtuais = pPorAttr.get(attr.id);
-                const ignorarPenalidades = deveIgnorarAtributoPorNome(nome);
+        validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
 
-                if (!ignorarPenalidades) {
-                    if (!VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
-                        const diff = Math.abs(len - TAMANHO_IDEAL_ATRIBUTO);
-                        if (attr.id !== 'BRAND' || len > TAMANHO_IDEAL_ATRIBUTO) {
-                            score += Math.floor(diff / 10) * PONTOS_PENALIDADE_POR_10_CHARS_DIF_ATR;
-                        }
-                    }
-                    if (!ATRIBUTOS_IGNORADOS_REPETICAO.has(attr.id) && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
-                        score += encontrarIntersecao(pAtuais, pTit).length * PONTOS_PENALIDADE_POR_PALAVRA_REPETIDA;
-                        let reptOutros = new Set();
-                        pPorAttr.forEach((pO, oId) => {
-                            const oA = validAttrs.find(a => a.id === oId);
-                            if (oA && attr.id !== oId && !ATRIBUTOS_IGNORADOS_REPETICAO.has(oId)) {
-                                const oVL = oA.value_name?.trim().toLowerCase();
-                                if (oVL && !VALORES_IGNORADOS_PENALIDADE.has(oVL))
-                                    encontrarIntersecao(pAtuais, pO).forEach(p => reptOutros.add(p));
-                            }
-                        });
-                        score += reptOutros.size * PONTOS_PENALIDADE_POR_PALAVRA_REPETIDA;
+        validAttrs.forEach(attr => {
+            validCount++;
+            const nome = attr.name || attr.id;
+            const val = attr.value_name.trim(), vLow = val.toLowerCase(), len = val.length, pAtuais = pPorAttr.get(attr.id);
+            const ignorarPenalidades = deveIgnorarAtributoPorNome(nome);
+
+            if (!ignorarPenalidades) {
+                if (!VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
+                    const diff = Math.abs(len - TAMANHO_IDEAL_ATRIBUTO);
+                    if (attr.id !== 'BRAND' || len > TAMANHO_IDEAL_ATRIBUTO) {
+                        score += Math.floor(diff / 10) * PONTOS_PENALIDADE_POR_10_CHARS_DIF_ATR;
                     }
                 }
-            });
-            if (validCount === 0) score += PONTOS_PENALIDADE_SEM_ATRIBUTOS;
-        } else score += PONTOS_PENALIDADE_SEM_ATRIBUTOS * 1.5;
+                if (!ATRIBUTOS_IGNORADOS_REPETICAO.has(attr.id) && !VALORES_IGNORADOS_PENALIDADE.has(vLow)) {
+                    score += encontrarIntersecao(pAtuais, pTit).length * PONTOS_PENALIDADE_POR_PALAVRA_REPETIDA;
+                    let reptOutros = new Set();
+                    pPorAttr.forEach((pO, oId) => {
+                        const oA = validAttrs.find(a => a.id === oId);
+                        if (oA && attr.id !== oId && !ATRIBUTOS_IGNORADOS_REPETICAO.has(oId)) {
+                            const oVL = oA.value_name?.trim().toLowerCase();
+                            if (oVL && !VALORES_IGNORADOS_PENALIDADE.has(oVL))
+                                encontrarIntersecao(pAtuais, pO).forEach(p => reptOutros.add(p));
+                        }
+                    });
+                    score += reptOutros.size * PONTOS_PENALIDADE_POR_PALAVRA_REPETIDA;
+                }
+            }
+        });
 
+        if (validCount === 0) score += PONTOS_PENALIDADE_SEM_ATRIBUTOS;
+        return score;
+    }
+
+    function _calcularSubpontuacaoTags(detail, usedFallback) {
+        let score = 0;
         if (!usedFallback && Array.isArray(detail.tags)) {
             if (detail.tags.includes('moderation_penalty')) score += PONTOS_PENALIDADE_MODERATION_PENALTY;
             if (detail.tags.includes('incomplete_technical_specs')) score -= 15;
@@ -2932,6 +2970,20 @@
                 }
             }
         }
+        return score;
+    }
+
+    function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = false) {
+        if (!detail || typeof detail !== 'object') return 0;
+        let score = 100;
+
+        score += _calcularSubpontuacaoTitulo(detail);
+        if (descriptionData?.plain_text?.trim() !== "") score += PONTOS_BONUS_DESCRICAO;
+
+        const pTit = getPalavrasUnicas(detail.title || "");
+        score += _calcularSubpontuacaoAtributos(detail, pTit);
+        score += _calcularSubpontuacaoTags(detail, usedFallback);
+
         return Math.max(0, Math.min(Math.round(score), 100));
     }
 
@@ -3114,7 +3166,7 @@
         } catch (e) {
             console.error('Scanner Error:', e);
             if (statusText) statusText.textContent = `Erro: ${e.message}`;
-            alert('Erro ao escanear: ' + e.message);
+            appendError(`Erro ao escanear: ${e.message}`);
         } finally {
             window.scannerState.isScanning = false;
             if (scanBtn) scanBtn.disabled = false;
@@ -3399,7 +3451,8 @@
         }
 
         if (itemsToExport.length === 0) {
-            alert("Nenhum item para exportar com o filtro atual.");
+            if (btn) btn.textContent = '⚠️ Nenhum item';
+            setTimeout(() => { if (btn) btn.textContent = '📊 Exportar Relatório'; }, 2000);
             return;
         }
 
@@ -3511,14 +3564,16 @@
 
         } catch (e) {
             console.error('Erro ao exportar CSV:', e);
-            alert('Erro ao gerar relatório: ' + e.message);
+            if (btn) btn.textContent = '❌ Erro ao exportar';
+            setTimeout(() => {
+                if (btn) {
+                    btn.textContent = '📊 Exportar Relatório';
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = '';
+                }
+            }, 3000);
             _csvExporting = false;
-            if (btn) {
-                btn.textContent = '📊 Exportar Relatório';
-                btn.disabled = false;
-                btn.style.opacity = '1';
-                btn.style.pointerEvents = '';
-            }
         }
     }
     window.exportToCSV = exportToCSV;
