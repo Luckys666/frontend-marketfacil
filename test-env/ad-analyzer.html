@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Local - Ad Analyzer</title>
+    <!-- Referência LOCAL do CSS para testes -->
+    <link rel="stylesheet" href="../style.css">
+
+    <!-- Estilos exclusivos para o ambiente de teste simulando a página do Bubble -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f7f9fa;
+            /* Simulando fundo da plataforma */
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        .bubble-container {
+            width: 100%;
+            max-width: 1000px;
+            background: transparent;
+            /* Container transparente por padrão */
+        }
+
+        .test-header {
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #eaeaea;
+            color: #333;
+        }
+
+        .test-header h1 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+        }
+
+        .test-header p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bubble-container">
+
+        <div class="test-header">
+            <h1>Ambiente de Teste Local</h1>
+            <p>Os componentes abaixo carregarão os arquivos JS e CSS locais. Faça as alterações lá antes de subir para o
+                JSdelivr.</p>
+        </div>
+
+        <!-- INÍCIO DO COMPONENTE: AD ANALYZER WIDGET -->
+        <div class="mf-dashboard-wrapper">
+            <div class="ml-analyzer-widget">
+                <div class="input-area">
+                    <input type="text" id="input-url" placeholder="Cole o link ou ID do anúncio MLB ou MLBU...">
+                    <button id="analyzeButton" onclick="handleAnalysisClick()">Analisar</button>
+                </div>
+
+                <div class="info-box">
+                    <p><strong>Observação:</strong> Esta função foi desenvolvida para analisar os dados dos anúncios e
+                        produtos da <b>conta vinculada ao aplicativo.</b></p>
+                    <p>A análise foca em anúncios comuns (MLB) e produtos de usuário (MLBU). Não se aplica a anúncios de
+                        Catálogo gerenciados pelo Mercado Livre.</p>
+                    <details style="margin-top: 10px; font-size: 0.9em;">
+                        <summary>Ver exemplos de links</summary>
+                        <p><strong>Anúncio Comum (MLB):</strong>
+                            https://produto.mercadolivre.com.br/MLB-5365306260-blusinha-feminina-com-decote-quadrado-canelada-basica-blusa-_JM
+                        </p>
+                        <p><strong>Produto de Usuário (MLBU):</strong>
+                            https://www.mercadolivre.com.br/kit-impressora-termica-knup--suporte--100etiqueta-adesiva/up/MLBU1164018775
+                        </p>
+                        <p><strong>Anúncio de Catálogo (Não Suportado):</strong>
+                            https://www.mercadolivre.com.br/impressora-de-etiquetas-adesivas-branco-knup-kp-im600/p/MLB39023499
+                        </p>
+                    </details>
+                </div>
+
+                <div id="resultsContainer">
+                    <p class="initial-text">Insira um link de anúncio e clique em 'Analisar' para ver os resultados.</p>
+                </div>
+
+                <div id="loadingIndicator" style="display: none;"><span>Analisando, por favor aguarde... ⏳</span></div>
+            </div>
+        </div>
+        <!-- FIM DO COMPONENTE -->
+
+    </div>
+
+    <!-- JS do Widget REFERÊNCIA LOCAL -->
+    <script src="../js/analyzer.js"></script>
+</body>
+
+</html>

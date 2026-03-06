@@ -19,27 +19,34 @@
 <div class="mf-dashboard-wrapper">
     <div class="ml-analyzer-widget">
         <div class="input-area">
-            <input type="text" id="input-url" placeholder="Cole o link ou ID do anúncio MLB ou MLBU...">
+            <input type="text" id="input-url" placeholder="Cole o link ou ID do anúncio MLB ou MLBU..."
+                onclick="this.select()">
             <button id="analyzeButton" onclick="handleAnalysisClick()">Analisar</button>
         </div>
 
-        <div class="info-box">
-            <p><strong>Observação:</strong> Esta função foi desenvolvida para analisar os dados dos anúncios e produtos
-                da <b>conta vinculada ao aplicativo.</b></p>
-            <p>A análise foca em anúncios comuns (MLB) e produtos de usuário (MLBU). Não se aplica a anúncios de
-                Catálogo gerenciados pelo Mercado Livre.</p>
-            <details style="margin-top: 10px; font-size: 0.9em;">
-                <summary>Ver exemplos de links</summary>
-                <p><strong>Anúncio Comum (MLB):</strong>
-                    https://produto.mercadolivre.com.br/MLB-5365306260-blusinha-feminina-com-decote-quadrado-canelada-basica-blusa-_JM
-                </p>
-                <p><strong>Produto de Usuário (MLBU):</strong>
-                    https://www.mercadolivre.com.br/kit-impressora-termica-knup--suporte--100etiqueta-adesiva/up/MLBU1164018775
-                </p>
-                <p><strong>Anúncio de Catálogo (Não Suportado):</strong>
-                    https://www.mercadolivre.com.br/impressora-de-etiquetas-adesivas-branco-knup-kp-im600/p/MLB39023499
-                </p>
-            </details>
+        <div class="info-box collapsible-info">
+            <div class="info-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <span class="icon">💡</span>
+                <p><strong>Dica:</strong> Analise anúncios <b>vinculados à conta</b> (MLB/MLBU). <i>Clique para ver os
+                        formatos aceitos.</i></p>
+                <span class="chevron">▼</span>
+            </div>
+            <div class="collapsible-content">
+                <p>A análise foca em anúncios comuns (MLB) e produtos de usuário (MLBU). Não se aplica a anúncios de
+                    Catálogo gerenciados pelo Mercado Livre.</p>
+                <details style="margin-top: 10px; font-size: 0.9em;">
+                    <summary>Ver exemplos de links</summary>
+                    <p><strong>Anúncio Comum (MLB):</strong>
+                        https://produto.mercadolivre.com.br/MLB-5365306260-blusinha-feminina-com-decote-quadrado-canelada-basica-blusa-_JM
+                    </p>
+                    <p><strong>Produto de Usuário (MLBU):</strong>
+                        https://www.mercadolivre.com.br/kit-impressora-termica-knup--suporte--100etiqueta-adesiva/up/MLBU1164018775
+                    </p>
+                    <p><strong>Anúncio de Catálogo (Não Suportado):</strong>
+                        https://www.mercadolivre.com.br/impressora-de-etiquetas-adesivas-branco-knup-kp-im600/p/MLB39023499
+                    </p>
+                </details>
+            </div>
         </div>
 
         <div id="resultsContainer">

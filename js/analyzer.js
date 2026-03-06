@@ -356,7 +356,7 @@ function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
         contentHtml += '</div>';
     }
 
-    div.innerHTML = `
+    el.innerHTML = `
          <div class="ana-card">
             <div class="ana-card-header">
                 <span class="ana-card-icon">🏷️</span>
@@ -911,36 +911,36 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
         if (detail && typeof detail === 'object') {
             console.log("Processando dados...");
-            const containerIdSuffix = append ? `-${detail.id}` : '';
             const containerHtml = `
                 <div class="item-analysis-container" id="analysis-container${containerIdSuffix}">
-                    <div class="analysis-grid">
-                        <!-- 1. Título (First) -->
-                        <div class="grid-full" id="tituloTexto${containerIdSuffix}"></div>
-
-                        <!-- 2. Ficha Técnica -->
-                        <div class="grid-full" id="fichaTecnicaTexto${containerIdSuffix}"></div>
-
-                        <!-- 3. Descrição e Garantia -->
-                        <div class="grid-half" id="descricaoIndicator${containerIdSuffix}"></div>
-                        <div class="grid-half" id="warrantyInfo${containerIdSuffix}"></div>
-
-                        <!-- 4. Visitas e Avaliações -->
-                        <div class="grid-half" id="visitsTrend${containerIdSuffix}"></div>
-                        <div class="grid-half" id="reviewsContainer${containerIdSuffix}"></div>
-
-                        <!-- 5. Tags -->
-                        <div class="grid-full" id="tagsTexto${containerIdSuffix}"></div>
-
-                        <!-- 6. Qualidade do Anúncio -->
-                        <div class="grid-full" id="qualityScore${containerIdSuffix}"></div>
-                         
-                         <!-- Performance escondido ou reposicionado se necessário, mas não pedido explicitamente na ordem nova exceto "Qualidade". Vou manter performanceTexto junto com Ficha Tecnica ou no final? O usuário pediu "qualidade do anúncio" (score) antes de Categoria. "Performance" é o detalhe da qualidade. Vou colocar junto com o Score em visualização full ou abaixo dele. -->
-                        <div class="grid-full" id="performanceTexto${containerIdSuffix}"></div>
-
-                        <!-- 7. Campos da Categoria (Last) -->
-                        <div class="grid-full" id="categoryAttributes${containerIdSuffix}"></div>
+                    
+                    <!-- HERO SECTION -->
+                    <div class="dashboard-hero">
+                        <div id="tituloTexto${containerIdSuffix}" class="hero-title-area"></div>
+                        <div id="qualityScore${containerIdSuffix}" class="hero-score-area"></div>
                     </div>
+
+                    <!-- METRICS BAR -->
+                    <div class="dashboard-metrics-bar">
+                        <div id="visitsTrend${containerIdSuffix}" class="metric-card"></div>
+                        <div id="reviewsContainer${containerIdSuffix}" class="metric-card"></div>
+                        <div id="warrantyInfo${containerIdSuffix}" class="metric-card"></div>
+                    </div>
+
+                    <!-- DETAILS GRID -->
+                    <div class="dashboard-details-grid">
+                        <div class="col-main">
+                            <div id="descricaoIndicator${containerIdSuffix}"></div>
+                            <div id="tagsTexto${containerIdSuffix}"></div>
+                            <!-- Future-proof space for more main-column content -->
+                        </div>
+                        <div class="col-side">
+                            <div id="performanceTexto${containerIdSuffix}"></div>
+                            <div id="fichaTecnicaTexto${containerIdSuffix}"></div>
+                            <div id="categoryAttributes${containerIdSuffix}"></div>
+                        </div>
+                    </div>
+
                 </div>
             `;
 
