@@ -42,8 +42,8 @@ const API_FETCH_ITEM_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-item`; // Rota unif
 const API_USER_PRODUCTS_ENDPOINT = `${BASE_URL_PROXY}/api/user-products`; // ROTA PARA MLBU
 const API_ATTRIBUTES_ENDPOINT = `${BASE_URL_PROXY}/api/attributes`;
 const API_PERFORMANCE_ENDPOINT = `${BASE_URL_PROXY}/api/performance`;
-const API_VISITS_ENDPOINT = `${BASE_URL_PROXY}/api/visits`; // Nova rota para visitas
-const API_REVIEWS_ENDPOINT = `${BASE_URL_PROXY}/api/reviews`; // Nova rota para reviews
+const API_VISITS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-visits`; // Rota no backend para visitas
+const API_REVIEWS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-reviews`; // Rota no backend para reviews
 
 function deveIgnorarAtributoPorNome(nome) {
     if (!nome) return false;
@@ -56,6 +56,33 @@ function normalizeMlbId(input) {
     const regex = /(MLB|MLBU)-?(\d+)/i;
     const match = input.match(regex);
     return match ? match[1].toUpperCase() + match[2] : null;
+}
+
+const API_ANALYZE_IMAGE_ENDPOINT = `${BASE_URL_PROXY}/api/analyze-image`;
+
+window.ignoredAttributesGlobally = new Set();
+window.currentAnalysisState = null;
+
+window.toggleIgnoreAttribute = function (attrId) {
+    if (window.ignoredAttributesGlobally.has(attrId)) {
+        window.ignoredAttributesGlobally.delete(attrId);
+    } else {
+        window.ignoredAttributesGlobally.add(attrId);
+    }
+    reRenderAnalysisView();
+};
+
+function reRenderAnalysisView() {
+    if (!window.currentAnalysisState) return;
+    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData } = window.currentAnalysisState;
+
+    // Update dependent components
+    processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
+    exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
+
+    // Re-render score WITH analysisData so improvements panel persists
+    const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData };
+    exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback), usedFallback, `qualityScore${containerIdSuffix}`, analysisData);
 }
 
 function getPalavrasUnicas(texto) {
@@ -141,15 +168,14 @@ function exibirDescricaoIndicator(descriptionData, containerId = "descricaoIndic
     const el = document.getElementById(containerId);
     if (!el) return;
     const hasDesc = descriptionData?.plain_text?.trim() !== "";
-    const badgeClass = hasDesc ? 'success' : 'muted';
-    const text = hasDesc ? 'Descrição Detectada' : 'Sem Descrição em Texto';
+    const badgeClass = hasDesc ? 'success' : 'error';
+    const icon = hasDesc ? '✅' : '❌';
+    const text = hasDesc ? 'Detectada' : 'Sem Texto';
 
     el.innerHTML = `
-        <div class="ana-card" style="padding: 16px;">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-weight:600; font-size:1rem;">Descrição em Texto</span>
-                <span class="status-badge ${badgeClass}">${text}</span>
-            </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;">
+            <span style="font-weight:600; font-size:0.9rem;"><span style="margin-right:6px;">📝</span> Descrição</span>
+            <span class="status-badge ${badgeClass}">${icon} ${text}</span>
         </div>
     `;
 }
@@ -215,21 +241,26 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
         }
 
         if (issues.length > 0) {
-            problemAttrs.push({ name: nome, value: valor, issues });
+            problemAttrs.push({ id: attr.id, name: nome, value: valor, issues });
         } else {
-            okAttrs.push({ name: nome, value: valor });
+            okAttrs.push({ id: attr.id, name: nome, value: valor });
         }
     });
 
     const renderList = (list, isProblem) => {
         if (list.length === 0) return '';
         return list.map(item => `
-            <div class="attribute-item ${isProblem ? 'problem' : ''}">
-                <div>
+            <div class="attribute-item ${isProblem ? 'problem' : ''}" style="min-width:0; ${window.ignoredAttributesGlobally.has(item.id) ? 'opacity: 0.5; filter: grayscale(1);' : ''}">
+                <div style="flex-grow: 1; min-width:0; overflow:hidden;">
                     <span class="text-label" style="margin-bottom:2px;">${item.name}</span>
-                    <span class="text-value">${item.value}</span>
+                    <span class="text-value" style="word-break:break-word; ${window.ignoredAttributesGlobally.has(item.id) ? 'text-decoration: line-through;' : ''}">${item.value}</span>
                 </div>
-                ${isProblem ? `<div class="status-badge error" style="font-size:0.75rem;">${item.issues.join(', ')}</div>` : '<span style="color:#10b981; font-weight:bold;">✔ OK</span>'}
+                <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                    ${isProblem && !window.ignoredAttributesGlobally.has(item.id) ? `<div class="status-badge error" style="font-size:0.7rem; flex-shrink:0; white-space:nowrap;">${item.issues.join(', ')}</div>` : (!window.ignoredAttributesGlobally.has(item.id) ? '<span style="color:#10b981; font-weight:bold; flex-shrink:0;">✔ OK</span>' : '<span style="color:gray; font-size:0.8rem; flex-shrink:0;">Ignorado</span>')}
+                    <button onclick="window.toggleIgnoreAttribute('${item.id}')" title="${window.ignoredAttributesGlobally.has(item.id) ? 'Incluir na pontuação' : 'Desconsiderar da pontuação'}" class="btn-ignore-clean ${window.ignoredAttributesGlobally.has(item.id) ? 'ignored' : ''}">
+                        ${window.ignoredAttributesGlobally.has(item.id) ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>` : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`}
+                    </button>
+                </div>
             </div>
         `).join('');
     };
@@ -239,23 +270,19 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
             <div class="ana-card-header">
                 <span class="ana-card-icon">📋</span>
                 <span class="ana-card-title">Ficha Técnica</span>
+                <span class="text-small" style="margin-left:auto; color:var(--ana-text-muted);">${problemAttrs.length + okAttrs.length} atributos</span>
             </div>
-            
-            ${problemAttrs.length > 0 ? `
-                <div class="specs-group">
-                    <div class="specs-group-title problem">⚠️ Atenção Necessária (${problemAttrs.length})</div>
-                    ${renderList(problemAttrs, true)}
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <div>
+                    <div class="specs-group-title problem" style="margin-bottom:8px;">⚠️ Atenção (${problemAttrs.length})</div>
+                    ${problemAttrs.length > 0 ? renderList(problemAttrs, true) : '<p class="text-small" style="color:#10b981;">Nenhum problema encontrado 🎉</p>'}
                 </div>
-            ` : ''}
-
-            ${okAttrs.length > 0 ? `
-                <div class="specs-group">
-                     <div class="specs-group-title valid">✅ Tudo Certo (${okAttrs.length})</div>
-                    ${renderList(okAttrs, false)}
+                <div>
+                    <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Tudo Certo (${okAttrs.length})</div>
+                    ${okAttrs.length > 0 ? renderList(okAttrs, false) : '<p class="text-small">Nenhum atributo validado.</p>'}
                 </div>
-            ` : ''}
-            
-             ${usedFallback ? '<p class="text-small" style="margin-top:10px;">ℹ️ Dados via Scraper (Parcial)</p>' : ''}
+            </div>
+            ${usedFallback ? '<p class="text-small" style="margin-top:10px;">ℹ️ Dados via Scraper (Parcial)</p>' : ''}
         </div>
     `;
 }
@@ -282,30 +309,58 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             return filledA === filledB ? 0 : (filledA ? 1 : -1);
         });
 
-        contentHtml = '<div style="display:flex; flex-direction:column; gap:8px;">';
-
+        const missingAttrs = [];
+        const filledAttrs = [];
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
             const isFilled = adValue && adValue.trim() !== '';
-
-            contentHtml += `
-                 <div class="attribute-item" style="${!isFilled ? 'background:#fff1f2; border-color:#fda4af;' : ''}">
-                    <div>
-                        <span class="text-label" style="margin-bottom:2px;">${catAttr.name}</span>
-                        ${isFilled ? `<span class="text-value">${adValue}</span>` : '<span class="text-small" style="color:#ef4444;">Não preenchido</span>'}
-                    </div>
-                    ${isFilled ? '<span style="color:#10b981;">✔</span>' : '<span class="status-badge error">Faltando</span>'}
-                </div>
-            `;
+            if (isFilled) filledAttrs.push({ catAttr, adValue });
+            else missingAttrs.push({ catAttr, adValue });
         });
-        contentHtml += '</div>';
+
+        const renderCatItem = (catAttr, adValue, isFilled) => `
+             <div class="attribute-item" style="min-width:0; ${!isFilled ? 'background:#fff1f2; border-color:#fda4af;' : 'background:#f0fdf4; border-color:#bbf7d0;'} ${window.ignoredAttributesGlobally.has(catAttr.id) ? 'opacity: 0.5; filter: grayscale(1);' : ''}">
+                <div style="flex-grow: 1; min-width:0; overflow:hidden;">
+                    <span class="text-label" style="margin-bottom:2px;">${catAttr.name}</span>
+                    ${isFilled ? `<span class="text-value" style="word-break:break-word; ${window.ignoredAttributesGlobally.has(catAttr.id) ? 'text-decoration: line-through;' : ''}">${adValue}</span>` : '<span class="text-small" style="color:#ef4444;">Não preenchido</span>'}
+                </div>
+                <div style="display:flex; align-items:center; gap: 8px; flex-shrink:0;">
+                    ${isFilled && !window.ignoredAttributesGlobally.has(catAttr.id) ? '<span style="color:#10b981; font-weight:bold;">✔</span>' : (!window.ignoredAttributesGlobally.has(catAttr.id) ? '<span class="status-badge error" style="flex-shrink:0;">Faltando</span>' : '<span style="color:gray; font-size:0.8rem;">Ignorado</span>')}
+                    <button onclick="window.toggleIgnoreAttribute('${catAttr.id}')" title="${window.ignoredAttributesGlobally.has(catAttr.id) ? 'Incluir na pontuação' : 'Desconsiderar da pontuação'}" class="btn-ignore-clean ${window.ignoredAttributesGlobally.has(catAttr.id) ? 'ignored' : ''}">
+                        ${window.ignoredAttributesGlobally.has(catAttr.id) ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>` : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`}
+                    </button>
+                </div>
+            </div>`;
+
+        // Build 2-column layout
+        const missingHtml = missingAttrs.length > 0
+            ? missingAttrs.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, false)).join('')
+            : '<p class="text-small" style="color:#10b981;">Todos preenchidos 🎉</p>';
+        const filledHtml = filledAttrs.length > 0
+            ? filledAttrs.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, true)).join('')
+            : '<p class="text-small">Nenhum preenchido.</p>';
+
+        contentHtml = `
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <div>
+                    <div class="specs-group-title problem" style="margin-bottom:8px;">⚠️ Faltando (${missingAttrs.length})</div>
+                    ${missingHtml}
+                </div>
+                <div>
+                    <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Preenchidos (${filledAttrs.length})</div>
+                    ${filledHtml}
+                </div>
+            </div>`;
     }
+
+    const totalItems = Array.isArray(categoryAttributes) ? categoryAttributes.filter(a => a.value_type === 'string' && !a.tags?.read_only).length : 0;
 
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.25s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📂</span>
                 <span class="ana-card-title">Campos da Categoria</span>
+                <span class="text-small" style="margin-left:auto; color:var(--ana-text-muted);">${totalItems} campos</span>
             </div>
             ${contentHtml}
         </div>
@@ -317,14 +372,13 @@ function exibirInformacaoGarantia(detail, containerId = "warrantyInfo") {
     if (!el) return;
     const temGarantia = detail?.warranty;
     const badgeClass = temGarantia ? 'success' : 'error';
-    const text = temGarantia ? 'Garantia Informada' : 'Sem Garantia';
+    const icon = temGarantia ? '✅' : '❌';
+    const text = temGarantia ? 'Informada' : 'Ausente';
 
     el.innerHTML = `
-        <div class="ana-card" style="padding: 16px;">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-weight:600; font-size:1rem;">Garantia</span>
-                <span class="status-badge ${badgeClass}">${text}</span>
-            </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;">
+            <span style="font-weight:600; font-size:0.9rem;"><span style="margin-right:6px;">🛡️</span> Garantia</span>
+            <span class="status-badge ${badgeClass}">${icon} ${text}</span>
         </div>
     `;
 }
@@ -333,36 +387,51 @@ function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
     const el = document.getElementById(containerId);
     if (!el) return;
 
-    let contentHtml = '';
     if (usedFallback) {
-        contentHtml = '<p class="text-small">Análise de tags indisponível (Scraper).</p>';
-    } else if (!Array.isArray(tags) || tags.length === 0) {
-        contentHtml = '<p class="text-small">Nenhuma tag ativa encontrada.</p>';
-    } else {
-        contentHtml = '<div style="display:flex; flex-wrap:wrap; gap:8px;">';
-        tags.forEach(tag => {
-            const isAlertTag = TAGS_NEGATIVAS.has(tag);
-            const isGoodTag = typeof tag === 'string' && (tag.includes('good_quality') || tag === 'brand_verified');
-
-            let badgeClass = 'muted';
-            if (isAlertTag) badgeClass = 'error';
-            else if (isGoodTag) badgeClass = 'success';
-
-            const significado = tagSignificados[tag] || null;
-            const titleAttr = significado ? `title="${significado}"` : '';
-
-            contentHtml += `<span class="status-badge ${badgeClass}" ${titleAttr} style="cursor:help;">${tag}</span>`;
-        });
-        contentHtml += '</div>';
+        el.innerHTML = '<div class="ana-card"><p class="text-small">Análise de tags indisponível (Scraper).</p></div>';
+        return;
     }
+    if (!Array.isArray(tags) || tags.length === 0) {
+        el.innerHTML = '<div class="ana-card"><p class="text-small">Nenhuma tag ativa encontrada.</p></div>';
+        return;
+    }
+
+    const goodTags = [];
+    const alertTags = [];
+    const neutralTags = [];
+
+    tags.forEach(tag => {
+        const isAlertTag = TAGS_NEGATIVAS.has(tag);
+        const isGoodTag = typeof tag === 'string' && (tag.toLowerCase().includes('good_quality') || tag === 'brand_verified');
+        const significado = tagSignificados[tag] || null;
+        const titleAttr = significado ? `title="${significado}"` : '';
+        const badge = `<span class="status-badge ${isAlertTag ? 'error' : (isGoodTag ? 'success' : 'muted')}" ${titleAttr} style="cursor:help; font-size:0.72rem;">${tag}</span>`;
+        if (isAlertTag) alertTags.push(badge);
+        else if (isGoodTag) goodTags.push(badge);
+        else neutralTags.push(badge);
+    });
+
+    const renderCol = (title, icon, color, items) => {
+        if (items.length === 0) return `<div><div style="font-size:0.78rem; font-weight:700; color:${color}; margin-bottom:8px;">${icon} ${title} (0)</div><div style="padding:12px; text-align:center; background:#f8fafc; border-radius:8px; border:1px dashed #e2e8f0;"><span class="text-small" style="color:#10b981;">✅ Tudo limpo!</span></div></div>`;
+        return `
+            <div>
+                <div style="font-size:0.78rem; font-weight:700; color:${color}; margin-bottom:8px;">${icon} ${title} (${items.length})</div>
+                <div style="display:flex; flex-wrap:wrap; gap:5px;">${items.join('')}</div>
+            </div>`;
+    };
 
     el.innerHTML = `
          <div class="ana-card">
-            <div class="ana-card-header">
+            <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">🏷️</span>
                 <span class="ana-card-title">Tags Ativas</span>
+                <span class="text-small" style="margin-left:auto; color:var(--ana-text-muted);">${tags.length} tags</span>
             </div>
-            ${contentHtml}
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px;">
+                ${renderCol('Boas Práticas', '✅', '#10b981', goodTags)}
+                ${renderCol('Atenção', '⚠️', '#ef4444', alertTags)}
+                ${renderCol('Neutras', 'ℹ️', '#94a3b8', neutralTags)}
+            </div>
         </div>
     `;
 }
@@ -397,85 +466,59 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
         return;
     }
 
-    let bucketsHtml = '';
-    if (Array.isArray(performanceData.buckets)) {
-        performanceData.buckets.forEach(bucket => {
-            if (!bucket || typeof bucket !== 'object') return;
+    const buckets = Array.isArray(performanceData.buckets) ? performanceData.buckets.filter(b => b && typeof b === 'object') : [];
 
-            const bScore = bucket.score !== undefined ? Math.round(bucket.score) : 0;
-            const bLevel = bScore >= 75 ? 'good' : (bScore < 50 ? 'bad' : 'neutral');
-            const color = bLevel === 'good' ? '#10b981' : (bLevel === 'bad' ? '#ef4444' : '#f59e0b');
-
-            let varsHtml = '';
-
-            // Collect variables
-            const vars = Array.isArray(bucket.variables) ? bucket.variables : [];
-            vars.forEach(v => {
-                const vScore = v.score !== undefined ? Math.round(v.score) : 0;
-                const vStatus = v.status || 'UNKNOWN';
-                const isError = vStatus === 'ERROR' || vScore < 50;
-                const vColor = vStatus === 'COMPLETED' || vScore >= 75 ? '#10b981' : (isError ? '#ef4444' : '#f59e0b');
-
-                let rulesHtml = '';
-                if (vStatus !== 'COMPLETED' && Array.isArray(v.rules)) {
-                    v.rules.forEach(r => {
-                        if (r.wordings?.title) {
-                            rulesHtml += `<div class="text-small" style="margin-top:5px; padding-left:10px; border-left:2px solid ${vColor}; color:#64748b;">💡 ${r.wordings.title}</div>`;
-                        }
-                    });
-                }
-
-                const statusMap = { 'COMPLETED': 'Concluído', 'PENDING': 'Pendente', 'ERROR': 'Erro' };
-                const translatedStatus = statusMap[vStatus] || vStatus;
-
-                varsHtml += `
-                    <div style="margin-bottom:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-size:0.9rem; color:${vColor}; font-weight:600;">${v.title || v.key}</span>
-                            <span class="text-small" style="background:${vColor}20; color:${vColor}; padding:2px 8px; border-radius:10px;">${translatedStatus}</span>
-                        </div>
-                        ${rulesHtml}
-                    </div>
-                `;
-            });
-
-            bucketsHtml += `
-                <div style="margin-bottom:20px; border:1px solid #e2e8f0; border-radius:8px; padding:15px; border-left:4px solid ${color}; background:#fff;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px dashed #e2e8f0; padding-bottom:10px;">
-                        <span style="font-weight:700; color:${color};">${bucket.title || bucket.key}</span>
-                        <span style="font-weight:700; font-size:1.1rem; color:${color};">${bScore}%</span>
-                    </div>
-                    ${varsHtml}
-                </div>
-            `;
+    const renderBucket = (bucket) => {
+        const bScore = bucket.score !== undefined ? Math.round(bucket.score) : 0;
+        const bLevel = bScore >= 75 ? 'good' : (bScore < 50 ? 'bad' : 'neutral');
+        const color = bLevel === 'good' ? '#10b981' : (bLevel === 'bad' ? '#ef4444' : '#f59e0b');
+        const vars = Array.isArray(bucket.variables) ? bucket.variables : [];
+        let varsHtml = '';
+        vars.forEach(v => {
+            const vStatus = v.status || 'UNKNOWN';
+            const vColor = vStatus === 'COMPLETED' ? '#10b981' : (vStatus === 'ERROR' ? '#ef4444' : '#f59e0b');
+            const statusMap = { 'COMPLETED': 'Concluído', 'PENDING': 'Pendente', 'ERROR': 'Erro' };
+            let rulesHtml = '';
+            if (vStatus !== 'COMPLETED' && Array.isArray(v.rules)) {
+                v.rules.forEach(r => { if (r.wordings?.title) rulesHtml += `<div class="text-small" style="margin-top:4px; padding-left:8px; border-left:2px solid ${vColor}; color:#64748b;">💡 ${r.wordings.title}</div>`; });
+            }
+            varsHtml += `<div style="margin-bottom:10px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.82rem; color:${vColor}; font-weight:600;">${v.title || v.key}</span><span class="text-small" style="background:${vColor}20; color:${vColor}; padding:2px 6px; border-radius:8px; font-size:0.7rem;">${statusMap[vStatus] || vStatus}</span></div>${rulesHtml}</div>`;
         });
-    }
+        return `
+            <div style="border:1px solid #e2e8f0; border-radius:10px; padding:14px; border-left:4px solid ${color}; background:#fff; flex:1; min-width:0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px dashed #e2e8f0; padding-bottom:8px;">
+                    <span style="font-weight:700; color:${color}; font-size:0.88rem;">${bucket.title || bucket.key}</span>
+                    <span style="font-weight:700; font-size:1rem; color:${color};">${bScore}%</span>
+                </div>
+                ${varsHtml}
+            </div>`;
+    };
+
+    const bucketsHtml = buckets.length > 0
+        ? `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">${buckets.map(renderBucket).join('')}</div>`
+        : '<p class="text-small">Sem dados de diagnóstico.</p>';
 
     perfEl.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.3s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">⚡</span>
                 <span class="ana-card-title">Diagnóstico</span>
+                <span class="text-small" style="margin-left:auto; color:var(--ana-text-muted);">
+                    Nível: ${performanceData.level_wording || 'N/A'}
+                </span>
             </div>
-            <div>
-                 <p class="text-small" style="margin-bottom:15px;">
-                    <strong>Nível:</strong> ${performanceData.level_wording || 'N/A'} 
-                    ${performanceData.mode ? `<span class="status-badge muted">${performanceData.mode}</span>` : ''}
-                 </p>
-                 ${bucketsHtml}
-            </div>
+            ${bucketsHtml}
         </div>
     `;
 }
 
-function exibirPontuacao(score, usedFallback = false, containerId = "qualityScore") {
+function exibirPontuacao(score, usedFallback = false, containerId = "qualityScore", analysisData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
 
     let level = 'bad';
     if (score >= 75) level = 'good'; else if (score >= 50) level = 'neutral';
 
-    // SVG Gradient Definition (one-time injection if needed, but here inline is safer)
     const defs = `
         <defs>
             <linearGradient id="gradientGood" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -484,48 +527,135 @@ function exibirPontuacao(score, usedFallback = false, containerId = "qualityScor
             </linearGradient>
         </defs>
     `;
-
-    // Calculate Dash Array for SVG stroke
-    // RADIUS = 18. Circle length = 2 * PI * 18 approx 113.
-    const radius = 15.9155;
-    const circumference = 100; // Normalized to 100 for easy calc
     const strokeDasharray = `${score}, 100`;
-
     const celebration = score === 100 ? '<div class="celebration-confetti">🎉</div>' : '';
 
-    el.innerHTML = `
-        <div class="ana-card" style="align-items: center; text-align: center; justify-content: center; animation-delay: 0s;">
-            <div class="ana-card-header" style="width:100%; justify-content:center; border-bottom:none;">
-                <span class="ana-card-title">Qualidade do Anúncio</span>
-            </div>
-            
-            <div class="score-container">
-                ${celebration}
-                 <div class="score-circle-outer">
-                    <svg viewBox="0 0 36 36" class="circular-chart">
-                        ${defs}
-                        <path class="circle-bg"
-                            d="M18 2.0845
-                                a 15.9155 15.9155 0 0 1 0 31.831
-                                a 15.9155 15.9155 0 0 1 0 -31.831"
-                        />
-                        <path class="circle ${level}"
-                            stroke-dasharray="0, 100"
-                            d="M18 2.0845
-                                a 15.9155 15.9155 0 0 1 0 31.831
-                                a 15.9155 15.9155 0 0 1 0 -31.831"
-                        />
-                    </svg>
-                    <span class="score-number">${score}</span>
-                 </div>
-            </div>
+    let xpGainText = '';
+    if (score === 100) xpGainText = '🏆 Classe S: Anúncio Impecável!';
+    else if (score >= 75) xpGainText = '⭐ Classe A: Quase Perfeito!';
+    else if (score >= 50) xpGainText = '📈 Classe B: Tem Potencial';
+    else xpGainText = '⛏️ Classe C: Precisa de Trabalho';
 
-            <div style="margin-top: 10px;">
-                <span class="status-badge ${level === 'good' ? 'success' : (level === 'neutral' ? 'muted' : 'error')}">
-                    ${level === 'good' ? 'Excelente' : (level === 'neutral' ? 'Regular' : 'Precisa Melhorar')}
-                </span>
+    // Build improvement checklist from our analysis
+    let improvementsHtml = '';
+    if (analysisData) {
+        const checks = [];
+        const d = analysisData;
+        // Title check
+        const titleLen = (d.title || '').length;
+        if (titleLen < 40) checks.push({ ok: false, text: `Título muito curto (${titleLen} chars)` });
+        else if (titleLen < 50) checks.push({ ok: false, text: `Título poderia ser maior (${titleLen}/50+)` });
+        else checks.push({ ok: true, text: 'Título otimizado' });
+        // Description
+        const hasDesc = !!(d.descriptionData?.plain_text?.trim());
+        checks.push({ ok: hasDesc, text: hasDesc ? 'Descrição presente' : 'Adicionar descrição em texto' });
+        // Warranty
+        const hasWarranty = !!d.detail?.warranty;
+        checks.push({ ok: hasWarranty, text: hasWarranty ? 'Garantia informada' : 'Informar garantia' });
+        // Tags
+        const hasBadTags = Array.isArray(d.detail?.tags) && d.detail.tags.some(t => TAGS_NEGATIVAS.has(t));
+        checks.push({ ok: !hasBadTags, text: hasBadTags ? 'Tags negativas detectadas' : 'Sem tags negativas' });
+        // Attributes (exclude ignored ones)
+        const attrs = d.detail?.attributes || [];
+        const stringAttrs = attrs.filter(a => a?.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id) && !window.ignoredAttributesGlobally.has(a.id));
+        const filledCount = stringAttrs.length;
+        if (filledCount === 0) checks.push({ ok: false, text: 'Ficha técnica vazia' });
+        else if (filledCount < 3) checks.push({ ok: false, text: `Poucos atributos (${filledCount})` });
+        else checks.push({ ok: true, text: `${filledCount} atributos preenchidos` });
+        // Category fields
+        if (d.categoryAttributes && Array.isArray(d.categoryAttributes)) {
+            const catString = d.categoryAttributes.filter(a => a.value_type === 'string' && !a.tags?.read_only);
+            const catMap = new Map();
+            (d.detail?.attributes || []).forEach(a => { if (a?.value_name) catMap.set(a.id, a.value_name); });
+            const missing = catString.filter(c => {
+                if (window.ignoredAttributesGlobally.has(c.id)) return false;
+                const v = catMap.get(c.id); return !v || v.trim() === '';
+            });
+            if (missing.length > 0) checks.push({ ok: false, text: `${missing.length} campos da categoria faltando` });
+            else checks.push({ ok: true, text: 'Categoria completa' });
+        }
+        // Visit trend
+        if (d.visitsData && d.visitsData.results && !d.visitsData.error) {
+            const results = d.visitsData.results || [];
+            results.sort((a, b) => new Date(a.date) - new Date(b.date));
+            const len = results.length;
+            const sumV = arr => arr.reduce((a, c) => a + (c.total || 0), 0);
+            const total30 = sumV(results);
+            const total7 = sumV(results.slice(Math.max(0, len - 7)));
+            const totalPrev7 = sumV(results.slice(Math.max(0, len - 14), Math.max(0, len - 7)));
+
+            if (total30 === 0) {
+                checks.push({ ok: false, text: 'Sem visitas nos últimos 30 dias' });
+            } else {
+                let pct = 0;
+                if (totalPrev7 === 0) pct = total7 > 0 ? 100 : 0;
+                else pct = ((total7 - totalPrev7) / totalPrev7) * 100;
+
+                if (pct < -5) checks.push({ ok: false, text: `Visitas em queda (${pct.toFixed(0)}%)` });
+                else if (pct > 5) checks.push({ ok: true, text: `Visitas subindo (+${pct.toFixed(0)}%)` });
+                else checks.push({ ok: true, text: `Visitas estáveis (${total30} no mês)` });
+            }
+        }
+        // Reviews
+        if (d.reviewsData && d.reviewsData.paging && d.reviewsData.paging.total > 0) {
+            const avg = d.reviewsData.rating_average || 0;
+            if (avg >= 4) checks.push({ ok: true, text: `Avaliações: ${avg.toFixed(1)} estrelas` });
+            else checks.push({ ok: false, text: `Avaliações abaixo de 4 (${avg.toFixed(1)}⭐)` });
+        } else {
+            checks.push({ ok: false, text: 'Sem avaliações ainda' });
+        }
+
+        const failedChecks = checks.filter(c => !c.ok);
+        const passedChecks = checks.filter(c => c.ok);
+
+        improvementsHtml = `
+            <div class="ana-card" style="animation-delay: 0.1s;">
+                <div class="ana-card-header" style="border-bottom:none;">
+                    <span class="ana-card-icon">📝</span>
+                    <span class="ana-card-title">O que Melhorar</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    ${failedChecks.map(c => `<div style="display:flex; align-items:center; gap:8px; padding:6px 10px; background:#fff1f2; border-radius:8px; border-left:3px solid #ef4444;"><span style="color:#ef4444; font-weight:bold; flex-shrink:0;">✖</span><span class="text-small" style="color:#991b1b;">${c.text}</span></div>`).join('')}
+                    ${passedChecks.map(c => `<div style="display:flex; align-items:center; gap:8px; padding:5px 10px; background:#f0fdf4; border-radius:8px; border-left:3px solid #10b981;"><span style="color:#10b981; font-weight:bold; flex-shrink:0;">✔</span><span class="text-small" style="color:#166534;">${c.text}</span></div>`).join('')}
+                </div>
             </div>
-            ${usedFallback ? '<p class="text-small" style="margin-top:10px;">⚠ Estimativa (Dados limitados)</p>' : ''}
+        `;
+    }
+
+    el.innerHTML = `
+        <div style="display:grid; grid-template-columns: 1fr 2fr; gap:16px; align-items:start;">
+            <div class="ana-card" style="align-items: center; text-align: center; justify-content: center; animation-delay: 0s; min-width:180px;">
+                <div class="ana-card-header" style="width:100%; justify-content:center; border-bottom:none;">
+                    <span class="ana-card-title">Qualidade</span>
+                </div>
+                <div class="score-container">
+                    ${celebration}
+                     <div class="score-circle-outer">
+                        <svg viewBox="0 0 36 36" class="circular-chart">
+                            ${defs}
+                            <path class="circle-bg"
+                                d="M18 2.0845
+                                    a 15.9155 15.9155 0 0 1 0 31.831
+                                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                            />
+                            <path class="circle ${level}"
+                                stroke-dasharray="0, 100"
+                                d="M18 2.0845
+                                    a 15.9155 15.9155 0 0 1 0 31.831
+                                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                            />
+                        </svg>
+                        <span class="score-number">${score}</span>
+                     </div>
+                </div>
+                <div style="margin-top: 8px;">
+                    <span class="status-badge ${level === 'good' ? 'success' : (level === 'neutral' ? 'muted' : 'error')}" style="font-size:0.72rem;">
+                        ${xpGainText}
+                    </span>
+                </div>
+                ${usedFallback ? '<p class="text-small" style="margin-top:8px;">⚠ Estimativa</p>' : ''}
+            </div>
+            ${improvementsHtml}
         </div>
     `;
 
@@ -646,10 +776,11 @@ function transformMlbuData(mlbuData) {
 
     return {
         id: mlbuData.id,
-        title: mlbuData.name,
+        title: mlbuData.short_name || (mlbuData.name ? mlbuData.name.split(' - ')[0].trim() : ''),
         category_id: mlbuData.domain_id.replace('MLB-', ''),
         seller_id: mlbuData.user_id,
         attributes: transformedAttributes,
+        variations: mlbuData.variations || [],
         tags: mlbuData.tags || [],
         warranty: null,
         pictures: mlbuData.pictures || []
@@ -666,12 +797,151 @@ async function fetchVisits(itemId, accessToken) {
             console.warn('Falha no Core, tentando rota direta...', e);
         }
     }
-    // Busca visitas dos últimos 30 dias para cálculo de tendência via rota direta
-    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&days=30`, accessToken);
+    // Busca visitas dos últimos 30 dias para cálculo de tendência via rota direta usando last=30 e unit=day (padrão do backend)
+    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=30&unit=day`, accessToken);
 }
 
 async function fetchReviews(itemId, accessToken) {
-    return fetchApiData(`${API_REVIEWS_ENDPOINT}/${itemId}`, accessToken);
+    return fetchApiData(`${API_REVIEWS_ENDPOINT}?item_id=${itemId}`, accessToken);
+}
+
+function renderAiImageAnalyzer(detail, containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    let picturesHtml = '';
+
+    if (detail.variations && detail.variations.length > 0) {
+        // Group variations by each attribute name
+        const attrNames = new Set();
+        detail.variations.forEach(v => {
+            if (v.attribute_combinations) v.attribute_combinations.forEach(a => attrNames.add(a.name));
+        });
+        const groupOptions = Array.from(attrNames);
+        groupOptions.push('Todas'); // always have All option
+
+        // Build variation cards grouped
+        const buildVariationCards = (groupName) => {
+            let groups = {};
+            if (groupName === 'Todas') {
+                detail.variations.forEach((v, i) => {
+                    const label = v.attribute_combinations ? v.attribute_combinations.map(a => a.value_name).join(' / ') : `Variação ${i + 1}`;
+                    if (!groups[label]) groups[label] = { pics: [], variId: v.id };
+                    const picIds = v.picture_ids || [];
+                    const pics = detail.pictures.filter(p => picIds.includes(p.id));
+                    groups[label].pics.push(...pics);
+                });
+            } else {
+                detail.variations.forEach((v, i) => {
+                    const attr = v.attribute_combinations?.find(a => a.name === groupName);
+                    const key = attr ? attr.value_name : 'Outros';
+                    if (!groups[key]) groups[key] = { pics: [], varIds: [] };
+                    groups[key].varIds.push(v.id);
+                    const picIds = v.picture_ids || [];
+                    const uniquePics = detail.pictures.filter(p => picIds.includes(p.id) && !groups[key].pics.some(ep => ep.id === p.id));
+                    groups[key].pics.push(...uniquePics);
+                });
+            }
+            let html = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">';
+            Object.entries(groups).forEach(([label, data]) => {
+                if (data.pics.length === 0) return;
+                const imgsHtml = data.pics.map(p => `<img src="${p.secure_url}" style="width:40px; height:40px; object-fit:cover; border-radius:5px; border:1px solid #e2e8f0;" alt="Img">`).join('');
+                const varId = data.variId || (data.varIds ? data.varIds[0] : 'geral');
+                html += `
+                <div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#f8fafc; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:0.78rem; font-weight:700; color:var(--ana-text-main);">${label}</span>
+                        <span style="font-size:0.68rem; color:var(--ana-text-muted);">${data.pics.length} fotos</span>
+                    </div>
+                    <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">${imgsHtml}</div>
+                    <button class="nerd-button" style="padding:5px 8px; font-size:0.72rem; width:100%; justify-content:center;" onclick="iniciarAnaliseIA('${detail.id}', '${varId}')">
+                        🪄 Analisar
+                    </button>
+                    <div id="aiImageResult_${varId}" style="margin-top:6px; display:none;"></div>
+                </div>`;
+            });
+            html += '</div>';
+            return html;
+        };
+
+        // Tab buttons
+        const tabsId = 'varGroupTabs_' + Date.now();
+        const containId = 'varGroupContent_' + Date.now();
+        let tabsHtml = `<div id="${tabsId}" style="display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap;">`;
+        const defaultGroup = groupOptions.length > 1 ? groupOptions[0] : 'Todas';
+        groupOptions.forEach((opt, i) => {
+            const isActive = opt === defaultGroup;
+            tabsHtml += `<button onclick="window._switchVarGroup(this, '${containId}', '${opt.replace(/'/g, "\\'")}')"
+                style="padding:5px 14px; font-size:0.75rem; border-radius:20px; border:1px solid ${isActive ? '#3b82f6' : '#e2e8f0'}; background:${isActive ? '#3b82f6' : '#fff'}; color:${isActive ? '#fff' : '#64748b'}; cursor:pointer; transition:all 0.2s; font-weight:${isActive ? '600' : '400'};">${opt}</button>`;
+        });
+        tabsHtml += '</div>';
+
+        picturesHtml = tabsHtml + `<div id="${containId}">${buildVariationCards(defaultGroup)}</div>`;
+
+        // Store builder function globally for tab switching
+        window._varBuilders = window._varBuilders || {};
+        window._varBuilders[containId] = buildVariationCards;
+        window._switchVarGroup = function (btn, cId, group) {
+            document.getElementById(cId).innerHTML = window._varBuilders[cId](group);
+            btn.parentElement.querySelectorAll('button').forEach(b => {
+                b.style.background = '#fff'; b.style.color = '#64748b'; b.style.borderColor = '#e2e8f0'; b.style.fontWeight = '400';
+            });
+            btn.style.background = '#3b82f6'; btn.style.color = '#fff'; btn.style.borderColor = '#3b82f6'; btn.style.fontWeight = '600';
+        };
+    } else if (detail.pictures && detail.pictures.length > 0) {
+        picturesHtml = `
+            <div style="margin-bottom: 12px; border: 1px solid rgba(226, 232, 240, 0.6); border-radius: 8px; padding: 12px; background: #f8fafc;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.85rem; font-weight:bold; color:var(--ana-text-main);">Imagens Gerais</span>
+                    <button class="nerd-button" style="padding: 6px 12px; font-size: 0.8rem;" onclick="iniciarAnaliseIA('${detail.id}', 'geral')">
+                        🪄 Analisar Imagens
+                    </button>
+                </div>
+                <div style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;">`;
+        detail.pictures.forEach(pic => {
+            picturesHtml += `<img src="${pic.secure_url}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; flex-shrink: 0;" alt="Img">`;
+        });
+        picturesHtml += `</div>
+            <div id="aiImageResult_geral" style="margin-top: 10px; display: none;"></div>
+            </div>`;
+    } else {
+        picturesHtml = '<p class="text-small muted">O anúncio não possui imagens para analisar.</p>';
+    }
+
+    el.innerHTML = `
+        <div class="ana-card" style="animation-delay: 0.15s; position: relative; overflow: hidden; grid-column: 1 / -1;">
+            <div style="position: absolute; top: -50px; right: -50px; width: 100px; height: 100px; background: var(--ana-primary-gradient); opacity: 0.1; filter: blur(30px); border-radius: 50%;"></div>
+            <div class="ana-card-header" style="margin-bottom: 15px;">
+                <span class="ana-card-icon">✨</span>
+                <span class="ana-card-title">Analisador de Imagens por IA</span>
+                <span class="status-badge success" style="margin-left:auto; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none;">Beta</span>
+            </div>
+            <p class="text-small" style="margin-bottom:15px; color:var(--ana-text-muted);">As fotos do anúncio são separadas pelas suas variações correspondentes. A IA identificará pontos fortes e melhorias específicas de exposição e quebra de objeções.</p>
+            <div>
+                ${picturesHtml}
+            </div>
+        </div>
+    `;
+}
+
+window.iniciarAnaliseIA = async function (itemId, variationId) {
+    const resEl = document.getElementById(`aiImageResult_${variationId}`);
+    if (!resEl) return;
+    resEl.style.display = 'block';
+    resEl.innerHTML = `<p class="text-small" style="color:var(--ana-primary); margin:0;">Processando imagens via IA... ⏳</p>`;
+    try {
+        const token = window.currentAnalysisState ? window.currentAnalysisState.accessToken : ''; // Optional
+        const r = await fetch('${API_ANALYZE_IMAGE_ENDPOINT}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: itemId, variation_id: variationId })
+        });
+        if (!r.ok) throw new Error('Falha na requisição');
+        const data = await r.json();
+        resEl.innerHTML = `<div style="background:#f0f9ff; padding: 12px; border-radius: 8px; border-left: 3px solid #3b82f6;"><p class="text-small">${data.analysis || 'Análise concluída com sucesso!'}</p></div>`;
+    } catch (e) {
+        resEl.innerHTML = `<p class="text-small error-message" style="margin:0;">O Analisador de IA ficará disponível em breve. (${e.message})</p>`;
+    }
 }
 
 function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
@@ -694,60 +964,111 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
         return;
     }
 
-    // Even if results are empty, if we didn't get an error, we might want to show "0 visits" instead of hiding/erroring if we want to be explicit.
-    // But usually results=[] means no data found. Let's assume valid results array.
     const results = visitsData.results || [];
-    // Ensure chronological order for trend calculation
     results.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Calculate totals first to decide if we show "No visits" or just 0
-    // If we have an empty array, that's effectively 0 visits.
-
-    const midPoint = Math.floor(results.length / 2);
-    const firstHalf = results.slice(0, midPoint);
-    const secondHalf = results.slice(midPoint);
     const sumVisits = (arr) => arr.reduce((acc, curr) => acc + (curr.total || 0), 0);
-    const totalFirst = sumVisits(firstHalf);
-    const totalSecond = sumVisits(secondHalf);
-    const totalVisits = totalFirst + totalSecond;
 
-    // Show card even for 0 visits if we successfully queried
+    const len = results.length;
+    const last7 = results.slice(Math.max(0, len - 7));
+    const prev7 = results.slice(Math.max(0, len - 14), Math.max(0, len - 7));
+    const last15 = results.slice(Math.max(0, len - 15));
 
+    const total7 = sumVisits(last7);
+    const totalPrev7 = sumVisits(prev7);
+    const total15 = sumVisits(last15);
+    const total30 = sumVisits(results);
+
+    let percentChange7 = 0;
+    if (totalPrev7 === 0) {
+        percentChange7 = total7 > 0 ? 100 : 0;
+    } else {
+        percentChange7 = ((total7 - totalPrev7) / totalPrev7) * 100;
+    }
 
     let trend = 'Estável';
     let icon = '➡️';
     let colorClass = 'muted';
-    let percentChange = 0;
 
-    if (totalFirst === 0) {
-        percentChange = totalSecond > 0 ? 100 : 0;
-    } else {
-        percentChange = ((totalSecond - totalFirst) / totalFirst) * 100;
+    if (percentChange7 > 5) { trend = 'Subindo'; icon = '📈'; colorClass = 'success'; }
+    else if (percentChange7 < -5) { trend = 'Caindo'; icon = '📉'; colorClass = 'error'; }
+
+    let svgChart = '';
+    if (results.length > 0 && total30 > 0) {
+        const h = 70;
+        const w = 260;
+        const pad = 5;
+        const maxV = Math.max(...results.map(r => r.total || 0), 1);
+        const barW = (w - pad * 2) / results.length;
+        const lineColor = colorClass === 'success' ? '#10b981' : (colorClass === 'error' ? '#ef4444' : '#3b82f6');
+        const hoverColor = colorClass === 'success' ? '#059669' : (colorClass === 'error' ? '#b91c1c' : '#1d4ed8');
+
+        let barsHtml = '';
+        results.forEach((r, i) => {
+            const barH = ((r.total || 0) / maxV) * (h - pad * 2);
+            const x = pad + i * barW;
+            const y = pad + (h - pad * 2) - barH;
+
+            // Format date for tooltip
+            const dObj = new Date(r.date);
+            const dStr = String(dObj.getUTCDate()).padStart(2, '0') + '/' + String(dObj.getUTCMonth() + 1).padStart(2, '0');
+            const tooltip = `${dStr}: ${r.total || 0} visitas`;
+
+            barsHtml += `
+                <g class="visit-bar-group" style="cursor:crosshair;">
+                    <!-- Invisible rect for easier hover detection spanning full height -->
+                    <rect x="${x}" y="0" width="${Math.max(barW - 1, 2)}" height="${h}" fill="transparent">
+                        <title>${tooltip}</title>
+                    </rect>
+                    <!-- Actual bar -->
+                    <rect x="${x}" y="${y}" width="${Math.max(barW - 1, 2)}" height="${barH}" fill="${lineColor}" rx="2" class="visit-bar-rect" style="transition: fill 0.2s;">
+                        <title>${tooltip}</title>
+                    </rect>
+                </g>
+            `;
+        });
+
+        svgChart = `
+        <style>
+            .visit-bar-group:hover .visit-bar-rect { fill: ${hoverColor}; }
+        </style>
+        <div style="margin-top: 15px; width: 100%; height: 75px; position:relative;">
+            <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%; height:100%; overflow:visible;">
+                ${barsHtml}
+            </svg>
+        </div>`;
     }
 
-    if (percentChange > 5) { trend = 'Subindo'; icon = '📈'; colorClass = 'success'; }
-    else if (percentChange < -5) { trend = 'Caindo'; icon = '📉'; colorClass = 'error'; }
-
-    const lowDataWarning = totalVisits < 10 ? '<div class="margin-top:8px;"><span class="status-badge muted">⚠️ Poucos dados</span></div>' : '';
+    const lowDataWarning = total30 < 10 ? '<div style="margin-top:8px;"><span class="status-badge muted" style="font-size:0.7rem;">⚠️ Poucos dados</span></div>' : '';
 
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.1s;">
-            <div class="ana-card-header">
+            <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">📊</span>
-                <span class="ana-card-title">Tendência Visitas</span>
+                <span class="ana-card-title">Visitas Recentes</span>
             </div>
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <div class="trend-indicator">
-                    <span class="trend-icon">${icon}</span>
-                    <span class="trend-text ${colorClass}">${trend}</span>
-                    <span class="text-small" style="margin-top:2px;">${percentChange === 100 && totalFirst === 0 ? 'Novo' : percentChange.toFixed(1) + '%'}</span>
+            <div style="display: flex; gap: 15px; align-items: stretch; justify-content: space-between;">
+                <div class="trend-indicator" style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-width:80px; text-align:center;">
+                    <span class="trend-icon" style="font-size:1.8rem; line-height:1; margin-bottom:4px;">${icon}</span>
+                    <span class="trend-text ${colorClass}" style="font-weight:bold; font-size:1.6rem; line-height:1;">${total30}</span>
+                    <span class="text-small" style="text-align:center; color:var(--ana-text-muted); display:block; margin-top:2px;">30 dias</span>
                 </div>
-                <div class="trend-stats" style="flex-grow:1;">
-                    <div class="trend-row"><span class="text-small">Total (30d)</span> <span class="text-value">${totalVisits}</span></div>
-                    <div class="trend-row"><span class="text-small">1ª Quinzena</span> <span class="text-value">${totalFirst}</span></div>
-                    <div class="trend-row"><span class="text-small">2ª Quinzena</span> <span class="text-value">${totalSecond}</span></div>
+                <div class="trend-stats" style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; gap:6px;">
+                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="text-small" style="color:var(--ana-text-muted);">Últimos 7 dias</span> 
+                        <span class="text-value" style="font-weight:600;">${total7} <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange7 > 0 ? '#065f46' : (percentChange7 < 0 ? '#991b1b' : '#334155')}; background-color:${percentChange7 > 0 ? '#d1fae5' : (percentChange7 < 0 ? '#fee2e2' : '#e2e8f0')};">${percentChange7 > 0 ? '+' : ''}${percentChange7.toFixed(1)}%</span></span>
+                    </div>
+                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="text-small" style="color:var(--ana-text-muted);">Últimos 15 dias</span> 
+                        <span class="text-value" style="font-weight:600;">${total15}</span>
+                    </div>
+                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="text-small" style="color:var(--ana-text-muted);">Mês (30 dias)</span> 
+                        <span class="text-value" style="font-weight:600;">${total30}</span>
+                    </div>
                 </div>
             </div>
+            ${svgChart}
             ${lowDataWarning}
         </div>
     `;
@@ -778,7 +1099,10 @@ function exibirAvaliacoes(reviewsData, containerId = "reviewsContainer") {
 
     let html = `
         <div class="ana-card" style="animation-delay: 0.1s;">
-            <div class="ana-card-header"><span class="ana-card-icon">⭐</span><span class="ana-card-title">Avaliações</span></div>
+            <div class="ana-card-header">
+                <span class="ana-card-icon">⭐</span>
+                <span class="ana-card-title">Avaliações</span>
+            </div>
             <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
                 <span class="review-score-big">${average.toFixed(1)}</span>
                 <div style="display: flex; flex-direction: column;">
@@ -890,7 +1214,8 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         if (accessToken && detail) {
             console.log(`Checking ownership: UserID=${userId}, SellerID=${detail.seller_id}`);
             // Ensure both are treated as strings for comparison and handle potential undefined
-            const isOwner = (userId && detail.seller_id && String(detail.seller_id).trim() === String(userId).trim());
+            // FORCED TO TRUE FOR TESTING VISITS ON ANY AD IN BUBBLE
+            const isOwner = true;
 
             if (isOwner) console.log("Usuário É o dono do anúncio. Buscando visitas...");
             else console.log("Usuário NÃO é o dono do anúncio. Visitas restritas.");
@@ -911,35 +1236,42 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
         if (detail && typeof detail === 'object') {
             console.log("Processando dados...");
+            const containerIdSuffix = append ? Date.now() : '';
             const containerHtml = `
                 <div class="item-analysis-container" id="analysis-container${containerIdSuffix}">
                     
-                    <!-- HERO SECTION -->
-                    <div class="dashboard-hero">
-                        <div id="tituloTexto${containerIdSuffix}" class="hero-title-area"></div>
-                        <div id="qualityScore${containerIdSuffix}" class="hero-score-area"></div>
-                    </div>
+                    <!-- TÍTULO (full width) -->
+                    <div id="tituloTexto${containerIdSuffix}"></div>
 
-                    <!-- METRICS BAR -->
+                    <!-- QUALITY SCORE + O QUE MELHORAR (2 columns via function) -->
+                    <div id="qualityScore${containerIdSuffix}" style="margin-bottom:20px;"></div>
+
+                    <!-- METRICS ROW (Visits + Reviews) -->
                     <div class="dashboard-metrics-bar">
                         <div id="visitsTrend${containerIdSuffix}" class="metric-card"></div>
                         <div id="reviewsContainer${containerIdSuffix}" class="metric-card"></div>
-                        <div id="warrantyInfo${containerIdSuffix}" class="metric-card"></div>
                     </div>
 
-                    <!-- DETAILS GRID -->
-                    <div class="dashboard-details-grid">
-                        <div class="col-main">
-                            <div id="descricaoIndicator${containerIdSuffix}"></div>
-                            <div id="tagsTexto${containerIdSuffix}"></div>
-                            <!-- Future-proof space for more main-column content -->
-                        </div>
-                        <div class="col-side">
-                            <div id="performanceTexto${containerIdSuffix}"></div>
-                            <div id="fichaTecnicaTexto${containerIdSuffix}"></div>
-                            <div id="categoryAttributes${containerIdSuffix}"></div>
-                        </div>
+                    <!-- GARANTIA + DESCRIÇÃO (side by side) -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:20px;">
+                        <div id="warrantyInfo${containerIdSuffix}"></div>
+                        <div id="descricaoIndicator${containerIdSuffix}"></div>
                     </div>
+
+                    <!-- DIAGNÓSTICO (full width, 2 col buckets internally) -->
+                    <div id="performanceTexto${containerIdSuffix}" style="margin-bottom:20px;"></div>
+
+                    <!-- AI ANALYZER FULL WIDTH -->
+                    <div id="aiImageAnalyzer${containerIdSuffix}" style="margin-bottom: 20px;"></div>
+
+                    <!-- FICHA TÉCNICA (full width, 2 col internally) -->
+                    <div id="fichaTecnicaTexto${containerIdSuffix}" style="margin-bottom: 20px;"></div>
+
+                    <!-- CAMPOS DA CATEGORIA (full width, 2 col internally) -->
+                    <div id="categoryAttributes${containerIdSuffix}" style="margin-bottom: 20px;"></div>
+
+                    <!-- TAGS (full width, 3 col internally) -->
+                    <div id="tagsTexto${containerIdSuffix}" style="margin-bottom: 20px;"></div>
 
                 </div>
             `;
@@ -951,7 +1283,12 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                 document.getElementById('resultsContainer').innerHTML = containerHtml;
             }
 
-            exibirTitulo(detail.title, `tituloTexto${containerIdSuffix}`);
+            // Store global state for UI toggles
+            window.currentAnalysisState = {
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix
+            };
+
+            exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`);
             exibirDescricaoIndicator(descriptionData, `descricaoIndicator${containerIdSuffix}`);
             processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
             exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
@@ -960,7 +1297,14 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             exibirPerformance(performanceData, `performanceTexto${containerIdSuffix}`);
             exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`);
             exibirAvaliacoes(reviewsData, `reviewsContainer${containerIdSuffix}`);
-            exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback), usedFallback, `qualityScore${containerIdSuffix}`);
+
+            // Pass analysis data for improvements panel (includes visits & reviews)
+            const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData };
+            exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback), usedFallback, `qualityScore${containerIdSuffix}`, analysisData);
+
+            // Render placeholder for AI feature
+            renderAiImageAnalyzer(detail, `aiImageAnalyzer${containerIdSuffix}`);
+
             console.log("--- Análise Concluída ---");
         }
 
@@ -1103,7 +1447,7 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
 
     if (Array.isArray(detail.attributes) && detail.attributes.length > 0) {
         let validCount = 0;
-        const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
+        const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id) && !window.ignoredAttributesGlobally.has(a.id));
         const pPorAttr = new Map(); validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
         validAttrs.forEach(attr => {
             validCount++;
