@@ -1,0 +1,142 @@
+<!--
+  TEST ENV: Concorrência de Catálogo
+  Para testar localmente antes de deploy no Bubble.
+  Abra no navegador (precisa estar logado em app.marketfacil.com.br para token).
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test: Concorrência de Catálogo</title>
+  <!-- Bootstrap (mesmo usado no Bubble) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js + adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafc; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .input-group-custom { display: flex; gap: 10px; margin-bottom: 20px; }
+    .input-group-custom input { flex: 1; padding: 12px 16px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; }
+    .input-group-custom input:focus { border-color: #3b82f6; outline: none; }
+    .input-group-custom button { padding: 12px 24px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .input-group-custom button:hover { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+    .input-group-custom button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .catalog-header-container { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .catalog-image { border: 1px solid #e2e8f0; }
+
+    .table-container { overflow-x: auto; margin-top: 16px; }
+    .competitors-table { width: 100%; font-size: 0.85rem; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .competitors-table th { background: #f1f5f9; position: sticky; top: 0; z-index: 1; padding: 8px 6px; font-weight: 600; white-space: nowrap; }
+    .competitors-table td { padding: 6px; vertical-align: middle; white-space: nowrap; }
+    .competitors-table tbody tr:hover { background: #f8fafc; }
+    .winner-row { background: #f0fdf4 !important; }
+    .winner-row:hover { background: #dcfce7 !important; }
+
+    /* Logística badges */
+    .logistica-full { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+    .logistica-coleta { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .logistica-places { background: #ede9fe; color: #5b21b6; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .logistica-correios { background: #fce7f3; color: #9d174d; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .logistica-me1, .logistica-me2, .logistica-custom { background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .logistica-desconhecida, .logistica-nesp { background: #f1f5f9; color: #94a3b8; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+
+    /* Tipo anúncio badges */
+    .tipo-premium { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+    .tipo-classico { background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .tipo-gratis { background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .tipo-outro, .tipo-desconhecido { background: #f1f5f9; color: #94a3b8; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+
+    /* Reputação dots */
+    .reputacao { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+    .reputacao-verde { background: #22c55e; }
+    .reputacao-verde-claro { background: #86efac; }
+    .reputacao-amarelo { background: #eab308; }
+    .reputacao-laranja { background: #f97316; }
+    .reputacao-vermelho { background: #ef4444; }
+    .reputacao-gray { background: #cbd5e1; }
+
+    /* Medalha badges */
+    .medalha { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .mercado-lider-platinum { background: #e0f2fe; color: #0369a1; }
+    .mercado-lider-gold { background: #fef3c7; color: #92400e; }
+    .mercado-lider { background: #dcfce7; color: #166534; }
+
+    /* Loja Oficial */
+    .loja-oficial-sim { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .loja-oficial-nao { color: #94a3b8; font-size: 0.78rem; }
+
+    /* Flex */
+    .beneficio { padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; }
+    .flex-sim { background: #dcfce7; color: #166534; }
+    .flex-nao { color: #94a3b8; }
+
+    /* Chart row */
+    .chart-row td { padding: 0 !important; background: #f8fafc; }
+
+    /* Status text */
+    .text-info { color: #0284c7 !important; }
+    .text-success { color: #16a34a !important; }
+    .text-warning { color: #d97706 !important; }
+    .text-danger { color: #dc2626 !important; }
+    .text-muted { color: #94a3b8 !important; }
+
+    /* Debug panel */
+    .debug-panel { margin-top: 20px; padding: 12px; background: #1e293b; color: #e2e8f0; border-radius: 8px; font-family: monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; display: none; }
+    .debug-panel.visible { display: block; }
+    .debug-toggle { font-size: 0.8rem; color: #64748b; cursor: pointer; margin-top: 8px; }
+
+    /* Pagination */
+    .pagination .page-link { color: #3b82f6; }
+    .pagination .page-item.disabled .page-link { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h4 style="margin-bottom: 4px;">Concorrencia de Catalogo <span style="font-size:0.7rem;background:#e0f2fe;color:#0284c7;padding:2px 8px;border-radius:12px;">v2 - test-env</span></h4>
+    <p style="color:#64748b;font-size:0.85rem;margin-bottom:16px;">Cole o link de um catalogo (/p/MLB...) ou ID de anuncio (MLB...) para analisar a concorrencia.</p>
+
+    <div class="input-group-custom">
+      <input type="text" id="inputCatalog" placeholder="Ex: https://www.mercadolivre.com.br/p/MLB44627375 ou MLB1234567890" onclick="this.select()">
+      <button id="buscarCatalogVisitasBtn">Analisar</button>
+    </div>
+
+    <div id="catalogHeader"></div>
+    <div class="table-container" id="tabelaCompetidores"></div>
+    <div id="paginationControls"></div>
+    <p id="resultadoTexto" style="margin-top:8px;font-weight:500;"></p>
+    <div id="resultsContainer"></div>
+    <div id="chartsContainer"></div>
+
+    <span class="debug-toggle" onclick="document.getElementById('debugPanel').classList.toggle('visible')">Toggle Debug Console</span>
+    <div id="debugPanel" class="debug-panel"></div>
+  </div>
+
+  <!-- JS da Concorrencia de Catalogo -->
+  <script src="../js/catalog-competition.js"></script>
+
+  <script>
+    // Debug console interceptor
+    const debugPanel = document.getElementById('debugPanel');
+    const origLog = console.log;
+    const origWarn = console.warn;
+    const origError = console.error;
+    function addDebug(level, args) {
+      const line = document.createElement('div');
+      line.style.borderBottom = '1px solid #334155';
+      line.style.padding = '2px 0';
+      if (level === 'error') line.style.color = '#f87171';
+      else if (level === 'warn') line.style.color = '#fbbf24';
+      else line.style.color = '#e2e8f0';
+      line.textContent = `[${level}] ${Array.from(args).map(a => typeof a === 'object' ? JSON.stringify(a).substring(0,200) : String(a)).join(' ')}`;
+      debugPanel.appendChild(line);
+      debugPanel.scrollTop = debugPanel.scrollHeight;
+    }
+    console.log = function() { origLog.apply(console, arguments); addDebug('log', arguments); };
+    console.warn = function() { origWarn.apply(console, arguments); addDebug('warn', arguments); };
+    console.error = function() { origError.apply(console, arguments); addDebug('error', arguments); };
+  </script>
+</body>
+</html>
