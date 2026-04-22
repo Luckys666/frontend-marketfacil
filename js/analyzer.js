@@ -151,7 +151,13 @@ window.openAttrEditor = function (attrId) {
             <datalist id="${datalistId}">${opts}</datalist>`;
         hintExtra = ` · ${allowedValues.length} sugestões (pode combinar e digitar livre)`;
     } else if (valueType === 'number' || valueType === 'number_unit') {
-        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${valueType === 'number_unit' ? 'ex: 300 mL' : 'ex: 42'}" maxlength="${maxLen}" />`;
+        const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
+        let exNum = '30';
+        if (/^(g|kg|lb|mg|oz)$/i.test(unit)) exNum = '500';
+        else if (/^(ml|l)$/i.test(unit)) exNum = '300';
+        else if (/^(m|ft)$/i.test(unit)) exNum = '1';
+        const placeholder = valueType === 'number_unit' && unit ? `ex: ${exNum} ${unit}` : `ex: ${exNum}`;
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(placeholder)}" maxlength="${maxLen}" />`;
     } else {
         // Default: string free text
         inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}" />`;
