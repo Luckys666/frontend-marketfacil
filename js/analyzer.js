@@ -103,6 +103,61 @@ window.toggleIgnoreAttribute = function (attrId, context) {
 // ============================================================
 // Edição inline de atributos de categoria (PUT /items/{id})
 // ============================================================
+function exampleNumberForUnit(unit) {
+    if (!unit) return '30';
+    const u = String(unit).toLowerCase().trim();
+    // Massa
+    if (['g', 'mg'].includes(u)) return '500';
+    if (['kg', 'lb', 'lbs', 'oz'].includes(u)) return '1';
+    if (['ton', 't'].includes(u)) return '1';
+    // Volume
+    if (['ml', 'cc'].includes(u)) return '300';
+    if (['l', 'gal'].includes(u)) return '1';
+    if (['fl oz'].includes(u)) return '16';
+    // Comprimento curto
+    if (['mm'].includes(u)) return '300';
+    if (['cm', '"', 'in', 'pol', 'polegadas'].includes(u)) return '30';
+    // Comprimento longo
+    if (['m', 'ft', 'yd', 'km', 'mi'].includes(u)) return '1';
+    // Tempo
+    if (['s', 'seg'].includes(u)) return '60';
+    if (['min', 'h', 'hora', 'horas'].includes(u)) return '1';
+    if (['dia', 'dias'].includes(u)) return '30';
+    if (['mes', 'meses', 'mês', 'meses'].includes(u)) return '12';
+    if (['ano', 'anos'].includes(u)) return '1';
+    // Potência / Energia
+    if (['w', 'mw', 'btu'].includes(u)) return '500';
+    if (['kw', 'hp'].includes(u)) return '1';
+    // Voltagem
+    if (['v'].includes(u)) return '220';
+    if (['mv', 'kv'].includes(u)) return '1';
+    // Corrente
+    if (['a', 'ma'].includes(u)) return '1';
+    // Frequência
+    if (['hz'].includes(u)) return '60';
+    if (['khz', 'mhz', 'ghz'].includes(u)) return '1';
+    // Storage
+    if (['b', 'bytes'].includes(u)) return '1024';
+    if (['kb'].includes(u)) return '256';
+    if (['mb'].includes(u)) return '64';
+    if (['gb'].includes(u)) return '128';
+    if (['tb'].includes(u)) return '1';
+    // Resolução / pixels
+    if (['px', 'pixels'].includes(u)) return '1080';
+    if (['mp', 'megapixels'].includes(u)) return '12';
+    if (['ppi', 'dpi'].includes(u)) return '300';
+    // Pessoas / unidades
+    if (['pessoas', 'lugares', 'assentos', 'cadeiras', 'peças'].includes(u)) return '4';
+    // Temperatura
+    if (['°c', '°f', 'c', 'f'].includes(u)) return '25';
+    // Velocidade
+    if (['rpm'].includes(u)) return '1500';
+    if (['km/h', 'mph'].includes(u)) return '100';
+    // Default
+    return '30';
+}
+
+
 window.openAttrEditor = function (attrId) {
     const state = window.currentAnalysisState;
     if (!state) return;
@@ -152,10 +207,7 @@ window.openAttrEditor = function (attrId) {
         hintExtra = ` · ${allowedValues.length} sugestões (pode combinar e digitar livre)`;
     } else if (valueType === 'number' || valueType === 'number_unit') {
         const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
-        let exNum = '30';
-        if (/^(g|kg|lb|mg|oz)$/i.test(unit)) exNum = '500';
-        else if (/^(ml|l)$/i.test(unit)) exNum = '300';
-        else if (/^(m|ft)$/i.test(unit)) exNum = '1';
+        const exNum = exampleNumberForUnit(unit);
         const placeholder = valueType === 'number_unit' && unit ? `ex: ${exNum} ${unit}` : `ex: ${exNum}`;
         inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(placeholder)}" maxlength="${maxLen}" />`;
     } else {
