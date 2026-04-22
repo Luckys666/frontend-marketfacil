@@ -121,8 +121,18 @@ window.openAttrEditor = function (attrId) {
     const valueType = catAttr.value_type || 'string';
 
     let inputHtml;
-    if (allowedValues.length > 0) {
-        // Select for list-type attributes
+    let hintExtra = '';
+    if (valueType === 'boolean') {
+        // Boolean — ML só aceita "Sim" ou "Não" exatos
+        const isYes = (currentValueName || '').toLowerCase() === 'sim';
+        const isNo = (currentValueName || '').toLowerCase() === 'não';
+        inputHtml = `<select id="attr-input-${attrId}" class="attr-edit-input">
+            <option value="">-- Selecione --</option>
+            <option value="242085" data-name="Sim"${isYes ? ' selected' : ''}>Sim</option>
+            <option value="242084" data-name="Não"${isNo ? ' selected' : ''}>Não</option>
+        </select>`;
+    } else if (valueType === 'list' && allowedValues.length > 0) {
+        // Strict list — ML rejeita texto livre aqui, força select
         const opts = allowedValues.map(v => {
             const selected = String(v.id) === String(currentValueId) ? ' selected' : '';
             const nameAttr = String(v.name || '').replace(/"/g, '&quot;');
@@ -132,13 +142,14 @@ window.openAttrEditor = function (attrId) {
             <option value="">-- Selecione --</option>
             ${opts}
         </select>`;
-    } else if (valueType === 'boolean') {
-        const isYes = String(currentAd.value_id || '').match(/^2(42085|4208[58])$/) || (currentValueName || '').toLowerCase() === 'sim';
-        inputHtml = `<select id="attr-input-${attrId}" class="attr-edit-input">
-            <option value="">-- Selecione --</option>
-            <option value="242085" data-name="Sim"${isYes ? ' selected' : ''}>Sim</option>
-            <option value="242084" data-name="Não"${!isYes && currentValueName ? ' selected' : ''}>Não</option>
-        </select>`;
+        hintExtra = ` · só valores da lista`;
+    } else if (allowedValues.length > 0) {
+        // String com sugestões — permite texto livre, ML aceita pra ganhar keywords
+        const datalistId = `attr-datalist-${attrId}`;
+        const opts = allowedValues.map(v => `<option value="${escapeHtml(v.name)}">`).join('');
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}" list="${datalistId}" autocomplete="off" />
+            <datalist id="${datalistId}">${opts}</datalist>`;
+        hintExtra = ` · ${allowedValues.length} sugestões (pode combinar e digitar livre)`;
     } else if (valueType === 'number' || valueType === 'number_unit') {
         inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${valueType === 'number_unit' ? 'ex: 300 mL' : 'ex: 42'}" maxlength="${maxLen}" />`;
     } else {
@@ -152,7 +163,7 @@ window.openAttrEditor = function (attrId) {
             <button type="button" onclick="window.saveAttr('${attrId}')" class="attr-edit-save" title="Salvar">✓</button>
             <button type="button" onclick="window.cancelAttrEditor('${attrId}')" class="attr-edit-cancel" title="Cancelar">✕</button>
             <div id="attr-edit-error-${attrId}" class="attr-edit-error" style="display:none;"></div>
-            <div class="attr-edit-hint">${catAttr.name}${maxLen && maxLen < 255 ? ` — até ${maxLen} caracteres` : ''}</div>
+            <div class="attr-edit-hint">${catAttr.name}${maxLen && maxLen < 255 ? ` — até ${maxLen} caracteres` : ''}${hintExtra}</div>
         </div>
     `;
     const input = document.getElementById(`attr-input-${attrId}`);
@@ -203,7 +214,16 @@ window.saveAttr = async function (attrId) {
     } else {
         const val = (input.value || '').trim();
         if (!val) return showError('Preencha um valor.');
-        attrPayload = { id: attrId, value_name: val };
+        // Se bater exato com uma allowed_value, manda value_id também (mais robusto)
+        const catAttr = (state.categoryAttributes || []).find(a => a.id === attrId);
+        const exactMatch = Array.isArray(catAttr?.values)
+            ? catAttr.values.find(v => String(v.name || '').toLowerCase() === val.toLowerCase())
+            : null;
+        if (exactMatch) {
+            attrPayload = { id: attrId, value_id: exactMatch.id, value_name: exactMatch.name };
+        } else {
+            attrPayload = { id: attrId, value_name: val };
+        }
     }
 
     const itemId = state.detail?.id;
@@ -555,7 +575,9 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
     if (!el) return;
 
     let contentHtml = '';
-    const stringAttributes = Array.isArray(categoryAttributes) ? categoryAttributes.filter(attr => attr.value_type === 'string' && !attr.tags?.read_only) : [];
+    // Include string, list, boolean, number, number_unit — skip only read_only
+    const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
+    const stringAttributes = Array.isArray(categoryAttributes) ? categoryAttributes.filter(attr => EDITABLE_TYPES.has(attr.value_type) && !attr.tags?.read_only) : [];
 
     if (!Array.isArray(categoryAttributes) || stringAttributes.length === 0) {
         // Hide completely if no relevant attributes to show, or show message
@@ -622,7 +644,7 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             </div>`;
     }
 
-    const totalItems = Array.isArray(categoryAttributes) ? categoryAttributes.filter(a => a.value_type === 'string' && !a.tags?.read_only).length : 0;
+    const totalItems = Array.isArray(categoryAttributes) ? categoryAttributes.filter(a => EDITABLE_TYPES.has(a.value_type) && !a.tags?.read_only).length : 0;
 
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.25s;">
