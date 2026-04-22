@@ -583,7 +583,7 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const renderCatItem = (catAttr, adValue, isFilled) => {
             const isIgnored = window.ignoredAdAttributes.has(catAttr.id);
-            const canEdit = !isIgnored && !(catAttr.tags?.read_only || catAttr.tags?.hidden);
+            const canEdit = !isIgnored && !catAttr.tags?.read_only;
             const pencilSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>`;
             return `
              <div class="attribute-item" style="min-width:0; ${!isFilled ? 'background:var(--red-light); border-color:var(--red);' : 'background:var(--green-light); border-color:var(--green);'} ${isIgnored ? 'opacity: 0.5; filter: grayscale(1);' : ''}">
