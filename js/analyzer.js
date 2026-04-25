@@ -2,6 +2,44 @@
  * Ad Analyzer Widget Logic
  */
 
+// === MF_renderError — error UI padrão Marketfacil (idempotente) ===
+if (typeof window.MF_renderError !== 'function') {
+  (function(){
+    function buildMcUrl() {
+      return window.location.href.includes('version-test')
+        ? 'https://app.marketfacil.com.br/version-test/minha-conta'
+        : 'https://app.marketfacil.com.br/minha-conta';
+    }
+    var TYPES = {
+      no_ml_account: { icon: '🔐', title: 'Conta do Mercado Livre não conectada', msg: 'Pra usar essa ferramenta, conecte sua conta do Mercado Livre ao Marketfacil em <b>Minha Conta</b>.', cta: { label: 'Conectar conta do ML →', href: buildMcUrl } },
+      session_expired: { icon: '⏳', title: 'Sessão expirou', msg: 'Sua sessão com o Mercado Livre expirou. Reconecte sua conta no Marketfacil pra continuar.', cta: { label: 'Reconectar conta →', href: buildMcUrl } },
+      forbidden: { icon: '🚫', title: 'Acesso negado', msg: 'O Mercado Livre bloqueou essa requisição. Tente novamente em alguns minutos.', cta: null },
+      rate_limited: { icon: '⏱', title: 'Muitas requisições', msg: 'Você atingiu o limite. Aguarde um instante e tente de novo.', cta: null },
+      network_error: { icon: '🌐', title: 'Falha de conexão', msg: 'Não foi possível conectar ao Marketfacil. Verifique sua internet e tente novamente.', cta: null }
+    };
+    function injectStyles() {
+      if (document.getElementById('mf-error-styles')) return;
+      var style = document.createElement('style');
+      style.id = 'mf-error-styles';
+      style.textContent = ".mf-error-card{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;margin:16px 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;text-align:center;font-family:'DM Sans',sans-serif;color:#1e3a5f}.mf-error-icon{font-size:48px;line-height:1;margin-bottom:12px}.mf-error-title{font-size:18px;font-weight:700;margin:0 0 8px 0;color:#1e3a5f}.mf-error-msg{font-size:14px;color:#475569;max-width:480px;margin:0 0 16px 0;line-height:1.45}.mf-error-cta{display:inline-block;padding:10px 20px;background:#1e3a5f;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;transition:background .15s ease}.mf-error-cta:hover{background:#0f172a;color:#fff;text-decoration:none}";
+      (document.head || document.body).appendChild(style);
+    }
+    function escapeHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+    window.MF_renderError = function(container, type, opts) {
+      if (!container) return;
+      injectStyles();
+      var cfg = TYPES[type];
+      if (!cfg) { container.innerHTML = '<div class="mf-error-card"><p class="mf-error-msg">'+escapeHtml((opts&&opts.msg)||'Erro inesperado.')+'</p></div>'; return; }
+      var title = (opts && opts.title) || cfg.title;
+      var msg = (opts && opts.msg) || cfg.msg;
+      var cta = cfg.cta && (typeof cfg.cta.href === 'function' ? { label: cfg.cta.label, href: cfg.cta.href() } : cfg.cta);
+      container.innerHTML = '<div class="mf-error-card mf-error-'+type+'"><div class="mf-error-icon">'+cfg.icon+'</div><p class="mf-error-title">'+escapeHtml(title)+'</p><p class="mf-error-msg">'+msg+'</p>'+(cta?'<a href="'+escapeHtml(cta.href)+'" class="mf-error-cta">'+escapeHtml(cta.label)+'</a>':'')+'</div>';
+    };
+    window.MF_ERROR_TYPES = Object.keys(TYPES);
+  })();
+}
+// === fim MF_renderError ===
+
 // -------------- Constantes de Configuração --------------
 const MIN_CHARS_TITULO_RUIM = 40;
 const MIN_CHARS_TITULO_BOM = 50;
@@ -2551,6 +2589,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         } catch (e) {
             console.error("Erro ao buscar credenciais:", e);
             fetchError = new Error('Falha crítica ao obter credenciais da aplicação.');
+            fetchError.isAuthError = true;
         }
 
         let isMlbu = parsed.type === 'mlbu';
@@ -2644,6 +2683,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             } catch (e) { console.warn(`Erro na API principal: ${e.message}`); fetchError = e; }
         } else if (!fetchError) {
             fetchError = new Error("Para analisar, você precisa conectar sua conta do Mercado Livre na seção 'Minha Conta'.");
+            fetchError.isAuthError = true;
             console.log(fetchError.message);
         }
 
@@ -2768,7 +2808,16 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             if (!append) {
                 clearResults();
             }
-            appendError(`Falha na análise: ${finalMsg}`);
+            // Padroniza erro de auth via MF_renderError
+            if (fetchError && fetchError.isAuthError && typeof window.MF_renderError === 'function') {
+                const cont = document.getElementById('resultsContainer');
+                if (cont) {
+                    cont.classList.remove('initial-state');
+                    window.MF_renderError(cont, 'no_ml_account');
+                }
+            } else {
+                appendError(`Falha na análise: ${finalMsg}`);
+            }
         }
 
     } catch (e) {
