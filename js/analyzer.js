@@ -65,13 +65,21 @@ function normalizeMlbId(input) {
     const catalogMatch = input.match(/\/p\/((?:MLB|MCO|MLA|MLM|MLC|MLU)\w+)/i);
     if (catalogMatch) return { id: catalogMatch[1].toUpperCase(), type: 'catalog' };
 
-    // 2. Catálogo de usuário (MLBU, MCOU, etc)
+    // 2. Link da tela de edição do painel ML: /anuncios/{ID}/modificar/...
+    const editMatch = input.match(/\/anuncios\/((?:MLB|MCO|MLA|MLM|MLC|MLU)U?-?\d+)/i);
+    if (editMatch) {
+        const raw = editMatch[1].toUpperCase().replace('-', '');
+        const isUserCat = /^(?:MLB|MCO|MLA|MLM|MLC|MLU)U\d/.test(raw);
+        return { id: raw, type: isUserCat ? 'mlbu' : 'mlb' };
+    }
+
+    // 3. Catálogo de usuário (MLBU, MCOU, etc)
     const userCatMatch = input.match(/(MLB|MCO|MLA|MLM|MLC|MLU)U-?(\d+)/i);
     if (userCatMatch) {
         return { id: userCatMatch[1].toUpperCase() + 'U' + userCatMatch[2], type: 'mlbu' };
     }
 
-    // 3. Item normal
+    // 4. Item normal
     const regex = /(MLB|MCO|MLA|MLM|MLC|MLU)-?(\d+)/i;
     const match = input.match(regex);
     if (match) {
@@ -491,10 +499,11 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
 function exibirDescricaoIndicator(descriptionData, containerId = "descricaoIndicator") {
     const el = document.getElementById(containerId);
     if (!el) return;
-    const hasDesc = !!(descriptionData && descriptionData.plain_text && descriptionData.plain_text.trim());
+    const hasDesc = !!(descriptionData && ((descriptionData.plain_text && descriptionData.plain_text.trim()) || (descriptionData.text && descriptionData.text.trim())));
     const badgeClass = hasDesc ? 'success' : 'error';
     const icon = hasDesc ? '✅' : '❌';
-    const text = hasDesc ? 'Detectada' : 'Sem Texto';
+    const fromCatalog = descriptionData?.source === 'catalog';
+    const text = hasDesc ? (fromCatalog ? 'Do catálogo' : 'Detectada') : 'Sem Texto';
 
     el.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius);">
@@ -737,7 +746,9 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
     if (!el) return;
 
     // 3 sanity checks básicos (descrição, garantia, imagens) — SEMPRE renderizados
-    const hasDesc = !!(descriptionData && descriptionData.plain_text && descriptionData.plain_text.trim());
+    const hasDesc = !!(descriptionData && ((descriptionData.plain_text && descriptionData.plain_text.trim()) || (descriptionData.text && descriptionData.text.trim())));
+    const descSource = descriptionData?.source;
+    const descSourceLabel = descSource === 'catalog' ? 'Herdada do catálogo' : (descSource === 'user_product' ? 'Herdada do produto (MLBU)' : 'Detectada');
     const hasWarranty = !!detail?.warranty;
 
     // Count images per variation (min 3 each)
@@ -767,7 +778,7 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
     }
 
     const items = [
-        { ok: hasDesc, label: 'Descrição em texto', detail: hasDesc ? 'Detectada' : 'Não preenchida' },
+        { ok: hasDesc, label: 'Descrição em texto', detail: hasDesc ? descSourceLabel : 'Não preenchida' },
         { ok: hasWarranty, label: 'Garantia', detail: hasWarranty ? detail.warranty : 'Não informada' },
         { ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
     ];
@@ -1303,8 +1314,12 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         else if (titleLen < 50) checks.push({ ok: false, text: `Título poderia ser maior (${titleLen}/50+)` });
         else checks.push({ ok: true, text: 'Título otimizado' });
         // Description
-        const hasDesc = !!(d.descriptionData?.plain_text?.trim());
-        checks.push({ ok: hasDesc, text: hasDesc ? 'Descrição presente' : 'Adicionar descrição em texto' });
+        const hasDesc = !!((d.descriptionData?.plain_text?.trim()) || (d.descriptionData?.text?.trim()));
+        const src = d.descriptionData?.source;
+        const descText = hasDesc
+            ? (src === 'catalog' ? 'Descrição herdada do catálogo' : (src === 'user_product' ? 'Descrição herdada do MLBU' : 'Descrição presente'))
+            : 'Adicionar descrição em texto';
+        checks.push({ ok: hasDesc, text: descText });
         // Warranty
         const hasWarranty = !!d.detail?.warranty;
         checks.push({ ok: hasWarranty, text: hasWarranty ? 'Garantia informada' : 'Informar garantia' });
@@ -1547,6 +1562,43 @@ async function fetchApiData(fullUrl, accessToken) {
 async function fetchItemDetails(itemIds, accessToken) {
     const url = `${API_FETCH_ITEM_ENDPOINT}?item_id=${itemIds.join(',')}`;
     return fetchApiData(url, accessToken);
+}
+
+// Extrai qualquer texto de descrição de um payload (item, user-product ou catalog product).
+function extractDescriptionText(data) {
+    if (!data || typeof data !== 'object') return '';
+    if (data.plain_text && String(data.plain_text).trim()) return String(data.plain_text).trim();
+    if (data.text && String(data.text).trim()) return String(data.text).trim();
+    if (data.short_description?.content && String(data.short_description.content).trim()) return String(data.short_description.content).trim();
+    if (typeof data.description === 'string' && data.description.trim()) return data.description.trim();
+    if (data.description?.plain_text && String(data.description.plain_text).trim()) return String(data.description.plain_text).trim();
+    if (data.description?.text && String(data.description.text).trim()) return String(data.description.text).trim();
+    if (Array.isArray(data.main_features) && data.main_features.length > 0) {
+        const joined = data.main_features.map(f => (typeof f === 'string' ? f : f?.text || f?.content || '')).filter(Boolean).join('\n');
+        if (joined.trim()) return joined.trim();
+    }
+    return '';
+}
+
+// Busca descrição herdada em cadeia: user-product (MLBU) → catalog_product. Retorna null se não achar.
+async function fetchInheritedDescription(detail, accessToken) {
+    // Tenta user-product primeiro (MLBU é a ficha do vendedor e pode ter descrição própria)
+    if (detail?.user_product_id) {
+        try {
+            const up = await fetchApiData(`${API_USER_PRODUCTS_ENDPOINT}/${detail.user_product_id}`, accessToken);
+            const txt = extractDescriptionText(up);
+            if (txt) return { plain_text: txt, text: txt, source: 'user_product' };
+        } catch (e) { console.warn('Falha ao buscar user-product:', e.message); }
+    }
+    // Catálogo oficial
+    if (detail?.catalog_product_id) {
+        try {
+            const cat = await fetchApiData(`${BASE_URL_PROXY}/api/fetch-catalog?product_id=${detail.catalog_product_id}`, accessToken);
+            const txt = extractDescriptionText(cat);
+            if (txt) return { plain_text: txt, text: txt, source: 'catalog' };
+        } catch (e) { console.warn('Falha ao buscar catálogo:', e.message); }
+    }
+    return null;
 }
 
 async function fetchPerformanceData(itemId, accessToken) { return fetchApiData(`${API_PERFORMANCE_ENDPOINT}?item_id=${itemId}`, accessToken); }
@@ -2572,6 +2624,17 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                         detail = itemData.body;
                         descriptionData = itemData.description || detail.description;
                         console.log('Dados da API de Itens OK.');
+
+                        // Anúncios UP/catálogo: descrição pode viver no user-product (MLBU) ou no catálogo.
+                        // Fallback em cadeia: item → user-product → catalog_product.
+                        const hasInlineDesc = !!(descriptionData?.plain_text?.trim() || descriptionData?.text?.trim());
+                        if (!hasInlineDesc) {
+                            const inheritedDesc = await fetchInheritedDescription(detail, accessToken);
+                            if (inheritedDesc) {
+                                descriptionData = inheritedDesc;
+                                console.log(`Descrição herdada de: ${inheritedDesc.source}`);
+                            }
+                        }
                     } else if (itemData?.code === 403) {
                         throw new Error(`Acesso negado a este anúncio. Verifique se ele pertence à conta vinculada ao app.`);
                     } else {
@@ -2851,8 +2914,8 @@ async function displayCatalogResults(catalogData, sellerItemIds, accessToken, ca
     const emptyAttrsLimited = emptyAttrs.slice(0, 20);
     const emptyAttrsExtra = emptyAttrs.length - emptyAttrsLimited.length;
 
-    // Description check
-    const hasDesc = !!(catalogData.short_description?.content || catalogData.parent_id);
+    // Description check — aceita short_description.content, description (string/obj), main_features ou parent_id (variação herda do pai)
+    const hasDesc = !!(extractDescriptionText(catalogData) || catalogData.parent_id);
 
     // Images check (min 3)
     const imageOk = pictures.length >= 3;
@@ -3095,7 +3158,8 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     }
 
     // --- DESCRIÇÃO (-10 se não tem, +3 bônus se tem) ---
-    const hasDesc = descriptionData && descriptionData.plain_text && descriptionData.plain_text.trim() !== "";
+    // Aceita plain_text OU text (HTML legado) e considera descrição herdada do catálogo (UP/catalog listings).
+    const hasDesc = !!(descriptionData && ((descriptionData.plain_text && descriptionData.plain_text.trim() !== "") || (descriptionData.text && descriptionData.text.trim() !== "")));
     if (hasDesc) score += 3;
     else score -= 10;
 
