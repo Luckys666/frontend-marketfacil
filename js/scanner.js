@@ -15,6 +15,44 @@ window.scannerState = {
     pageSize: 50
 };
 
+// === MF_renderError — error UI padrão Marketfacil (idempotente) ===
+if (typeof window.MF_renderError !== 'function') {
+  (function(){
+    function buildMcUrl() {
+      return window.location.href.includes('version-test')
+        ? 'https://app.marketfacil.com.br/version-test/minha-conta'
+        : 'https://app.marketfacil.com.br/minha-conta';
+    }
+    var TYPES = {
+      no_ml_account: { icon: '🔐', title: 'Conta do Mercado Livre não conectada', msg: 'Pra usar essa ferramenta, conecte sua conta do Mercado Livre ao Marketfacil em <b>Minha Conta</b>.', cta: { label: 'Conectar conta do ML →', href: buildMcUrl } },
+      session_expired: { icon: '⏳', title: 'Sessão expirou', msg: 'Sua sessão com o Mercado Livre expirou. Reconecte sua conta no Marketfacil pra continuar.', cta: { label: 'Reconectar conta →', href: buildMcUrl } },
+      forbidden: { icon: '🚫', title: 'Acesso negado', msg: 'O Mercado Livre bloqueou essa requisição. Tente novamente em alguns minutos.', cta: null },
+      rate_limited: { icon: '⏱', title: 'Muitas requisições', msg: 'Você atingiu o limite. Aguarde um instante e tente de novo.', cta: null },
+      network_error: { icon: '🌐', title: 'Falha de conexão', msg: 'Não foi possível conectar ao Marketfacil. Verifique sua internet e tente novamente.', cta: null }
+    };
+    function injectStyles() {
+      if (document.getElementById('mf-error-styles')) return;
+      var style = document.createElement('style');
+      style.id = 'mf-error-styles';
+      style.textContent = ".mf-error-card{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;margin:16px 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;text-align:center;font-family:'DM Sans',sans-serif;color:#1e3a5f}.mf-error-icon{font-size:48px;line-height:1;margin-bottom:12px}.mf-error-title{font-size:18px;font-weight:700;margin:0 0 8px 0;color:#1e3a5f}.mf-error-msg{font-size:14px;color:#475569;max-width:480px;margin:0 0 16px 0;line-height:1.45}.mf-error-cta{display:inline-block;padding:10px 20px;background:#1e3a5f;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;transition:background .15s ease}.mf-error-cta:hover{background:#0f172a;color:#fff;text-decoration:none}";
+      (document.head || document.body).appendChild(style);
+    }
+    function escapeHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+    window.MF_renderError = function(container, type, opts) {
+      if (!container) return;
+      injectStyles();
+      var cfg = TYPES[type];
+      if (!cfg) { container.innerHTML = '<div class="mf-error-card"><p class="mf-error-msg">'+escapeHtml((opts&&opts.msg)||'Erro inesperado.')+'</p></div>'; return; }
+      var title = (opts && opts.title) || cfg.title;
+      var msg = (opts && opts.msg) || cfg.msg;
+      var cta = cfg.cta && (typeof cfg.cta.href === 'function' ? { label: cfg.cta.label, href: cfg.cta.href() } : cfg.cta);
+      container.innerHTML = '<div class="mf-error-card mf-error-'+type+'"><div class="mf-error-icon">'+cfg.icon+'</div><p class="mf-error-title">'+escapeHtml(title)+'</p><p class="mf-error-msg">'+msg+'</p>'+(cta?'<a href="'+escapeHtml(cta.href)+'" class="mf-error-cta">'+escapeHtml(cta.label)+'</a>':'')+'</div>';
+    };
+    window.MF_ERROR_TYPES = Object.keys(TYPES);
+  })();
+}
+// === fim MF_renderError ===
+
 // --- Configuração & Constantes ---
 const SCANNER_API_BASE = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
 const SCANNER_TAGS_NEGATIVAS = new Set([
@@ -180,22 +218,10 @@ async function startAccountScan() {
         if (progressDiv) progressDiv.style.display = 'none';
 
         if (e.isAuthError) {
-            // Mensagem amigável de autenticação
+            // Mensagem amigável de autenticação — padronizada via MF_renderError
             if (statusText) statusText.textContent = 'Conta não conectada';
-            if (resultsContainer) {
-                resultsContainer.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;">
-                        <div style="font-size: 2.5rem; margin-bottom: 12px;">🔗</div>
-                        <h3 style="color: #991b1b; margin: 0 0 8px 0; font-size: 1.1rem;">Conta do Mercado Livre não conectada</h3>
-                        <p style="color: #64748b; font-size: 0.9rem; margin: 0 0 16px 0; line-height: 1.5;">Para usar o Scanner, você precisa conectar sua conta do Mercado Livre ao MarketFácil.</p>
-                        <a href="https://app.marketfacil.com.br/minha-conta" target="_blank"
-                           style="display: inline-block; padding: 12px 28px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; text-decoration: none; border-radius: 50px; font-weight: 600; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(37,99,235,0.3); transition: all 0.2s;"
-                           onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(37,99,235,0.4)'"
-                           onmouseout="this.style.transform='';this.style.boxShadow='0 4px 12px rgba(37,99,235,0.3)'"
-                        >Conectar Conta →</a>
-                        <p style="color: #94a3b8; font-size: 0.75rem; margin-top: 12px;">Após conectar, volte aqui e clique em "Escanear Conta".</p>
-                    </div>
-                `;
+            if (resultsContainer && window.MF_renderError) {
+                window.MF_renderError(resultsContainer, 'no_ml_account');
             }
         } else {
             // Erro genérico (API, rede, etc.)
