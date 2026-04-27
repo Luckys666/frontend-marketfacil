@@ -362,6 +362,133 @@ function MF_getAttrPlaceholder(catAttr) {
 // Atributos comumente gerenciados por variação no Mercado Livre.
 // Se o anúncio tem variations[], editar esses no campo geral resulta em erro
 // "Same attributes are used in more than of item.attributes...".
+// ============================================================
+// MF Snapshot — guarda estado da análise no localStorage para mostrar
+// evolução do score e mudanças desde a última visita do vendedor.
+// Sem persistir em DB do app — só no browser do user.
+// ============================================================
+const MF_SNAP_KEY = (id) => `mf_analyze_snap_v1_${id}`;
+
+function MF_loadSnap(itemId) {
+    if (!itemId) return null;
+    try {
+        const raw = localStorage.getItem(MF_SNAP_KEY(itemId));
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+}
+
+function MF_saveSnap(itemId, snap) {
+    if (!itemId || !snap) return;
+    try { localStorage.setItem(MF_SNAP_KEY(itemId), JSON.stringify(snap)); } catch (e) {}
+}
+
+function MF_buildSnap(detail, visitsData, adsData, score) {
+    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    let sales30 = 0;
+    let adsActive = false;
+    let adsLevel = null;
+    if (adsData?.has_ads && Array.isArray(adsData.daily)) {
+        const ads = adsData.daily.reduce((s, x) => s + (x.units_quantity || 0), 0);
+        const org = adsData.daily.reduce((s, x) => s + (x.organic_units_quantity || 0), 0);
+        sales30 = ads + org;
+        adsActive = !!adsData.has_ads;
+        adsLevel = adsData.ad_info?.current_level || null;
+    }
+    const tags = Array.isArray(detail?.tags) ? detail.tags : [];
+    return {
+        ts: Date.now(),
+        score: typeof score === 'number' ? score : 0,
+        visits30,
+        sales30,
+        soldQuantity: detail?.sold_quantity || 0,
+        availableQuantity: detail?.available_quantity || 0,
+        price: detail?.price || 0,
+        tagsHash: tags.slice().sort().join(','),
+        negativeTagsCount: tags.filter(t => TAGS_NEGATIVAS.has(t)).length,
+        adsActive,
+        adsLevel,
+    };
+}
+
+function MF_diffSnap(prev, curr) {
+    if (!prev) return null;
+    const items = [];
+    if (prev.score !== curr.score) {
+        items.push({ kind: 'score', delta: curr.score - prev.score, prev: prev.score, curr: curr.score });
+    }
+    const visitsDelta = curr.visits30 - prev.visits30;
+    const visitsPct = prev.visits30 > 0 ? Math.round((visitsDelta / prev.visits30) * 100) : 0;
+    if (Math.abs(visitsPct) >= 20 && (Math.abs(visitsDelta) >= 5 || prev.visits30 === 0)) {
+        items.push({ kind: 'visits', delta: visitsDelta, pct: visitsPct, prev: prev.visits30, curr: curr.visits30 });
+    }
+    if (prev.sales30 !== curr.sales30) {
+        items.push({ kind: 'sales', delta: curr.sales30 - prev.sales30, prev: prev.sales30, curr: curr.sales30 });
+    }
+    if (prev.tagsHash !== curr.tagsHash) {
+        items.push({ kind: 'tags', delta: curr.negativeTagsCount - prev.negativeTagsCount, prev: prev.negativeTagsCount, curr: curr.negativeTagsCount });
+    }
+    if (prev.adsActive !== curr.adsActive) {
+        items.push({ kind: 'adsState', currActive: curr.adsActive });
+    } else if (prev.adsLevel !== curr.adsLevel && (prev.adsLevel || curr.adsLevel)) {
+        items.push({ kind: 'adsLevel', prevLevel: prev.adsLevel, currLevel: curr.adsLevel });
+    }
+    return { items, daysSince: Math.floor((curr.ts - prev.ts) / (1000 * 60 * 60 * 24)), prevTs: prev.ts };
+}
+
+function MF_renderDiffBanner(diff) {
+    if (!diff || !diff.items.length) return '';
+    const sinceLabel = diff.daysSince === 0 ? 'hoje' : (diff.daysSince === 1 ? 'ontem' : `${diff.daysSince} dias atrás`);
+    const itemsHtml = diff.items.map(i => {
+        if (i.kind === 'score') {
+            const sign = i.delta > 0 ? '+' : '';
+            const color = i.delta > 0 ? '#059669' : '#dc2626';
+            const arrow = i.delta > 0 ? '↗' : '↘';
+            return `<span style="color:${color}; font-weight:600;">${arrow} Score ${sign}${i.delta}</span> <span style="color:var(--text-muted); font-size:0.7rem;">(${i.prev}→${i.curr})</span>`;
+        }
+        if (i.kind === 'visits') {
+            const sign = i.delta > 0 ? '+' : '';
+            const color = i.delta > 0 ? '#059669' : '#dc2626';
+            const arrow = i.delta > 0 ? '↗' : '↘';
+            return `<span style="color:${color}; font-weight:600;">${arrow} Visitas ${sign}${i.pct}%</span> <span style="color:var(--text-muted); font-size:0.7rem;">(${i.prev}→${i.curr} em 30d)</span>`;
+        }
+        if (i.kind === 'sales') {
+            const sign = i.delta > 0 ? '+' : '';
+            const color = i.delta > 0 ? '#059669' : '#dc2626';
+            const arrow = i.delta > 0 ? '↗' : '↘';
+            return `<span style="color:${color}; font-weight:600;">${arrow} Vendas 30d ${sign}${i.delta}</span>`;
+        }
+        if (i.kind === 'tags') {
+            const color = i.delta > 0 ? '#dc2626' : '#059669';
+            const sign = i.delta > 0 ? '+' : '';
+            return `<span style="color:${color}; font-weight:600;">Tags negativas ${sign}${i.delta}</span>`;
+        }
+        if (i.kind === 'adsState') {
+            return `<span style="color:${i.currActive ? '#059669' : '#dc2626'}; font-weight:600;">Ads ${i.currActive ? 'ativos' : 'pausados'}</span>`;
+        }
+        if (i.kind === 'adsLevel') {
+            return `<span>Nível Ads: ${i.prevLevel || '—'} → ${i.currLevel || '—'}</span>`;
+        }
+        return '';
+    }).filter(Boolean).join(' · ');
+    return `
+        <div style="background:linear-gradient(135deg, var(--blue-light), #f0f8ff); border:1px solid var(--blue); border-left:4px solid var(--blue); padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:12px; display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap;">
+            <span style="font-size:1rem; flex-shrink:0;">🔄</span>
+            <div style="flex:1; min-width:200px;">
+                <div style="font-size:0.78rem; font-weight:600; color:var(--text); margin-bottom:2px;">Mudanças desde sua última análise (${sinceLabel})</div>
+                <div style="font-size:0.78rem; color:var(--text-secondary); display:flex; gap:8px; flex-wrap:wrap;">${itemsHtml}</div>
+            </div>
+        </div>`;
+}
+
+function MF_renderScoreDelta(prevSnap, currScore) {
+    if (!prevSnap || prevSnap.score === currScore) return '';
+    const delta = currScore - prevSnap.score;
+    const sign = delta > 0 ? '+' : '';
+    const color = delta > 0 ? '#059669' : '#dc2626';
+    const arrow = delta > 0 ? '↗' : '↘';
+    return `<span style="display:inline-flex; align-items:center; gap:3px; margin-top:4px; padding:2px 8px; background:${delta > 0 ? '#d1fae5' : '#fee2e2'}; border-radius:10px; font-size:0.7rem; color:${color}; font-weight:700;">${arrow} ${sign}${delta} vs última análise</span>`;
+}
+
 const MF_VARIATION_ATTR_IDS = new Set(['COLOR', 'SIZE', 'MAIN_COLOR', 'SELLER_SKU', 'GTIN']);
 
 window.openAttrEditor = function (attrId) {
@@ -1683,6 +1810,11 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
             </div>`;
     }
 
+    // Score evolution badge — pega snap anterior do localStorage
+    const _itemIdForSnap = analysisData?.detail?.id;
+    const _prevSnap = MF_loadSnap(_itemIdForSnap);
+    const scoreDeltaHtml = MF_renderScoreDelta(_prevSnap, score);
+
     // Score circle card
     el.innerHTML = `
         <div class="ana-card" style="align-items:center; text-align:center; justify-content:center;">
@@ -1698,10 +1830,25 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
             <span class="status-badge ${level === 'good' ? 'success' : (level === 'neutral' ? 'muted' : 'error')}" style="font-size:0.68rem; margin-top:10px;">
                 ${xpGainText}
             </span>
+            ${scoreDeltaHtml}
             ${usedFallback ? '<p class="text-small" style="margin-top:4px;">⚠ Estimativa</p>' : ''}
             ${mlBadgeHtml}
         </div>
     `;
+
+    // Diff banner: render no container changesBanner se existir + persiste novo snap
+    if (_itemIdForSnap && analysisData?.detail) {
+        const _currSnap = MF_buildSnap(analysisData.detail, analysisData.visitsData, analysisData.adsData, score);
+        const _diff = MF_diffSnap(_prevSnap, _currSnap);
+        const bannerHtml = MF_renderDiffBanner(_diff);
+        // Procura container de banner no mesmo container suffix
+        const suffixMatch = (containerId || '').match(/scoreCircle(.*)$/);
+        const suffix = suffixMatch ? suffixMatch[1] : '';
+        const bannerEl = document.getElementById(`changesBanner${suffix}`);
+        if (bannerEl) bannerEl.innerHTML = bannerHtml;
+        // Salva snap atualizado
+        MF_saveSnap(_itemIdForSnap, _currSnap);
+    }
 
     // Checklist card — heurístico original + seção ML ADICIONAL (quando disponível)
     if (checkEl) {
@@ -3020,6 +3167,9 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             const containerHtml = `
                 <div class="item-analysis-container" id="analysis-container${containerIdSuffix}">
                     ${backBtnHtml}
+
+                    <!-- ROW 0: Mudanças desde a última análise (preenchido por exibirPontuacao via localStorage snapshot) -->
+                    <div id="changesBanner${containerIdSuffix}"></div>
 
                     <!-- ROW 1: Título | Score | Melhorias (3 colunas alinhadas) -->
                     <div style="display:grid; grid-template-columns:1.3fr auto 1fr; gap:16px; align-items:stretch; margin-bottom:16px;">
