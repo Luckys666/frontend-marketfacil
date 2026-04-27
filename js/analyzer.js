@@ -344,28 +344,35 @@ window.openAttrEditor = function (attrId) {
             return `<option value="${v.id}" data-name="${nameAttr}"${selected}>${escapeHtml(v.name)}</option>`;
         }).join('');
         inputHtml = `<select id="attr-input-${attrId}" class="attr-edit-input">
-            <option value="">-- Selecione --</option>
+            <option value="">-- Selecione uma opção --</option>
             ${opts}
         </select>`;
-        hintExtra = ` · só valores da lista`;
+        hintExtra = ` · escolha uma opção da lista (texto livre não é aceito)`;
     } else if (allowedValues.length > 0) {
         // String com sugestões — permite texto livre, ML aceita pra ganhar keywords
         const datalistId = `attr-datalist-${attrId}`;
         const opts = allowedValues.map(v => `<option value="${escapeHtml(v.name)}">`).join('');
-        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}" list="${datalistId}" autocomplete="off" />
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}" list="${datalistId}" autocomplete="off" placeholder="comece a digitar pra ver sugestões" />
             <datalist id="${datalistId}">${opts}</datalist>`;
-        hintExtra = ` · ${allowedValues.length} sugestões (pode combinar e digitar livre)`;
+        hintExtra = ` · ${allowedValues.length} sugestões disponíveis — pode combinar ou digitar livre`;
     } else if (valueType === 'number' || valueType === 'number_unit') {
         const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
         const exNum = exampleNumberForUnit(unit);
         const fromHelper = MF_getAttrPlaceholder(catAttr);
         const placeholder = fromHelper || (valueType === 'number_unit' && unit ? `ex: ${exNum} ${unit}` : `ex: ${exNum}`);
-        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(placeholder)}" maxlength="${maxLen}" />`;
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(placeholder)}" maxlength="${maxLen}" inputmode="decimal" />`;
+        hintExtra = valueType === 'number_unit' && unit
+            ? ` · digite o valor em ${unit} (ex: ${exNum} ${unit}) — só números`
+            : ` · digite só números (ex: ${exNum})`;
     } else {
         // Default: string free text
         const placeholder = MF_getAttrPlaceholder(catAttr);
         const phAttr = placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : '';
-        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}"${phAttr} />`;
+        const isGtin = MF_isGtinLike(attrId);
+        const inputModeAttr = isGtin ? ' inputmode="numeric"' : '';
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}"${phAttr}${inputModeAttr} />`;
+        if (isGtin) hintExtra = ` · cole o código de barras (só números: 8, 12, 13 ou 14 dígitos)`;
+        else if (String(attrId).toUpperCase() === 'SELLER_SKU') hintExtra = ` · seu código interno (qualquer texto, até ${maxLen} caracteres)`;
     }
 
     wrapper.innerHTML = `
