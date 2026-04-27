@@ -322,6 +322,12 @@ function MF_translateMlError(errData, catAttr) {
         return `${fallbackName}: conflito com outro campo do anúncio. ${toPt(rawMsg)}`.trim();
     }
 
+    // Pattern específico do ML: atributo presente tanto em item.attributes quanto em variation.attributes
+    // Significa que esse campo é gerenciado por variação e não pode ser editado no campo geral.
+    if (/Same attributes are used in.*(item\.attributes|variation\.attribute)/i.test(rawMsg)) {
+        return `${fallbackName} é gerenciado por variação nesse anúncio. Não dá pra editar aqui no campo geral — você precisa editar em cada variação separadamente, na página do anúncio no Mercado Livre.`;
+    }
+
     // Fallback: mensagem traduzida + nome do campo + código (se houver)
     const ptMsg = toPt(rawMsg);
     if (ptMsg) {
@@ -342,6 +348,11 @@ function MF_getAttrPlaceholder(catAttr) {
     return '';
 }
 
+// Atributos comumente gerenciados por variação no Mercado Livre.
+// Se o anúncio tem variations[], editar esses no campo geral resulta em erro
+// "Same attributes are used in more than of item.attributes...".
+const MF_VARIATION_ATTR_IDS = new Set(['COLOR', 'SIZE', 'MAIN_COLOR', 'SELLER_SKU', 'GTIN']);
+
 window.openAttrEditor = function (attrId) {
     const state = window.currentAnalysisState;
     if (!state) return;
@@ -350,6 +361,29 @@ window.openAttrEditor = function (attrId) {
 
     const wrapper = document.getElementById(`attr-edit-wrapper-${attrId}`);
     if (!wrapper) return;
+
+    // Bloqueia edição se anúncio tem variações E o atributo é normalmente per-variação
+    const hasVariations = Array.isArray(state.detail?.variations) && state.detail.variations.length > 0;
+    const isVariationAttr = MF_VARIATION_ATTR_IDS.has(String(attrId).toUpperCase());
+    if (hasVariations && isVariationAttr) {
+        const itemId = state.detail?.id || '';
+        const editUrl = itemId ? `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/variantes` : '';
+        wrapper.innerHTML = `
+            <div class="attr-edit-box" style="background:var(--yellow-light); border:1px solid var(--yellow); padding:8px; border-radius:6px;">
+                <div style="font-size:0.85rem; color:var(--text); margin-bottom:6px;">
+                    <strong>${catAttr.name}</strong> é gerenciado por variação nesse anúncio.
+                </div>
+                <div style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:8px;">
+                    Esse anúncio tem ${state.detail.variations.length} variações. Edite esse campo em cada variação separadamente, na página do anúncio no Mercado Livre.
+                </div>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    ${editUrl ? `<a href="${editUrl}" target="_blank" rel="noopener" class="attr-edit-save" style="text-decoration:none; padding:4px 10px; background:var(--blue); color:white; border-radius:4px; font-size:0.78rem;">Abrir variações no ML →</a>` : ''}
+                    <button type="button" onclick="window.cancelAttrEditor('${attrId}')" class="attr-edit-cancel" title="Fechar">✕</button>
+                </div>
+            </div>
+        `;
+        return;
+    }
 
     const currentAd = (state.detail.attributes || []).find(a => a.id === attrId) || {};
     const currentValueName = currentAd.value_name || '';
