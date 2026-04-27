@@ -571,14 +571,14 @@ window.saveAttr = async function (attrId) {
 
 function reRenderAnalysisView() {
     if (!window.currentAnalysisState) return;
-    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData } = window.currentAnalysisState;
+    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData } = window.currentAnalysisState;
 
     // Update dependent components
     processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
     exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
 
     // Re-render score WITH analysisData so improvements panel persists
-    const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData };
+    const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
     exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes), usedFallback, `scoreCircle${containerIdSuffix}`, analysisData, `scoreChecklist${containerIdSuffix}`);
 }
 
@@ -1613,7 +1613,7 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
             if (missing.length > 0) checks.push({ ok: false, text: `${missing.length} campos da categoria faltando` });
             else checks.push({ ok: true, text: 'Categoria completa' });
         }
-        // Visit trend
+        // Visit trend + ghost ad detection
         if (d.visitsData && d.visitsData.results && !d.visitsData.error) {
             const results = d.visitsData.results || [];
             results.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1622,6 +1622,17 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
             const total30 = sumV(results);
             const total7 = sumV(results.slice(Math.max(0, len - 7)));
             const totalPrev7 = sumV(results.slice(Math.max(0, len - 14), Math.max(0, len - 7)));
+
+            // Ghost ad: tem visitas, mas zero vendas em 30 dias (só se Ads ativo, pra termos vendas 30d)
+            // Quando há ads, ML retorna units_quantity (ads) + organic_units_quantity (orgânico) por dia.
+            const adsDataX = d.adsData;
+            if (adsDataX?.has_ads && Array.isArray(adsDataX.daily) && total30 > 0) {
+                const ads30 = adsDataX.daily.reduce((s, x) => s + (x.units_quantity || 0), 0);
+                const org30 = adsDataX.daily.reduce((s, x) => s + (x.organic_units_quantity || 0), 0);
+                if ((ads30 + org30) === 0) {
+                    checks.push({ ok: false, text: `${total30} visitas / 0 vendas em 30 dias (problema de conversão)` });
+                }
+            }
 
             if (total30 === 0) {
                 checks.push({ ok: false, text: 'Sem visitas nos últimos 30 dias' });
@@ -1938,13 +1949,14 @@ window.reloadAdsMetrics = async function(days) {
     if (el) el.innerHTML = '<div class="ana-card" style="padding:30px; text-align:center;"><span class="text-small">Carregando ads (' + days + ' dias)...</span></div>';
     try {
         const data = await fetchAdsMetrics(window._adsItemId, window._adsAccessToken, days);
-        exibirAdsMetrics(data, window._adsContainerId, days);
+        const visits = window.currentAnalysisState?.visitsData || null;
+        exibirAdsMetrics(data, window._adsContainerId, days, visits);
     } catch(e) {
         if (el) el.innerHTML = '<div class="ana-card"><p class="text-small error-message">Erro: ' + e.message + '</p></div>';
     }
 };
 
-function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30) {
+function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, visitsData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -2077,8 +2089,59 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30) 
             ${metricCard('CTR', ctr + '%', trendBadge(ctrTrend), parseFloat(ctr) >= 1 ? 'var(--green-dark)' : 'var(--red)')}
             ${metricCard('ACOS', acos + '%', trendBadge(acosTrend, true), parseFloat(acos) > 30 ? 'var(--red)' : (parseFloat(acos) > 15 ? 'var(--yellow)' : 'var(--green-dark)'))}
             ${metricCard('TACOS', tacos + '%', `<span style="font-size:0.65rem;color:var(--text-muted);">Fat. total: ${fmtMoney(totalAllRevenue)}</span>`, parseFloat(tacos) > 20 ? 'var(--red)' : (parseFloat(tacos) > 10 ? 'var(--yellow)' : 'var(--green-dark)'))}
-            ${metricCard('Conversão', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
+            ${metricCard('Conversão Ads', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
         </div>
+        ${(() => {
+            // Breakdown Ads × Orgânico × Total — só faz sentido com visitsData válido
+            if (!visitsData || !Array.isArray(visitsData.results) || visitsData.error) return '';
+            const visitResults = visitsData.results || [];
+            const totalVisits = visitResults.reduce((s, v) => s + (v.total || 0), 0);
+            const adsVisits = totalClicks;
+            const organicVisits = Math.max(0, totalVisits - adsVisits);
+            const adsSales = totalOrders;
+            const organicSales = totalOrganic;
+            const totalSales = adsSales + organicSales;
+            const cvr = (sales, vis) => vis > 0 ? ((sales / vis) * 100) : 0;
+            const adsCvr = cvr(adsSales, adsVisits);
+            const orgCvr = cvr(organicSales, organicVisits);
+            const totalCvr = cvr(totalSales, totalVisits);
+            const colorFor = (v) => v >= 5 ? 'var(--green-dark)' : (v >= 1 ? 'var(--yellow)' : 'var(--red)');
+            const insight = (() => {
+                if (totalVisits === 0) return '';
+                if (adsCvr > orgCvr * 2 && adsVisits > 10) return 'Ads converte muito mais que orgânico — vale subir o lance.';
+                if (orgCvr > adsCvr * 2 && organicVisits > 10) return 'Orgânico converte mais que Ads — investir em SEO/preço/título dá mais retorno que aumentar lance.';
+                if (totalCvr < 0.5) return 'Conversão geral baixa — revise preço, fotos, descrição, reviews.';
+                return '';
+            })();
+            return `
+            <div style="margin-bottom:16px;">
+                <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${activeDays} dias)</div>
+                <div style="border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:6px 10px; background:var(--row-alt); font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.04em;">
+                        <span>Canal</span><span style="text-align:right;">Visitas</span><span style="text-align:right;">Vendas</span><span style="text-align:right;">Conversão</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
+                        <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--blue); margin-right:6px;"></span>Ads</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsVisits)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsSales)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${adsCvr.toFixed(2)}%</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
+                        <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px;"></span>Orgânico</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicVisits)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicSales)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${orgCvr.toFixed(2)}%</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border); background:var(--bg-subtle, var(--row-alt));">
+                        <span style="font-weight:700;">Total</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalVisits)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalSales)}</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${totalCvr.toFixed(2)}%</span>
+                    </div>
+                </div>
+                ${insight ? `<div style="margin-top:6px; font-size:0.75rem; color:var(--text-secondary); font-style:italic;">${insight}</div>` : ''}
+            </div>`;
+        })()}
         ${campaign.name ? `
         <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--navy);border-radius:4px;"><span style="font-size:0.65rem;color:rgba(255,255,255,0.5);">Campanha:</span><span style="font-size:0.78rem;font-weight:600;color:#fff;">${campaignName}</span></div>
@@ -2994,7 +3057,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Store global state for UI toggles
             window.currentAnalysisState = {
-                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData
             };
 
             exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`, detail);
@@ -3007,7 +3070,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             window._adsItemId = detail.id;
             window._adsAccessToken = accessToken;
-            exibirAdsMetrics(adsData, `adsMetrics${containerIdSuffix}`);
+            exibirAdsMetrics(adsData, `adsMetrics${containerIdSuffix}`, 30, visitsData);
 
             // Qualidade das publicações (API ML /item/{id}/performance)
             exibirPerformance(performanceData, `performanceTexto${containerIdSuffix}`);
@@ -3016,7 +3079,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             exibirExperienciaCompra(purchaseExperienceData, `purchaseExperience${containerIdSuffix}`);
 
             // Pass analysis data for improvements panel (includes visits & reviews)
-            const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData };
+            const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
             // Prioriza score da ML Quality API quando disponível; senão usa heurística interna
             exibirPontuacao(
                 calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes),
