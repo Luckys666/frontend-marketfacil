@@ -249,11 +249,19 @@ function MF_validateAttrInput(catAttr, rawValue) {
         return { ok: true, cleanedValue: val };
     }
 
-    // Numéricos / dimensões — precisa começar com dígito
+    // Numéricos / dimensões — precisa começar com dígito; ML exige unidade junto pra number_unit
     if (valueType === 'number' || valueType === 'number_unit') {
         if (!/^[\d.,]/.test(val)) {
             const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
             return { ok: false, error: `${name} precisa começar com um número${unit ? ` (ex: 30 ${unit})` : ' (ex: 30)'}.` };
+        }
+        // number_unit: ML rejeita se não tiver unidade. Se user digitou só dígitos, anexa a unit padrão automaticamente.
+        if (valueType === 'number_unit') {
+            const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
+            const hasUnit = /[a-zA-Z]/.test(val);
+            if (!hasUnit && unit) {
+                return { ok: true, cleanedValue: `${val} ${unit}`, autoCleaned: true };
+            }
         }
         return { ok: true, cleanedValue: val };
     }
@@ -888,13 +896,26 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             return filledA === filledB ? 0 : (filledA ? 1 : -1);
         });
 
+        // Se anúncio tem variações, atributos gerenciados por variação (Cor/Tamanho/SKU/etc)
+        // não são editáveis no campo geral — escondemos da lista e mostramos uma nota informativa
+        // com link direto pra editar variações no ML.
+        const detail = window.currentAnalysisState?.detail;
+        const hasVariations = Array.isArray(detail?.variations) && detail.variations.length > 0;
+        const variationAttrs = [];
+
         const missingAttrs = [];
         const filledAttrs = [];
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
             const isFilled = adValue && adValue.trim() !== '';
-            if (isFilled) filledAttrs.push({ catAttr, adValue });
-            else missingAttrs.push({ catAttr, adValue });
+            const isVariationAttr = hasVariations && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase());
+            if (isVariationAttr) {
+                variationAttrs.push({ catAttr, adValue });
+            } else if (isFilled) {
+                filledAttrs.push({ catAttr, adValue });
+            } else {
+                missingAttrs.push({ catAttr, adValue });
+            }
         });
 
         const renderCatItem = (catAttr, adValue, isFilled) => {
@@ -925,7 +946,25 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             ? filledAttrs.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, true)).join('')
             : '<p class="text-small">Nenhum preenchido.</p>';
 
+        // Banner informativo pros atributos gerenciados por variação
+        let variationBanner = '';
+        if (variationAttrs.length > 0) {
+            const itemId = detail?.id || '';
+            const editUrl = itemId ? `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/variantes` : '';
+            const names = variationAttrs.map(v => v.catAttr.name).join(', ');
+            variationBanner = `
+                <div style="background:var(--yellow-light); border:1px solid var(--yellow); padding:10px 12px; border-radius:6px; margin-bottom:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <span style="font-size:1rem;">🎨</span>
+                    <div style="flex:1; min-width:200px;">
+                        <div style="font-size:0.82rem; color:var(--text); font-weight:500;">${variationAttrs.length} ${variationAttrs.length === 1 ? 'campo' : 'campos'} gerenciado${variationAttrs.length === 1 ? '' : 's'} por variação</div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary);">${names} — esse anúncio tem ${detail.variations.length} variações. Edite na página do anúncio no Mercado Livre.</div>
+                    </div>
+                    ${editUrl ? `<a href="${editUrl}" target="_blank" rel="noopener" style="text-decoration:none; padding:6px 12px; background:var(--blue); color:white; border-radius:4px; font-size:0.78rem; white-space:nowrap;">Abrir variações no ML →</a>` : ''}
+                </div>`;
+        }
+
         contentHtml = `
+            ${variationBanner}
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
                 <div>
                     <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Preenchidos (${filledAttrs.length})</div>
