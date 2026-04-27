@@ -1601,11 +1601,13 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         else checks.push({ ok: true, text: `${filledCount} atributos preenchidos` });
         // Category fields
         if (d.categoryAttributes && Array.isArray(d.categoryAttributes)) {
+            const hasVar = Array.isArray(d.detail?.variations) && d.detail.variations.length > 0;
             const catString = d.categoryAttributes.filter(a => a.value_type === 'string' && !a.tags?.read_only);
             const catMap = new Map();
             (d.detail?.attributes || []).forEach(a => { if (a?.value_name) catMap.set(a.id, a.value_name); });
             const missing = catString.filter(c => {
                 if (window.ignoredAdAttributes.has(c.id)) return false;
+                if (hasVar && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(c.id).toUpperCase())) return false;
                 const v = catMap.get(c.id); return !v || v.trim() === '';
             });
             if (missing.length > 0) checks.push({ ok: false, text: `${missing.length} campos da categoria faltando` });
@@ -3453,13 +3455,17 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     }
 
     // --- CAMPOS DA CATEGORIA (-2 por campo faltando, max -20) ---
+    // Não penaliza atributos gerenciados por variação quando anúncio tem variações —
+    // o usuário não consegue editar isso pelo nosso app, é injusto descontar.
     if (categoryAttributes && Array.isArray(categoryAttributes)) {
+        const hasVariations = Array.isArray(detail?.variations) && detail.variations.length > 0;
         const catString = categoryAttributes.filter(a => a.value_type === 'string' && !(Array.isArray(a.tags) && a.tags.some(t => t === 'read_only' || t?.id === 'read_only')) && !a.tags?.read_only);
         const adMap = new Map();
         (detail.attributes || []).forEach(a => { if (a?.value_name) adMap.set(a.id, a.value_name); });
         let missingCount = 0;
         catString.forEach(c => {
             if (window.ignoredAdAttributes.has(c.id)) return;
+            if (hasVariations && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(c.id).toUpperCase())) return;
             const v = adMap.get(c.id);
             if (!v || v.trim() === '') missingCount++;
         });
