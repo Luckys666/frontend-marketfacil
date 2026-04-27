@@ -493,7 +493,45 @@ function MF_renderScoreDelta(prevSnap, currScore) {
 // MF Opportunities — calcula oportunidades defensíveis (sem inventar thresholds)
 // Cada item tem cálculo simples e auditável.
 // ============================================================
-function MF_buildOpportunities(detail, visitsData, adsData) {
+// Overrides locais por anúncio (estoque real informado pelo vendedor, oportunidades ocultadas)
+const MF_OPP_OVERRIDES_PREFIX = 'mf_opp_overrides_v1_';
+
+function MF_oppLoadOverride(itemId) {
+    if (!itemId) return {};
+    try {
+        const raw = localStorage.getItem(MF_OPP_OVERRIDES_PREFIX + itemId);
+        return raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function MF_oppSaveOverride(itemId, kind, patch) {
+    if (!itemId || !kind) return;
+    try {
+        const curr = MF_oppLoadOverride(itemId);
+        curr[kind] = Object.assign({}, curr[kind] || {}, patch || {});
+        localStorage.setItem(MF_OPP_OVERRIDES_PREFIX + itemId, JSON.stringify(curr));
+    } catch (e) { /* localStorage cheio/bloqueado — silencioso */ }
+}
+
+const MF_OPP_KIND_ICON = {
+    cvr_upside: '📈',
+    stuck_stock: '📦',
+    ads_off: '🚀',
+    tag_specs: '📋',
+    tag_moderation: '⚠️',
+    tag_pics: '📷',
+    ads_hold: '⏸️',
+};
+
+function MF_oppPriorityColor(prio) {
+    if (prio === 1) return 'var(--red, #dc2626)';
+    if (prio === 2) return 'var(--yellow, #f59e0b)';
+    return 'var(--blue, #3b82f6)';
+}
+
+function MF_buildOpportunities(detail, visitsData, adsData, opts) {
     const opps = [];
     const _site = (typeof window !== 'undefined' && window.MF_currentSiteId) ? window.MF_currentSiteId() : 'MLB';
     const _cfg = (typeof window !== 'undefined' && window.MF_getSiteConfig) ? window.MF_getSiteConfig(_site) : { locale: 'pt-BR', currency: 'BRL' };
@@ -505,6 +543,8 @@ function MF_buildOpportunities(detail, visitsData, adsData) {
     const itemId = detail?.id || '';
     const editUrl = itemId ? `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar` : '';
     const tags = Array.isArray(detail?.tags) ? detail.tags : [];
+    const suffix = (opts && typeof opts.suffix === 'string') ? opts.suffix : '';
+    const overrides = MF_oppLoadOverride(itemId);
 
     let sales30 = null;
     if (adsData?.has_ads && Array.isArray(adsData.daily)) {
@@ -513,124 +553,264 @@ function MF_buildOpportunities(detail, visitsData, adsData) {
         sales30 = ads + org;
     }
 
+    const push = (opp) => {
+        if (overrides[opp.kind] && overrides[opp.kind].hidden) return;
+        opps.push(opp);
+    };
+
     // (1) Upside de conversão — só quando temos visits e sales 30d defensíveis
     if (price > 0 && visits30 >= 50 && sales30 !== null) {
         const cvr = visits30 > 0 ? (sales30 / visits30) : 0;
         const cvrPct = cvr * 100;
-        // Cada 0,1% adicional = (visits * 0.001) * price / mês
         const monthlyUpside = visits30 * 0.001 * price;
         if (monthlyUpside >= 1) {
-            opps.push({
+            push({
                 kind: 'cvr_upside',
                 priority: cvrPct < 2 ? 1 : 3,
+                icon: MF_OPP_KIND_ICON.cvr_upside,
                 title: `Cada 0,1% a mais em conversão = +${fmtMoney(monthlyUpside)}/mês`,
                 detail: `Hoje: ${visits30} visitas em 30d × conversão de ${cvrPct.toFixed(2)}% × ${fmtMoney(price)}.`,
                 value: monthlyUpside,
+                actions: [],
             });
         }
     }
 
-    // (2) Estoque parado — anúncio active sem movimentação. Detecta via vendas 30d (com ads) OU 0 visitas 30d (sem ads)
+    // (2) Estoque parado — só dispara em quantidades absurdas (vendedores costumam inflar pra ranking)
+    const STUCK_STOCK_MIN = 10000;
+    const realStockOverride = overrides.stuck_stock && typeof overrides.stuck_stock.real_stock === 'number'
+        ? overrides.stuck_stock.real_stock
+        : null;
+    const effectiveStock = (realStockOverride !== null) ? Math.min(availableQty, realStockOverride) : availableQty;
     const _stuckCondition = (sales30 === 0) || (!adsData?.has_ads && visits30 === 0);
-    if (availableQty > 0 && price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
-        const stockValue = availableQty * price;
+    if (effectiveStock >= STUCK_STOCK_MIN && price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
+        const stockValue = effectiveStock * price;
         const _reason = sales30 === 0 ? 'sem vendas em 30 dias' : 'sem visitas em 30 dias';
-        opps.push({
+        const _adjustedNote = (realStockOverride !== null) ? ' (ajustado por você)' : '';
+        push({
             kind: 'stuck_stock',
             priority: 1,
-            title: `${fmtMoney(stockValue)} parados em estoque`,
-            detail: `${availableQty} ${availableQty === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço ou republicar.`,
-            cta: editUrl ? { label: 'Editar no ML', href: editUrl } : null,
+            icon: MF_OPP_KIND_ICON.stuck_stock,
+            title: `${fmtMoney(stockValue)} parados em estoque${_adjustedNote}`,
+            detail: `${effectiveStock.toLocaleString(_cfg.locale)} ${effectiveStock === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço, criar um anúncio novo, revisar fotos ou entrar em catálogos.`,
             value: stockValue,
+            actions: [
+                { type: 'real_stock', label: 'Tenho mais estoque por fora' },
+                { type: 'hide', label: 'Ocultar' },
+            ],
         });
     }
 
     // (3) Ads pausado em anúncio que já vende organicamente — oportunidade de amplificar
     if (!adsData?.has_ads && soldQuantityLifetime >= 5) {
-        opps.push({
+        push({
             kind: 'ads_off',
             priority: 2,
+            icon: MF_OPP_KIND_ICON.ads_off,
             title: `Anúncio vendendo sem Ads`,
             detail: `${soldQuantityLifetime.toLocaleString(_cfg.locale)} ${soldQuantityLifetime === 1 ? 'venda' : 'vendas'} no histórico, sem campanha ativa. Ads pode amplificar a exposição.`,
-            cta: { label: 'Ir pro Planejador de Ads', href: '/planejador-ads' },
             value: 0,
+            actions: [
+                { type: 'external', label: 'Ir pro Planejador de Ads', href: '/planejador-ads' },
+            ],
         });
     }
 
-    // (4) Tag específica `incomplete_technical_specs` — afeta ranking
+    // (4) Tag `incomplete_technical_specs` — afeta ranking
     if (tags.includes('incomplete_technical_specs')) {
-        opps.push({
+        push({
             kind: 'tag_specs',
             priority: 1,
+            icon: MF_OPP_KIND_ICON.tag_specs,
             title: `Ficha técnica incompleta`,
-            detail: `O ML marcou esse anúncio com a tag "incomplete_technical_specs" — afeta posicionamento. Preencha os campos da categoria abaixo (na seção 📂 Campos da Categoria).`,
+            detail: `O ML marcou esse anúncio com a tag "incomplete_technical_specs" — afeta posicionamento. Preencha os campos da categoria abaixo.`,
             value: 0,
+            actions: [
+                { type: 'internal', label: 'Ir pra Campos da Categoria', target: 'categoryAttributes' + suffix },
+            ],
         });
     }
 
-    // (5) Tag `moderation_penalty` — sinal grave
+    // (5) Tag `moderation_penalty` — penalidade. Aponta pras seções internas (nem toda penalidade aparece no painel do ML)
     if (tags.includes('moderation_penalty')) {
-        opps.push({
+        push({
             kind: 'tag_moderation',
             priority: 1,
+            icon: MF_OPP_KIND_ICON.tag_moderation,
             title: `Penalidade de moderação`,
-            detail: `O anúncio recebeu uma penalidade do ML — exposição reduzida até regularizar. Verifique no painel do ML em "Saúde do anúncio".`,
-            cta: editUrl ? { label: 'Abrir anúncio no ML', href: editUrl } : null,
+            detail: `O anúncio recebeu uma penalidade do ML — exposição reduzida até regularizar. Confira nas seções Tags e Qualidade ML abaixo o motivo provável.`,
             value: 0,
+            actions: [
+                { type: 'internal', label: 'Ver Tags', target: 'tagsTexto' + suffix },
+                { type: 'internal', label: 'Ver Qualidade ML', target: 'performanceTexto' + suffix },
+            ],
         });
     }
 
-    // (6) Tag de fotos ruins
+    // (6) Tag de fotos ruins — trocar foto é ação no ML mesmo
     if (tags.includes('poor_quality_picture') || tags.includes('poor_quality_thumbnail')) {
-        opps.push({
+        push({
             kind: 'tag_pics',
             priority: 2,
+            icon: MF_OPP_KIND_ICON.tag_pics,
             title: `Fotos com qualidade baixa`,
             detail: `O ML detectou imagens de baixa qualidade — afeta conversão e ranking. Suba fotos com 1200×1540, fundo branco e produto centralizado.`,
-            cta: editUrl ? { label: 'Trocar fotos no ML', href: editUrl } : null,
             value: 0,
+            actions: editUrl ? [{ type: 'external', label: 'Trocar fotos no ML', href: editUrl }] : [],
         });
     }
 
     // (7) Ads ativo mas em "hold" — anúncio elegível porém não rodando
     const _adLevel = adsData?.ad_info?.current_level;
     if (adsData?.has_ads && _adLevel === 'hold') {
-        opps.push({
+        push({
             kind: 'ads_hold',
             priority: 1,
+            icon: MF_OPP_KIND_ICON.ads_hold,
             title: `Ads em hold (não está rodando)`,
             detail: `Sua campanha está ativa mas esse anúncio está com nível "hold" — provavelmente o lance está abaixo do mínimo da categoria. Aumente o lance ou troque a estratégia.`,
-            cta: { label: 'Ajustar no Planejador', href: '/planejador-ads' },
             value: 0,
+            actions: [
+                { type: 'external', label: 'Ajustar no Planejador', href: '/planejador-ads' },
+            ],
         });
     }
 
-    // Ordena por prioridade (1 mais urgente) e depois por valor R$ desc
     opps.sort((a, b) => (a.priority - b.priority) || (b.value - a.value));
     return opps.slice(0, 3);
 }
 
-function MF_renderOpportunityCard(opps) {
+function MF_renderOpportunityCard(opps, opts) {
     if (!opps || opps.length === 0) return '';
+    const itemId = opts && opts.itemId ? opts.itemId : '';
+    const itemIdJs = String(itemId).replace(/'/g, "\\'");
+
+    const renderActions = (o) => {
+        if (!Array.isArray(o.actions) || o.actions.length === 0) return '';
+        const btns = o.actions.map(a => {
+            const safeLabel = escapeHtml(a.label || 'Ação');
+            if (a.type === 'external' && a.href) {
+                return `<a href="${escapeHtml(a.href)}" target="_blank" rel="noopener" style="font-size:0.72rem; color:var(--blue, #3b82f6); text-decoration:none; padding:4px 8px; border:1px solid var(--blue, #3b82f6); border-radius:4px;">${safeLabel} →</a>`;
+            }
+            if (a.type === 'internal' && a.target) {
+                const targetJs = String(a.target).replace(/'/g, "\\'");
+                return `<button type="button" onclick="window.MF_oppScrollTo('${targetJs}')" style="font-size:0.72rem; color:var(--blue, #3b82f6); background:transparent; border:1px solid var(--blue, #3b82f6); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel} ↓</button>`;
+            }
+            if (a.type === 'real_stock') {
+                return `<button type="button" onclick="window.MF_oppOpenRealStock('${itemIdJs}', '${o.kind}')" style="font-size:0.72rem; color:var(--text); background:transparent; border:1px solid var(--border, #d1d5db); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel}</button>`;
+            }
+            if (a.type === 'hide') {
+                return `<button type="button" onclick="window.MF_oppHide('${itemIdJs}', '${o.kind}')" style="font-size:0.72rem; color:var(--text-muted); background:transparent; border:1px solid var(--border, #d1d5db); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel}</button>`;
+            }
+            return '';
+        }).filter(Boolean).join(' ');
+        return btns ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">${btns}</div>` : '';
+    };
+
     const itemsHtml = opps.map(o => {
-        const ctaHtml = o.cta ? `<a href="${o.cta.href}" style="display:inline-block; margin-top:4px; font-size:0.72rem; color:var(--blue); text-decoration:underline;">${o.cta.label} →</a>` : '';
+        const color = MF_oppPriorityColor(o.priority);
+        const icon = o.icon || '•';
         return `
-            <div style="padding:8px 0; border-top:1px solid rgba(0,0,0,0.06);">
-                <div style="font-size:0.85rem; font-weight:700; color:var(--text);">${o.title}</div>
-                <div style="font-size:0.72rem; color:var(--text-secondary); line-height:1.4; margin-top:2px;">${o.detail}</div>
-                ${ctaHtml}
+            <div data-mf-opp-kind="${escapeHtml(o.kind)}" style="border:1px solid var(--border, #e5e7eb); border-radius:var(--radius, 8px); border-left:4px solid ${color}; background:var(--bg-card, #fff); padding:12px 14px; margin-top:10px;">
+                <div style="display:flex; gap:10px; align-items:flex-start;">
+                    <span style="font-size:1.1rem; line-height:1.2;">${icon}</span>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:0.85rem; font-weight:700; color:var(--text);">${o.title}</div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.45; margin-top:3px;">${o.detail}</div>
+                        ${renderActions(o)}
+                    </div>
+                </div>
+                <div id="mf-opp-realstock-${escapeHtml(o.kind)}" style="display:none; margin-top:10px;"></div>
             </div>`;
     }).join('');
+
     return `
-        <div style="background:linear-gradient(135deg, #fef9c3, #fef3c7); border:1px solid #facc15; border-left:4px solid #ca8a04; padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:12px;">
-            <div style="display:flex; gap:10px; align-items:center; margin-bottom:4px;">
+        <div data-mf-opps-container data-item-id="${escapeHtml(itemId)}" style="background:linear-gradient(135deg, #fef9c3, #fef3c7); border:1px solid #facc15; border-left:4px solid #ca8a04; padding:12px 14px; border-radius:var(--radius-sm, 6px); margin-bottom:12px;">
+            <div style="display:flex; gap:10px; align-items:center;">
                 <span style="font-size:1.1rem;">💰</span>
-                <div style="font-size:0.82rem; font-weight:700; color:var(--text);">Oportunidades</div>
+                <div style="font-size:0.85rem; font-weight:700; color:var(--text);">Oportunidades</div>
                 <span style="font-size:0.7rem; color:var(--text-muted); margin-left:auto;">${opps.length} ${opps.length === 1 ? 'item' : 'itens'}</span>
             </div>
             ${itemsHtml}
         </div>`;
 }
+
+window.MF_oppScrollTo = function (elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const prevOutline = el.style.outline;
+    const prevOffset = el.style.outlineOffset;
+    const prevTransition = el.style.transition;
+    el.style.transition = 'outline-color 0.6s ease';
+    el.style.outline = '2px solid var(--blue, #3b82f6)';
+    el.style.outlineOffset = '4px';
+    setTimeout(() => {
+        el.style.outline = prevOutline || '';
+        el.style.outlineOffset = prevOffset || '';
+        el.style.transition = prevTransition || '';
+    }, 1500);
+};
+
+window.MF_oppHide = function (itemId, kind) {
+    if (!itemId || !kind) return;
+    MF_oppSaveOverride(itemId, kind, { hidden: true });
+    window.MF_oppRefresh();
+};
+
+window.MF_oppOpenRealStock = function (itemId, kind) {
+    if (!itemId || !kind) return;
+    const box = document.getElementById('mf-opp-realstock-' + kind);
+    if (!box) return;
+    const curr = MF_oppLoadOverride(itemId)[kind] && MF_oppLoadOverride(itemId)[kind].real_stock;
+    const initial = (typeof curr === 'number') ? curr : '';
+    const itemIdJs = String(itemId).replace(/'/g, "\\'");
+    box.style.display = 'block';
+    box.innerHTML = `
+        <div style="padding:10px 12px; background:var(--bg-subtle, #f8fafc); border:1px solid var(--border, #e5e7eb); border-radius:var(--radius-sm, 6px);">
+            <div style="font-size:0.78rem; color:var(--text); margin-bottom:6px;">Quantas unidades você realmente quer vender desse anúncio?</div>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <input id="mf-opp-realstock-input-${kind}" type="number" min="0" step="1" value="${initial}" placeholder="ex: 50" style="flex:1; min-width:120px; padding:6px 8px; border:1px solid var(--border, #d1d5db); border-radius:4px; font-size:0.82rem;">
+                <button type="button" onclick="window.MF_oppSaveRealStock('${itemIdJs}', '${kind}')" style="padding:6px 12px; background:var(--blue, #3b82f6); color:#fff; border:0; border-radius:4px; font-size:0.78rem; cursor:pointer;">Salvar</button>
+                <button type="button" onclick="document.getElementById('mf-opp-realstock-${kind}').style.display='none';" style="padding:6px 8px; background:transparent; color:var(--text-muted); border:1px solid var(--border, #d1d5db); border-radius:4px; font-size:0.78rem; cursor:pointer;">Cancelar</button>
+            </div>
+        </div>`;
+    setTimeout(() => {
+        const inp = document.getElementById('mf-opp-realstock-input-' + kind);
+        if (inp) inp.focus();
+    }, 50);
+};
+
+window.MF_oppSaveRealStock = function (itemId, kind) {
+    if (!itemId || !kind) return;
+    const inp = document.getElementById('mf-opp-realstock-input-' + kind);
+    if (!inp) return;
+    const n = Math.max(0, Math.floor(Number(inp.value)));
+    if (!isFinite(n)) return;
+    MF_oppSaveOverride(itemId, kind, { real_stock: n });
+    window.MF_oppRefresh();
+};
+
+window.MF_oppRefresh = function () {
+    const s = window.currentAnalysisState;
+    if (!s || !s.detail) return;
+    const suffix = s.containerIdSuffix || '';
+    const opps = MF_buildOpportunities(s.detail, s.visitsData, s.adsData, { suffix });
+    const newHtml = MF_renderOpportunityCard(opps, { suffix, itemId: s.detail.id || '' });
+    const containers = document.querySelectorAll('[data-mf-opps-container]');
+    containers.forEach(c => {
+        const wrapper = c.parentNode;
+        if (!wrapper) return;
+        if (newHtml) {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = newHtml;
+            const fresh = tmp.firstElementChild;
+            if (fresh) wrapper.replaceChild(fresh, c);
+        } else {
+            c.remove();
+        }
+    });
+};
 
 const MF_VARIATION_ATTR_IDS = new Set(['COLOR', 'SIZE', 'MAIN_COLOR', 'SELLER_SKU', 'GTIN']);
 
@@ -1981,18 +2161,15 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
 
     // Diff banner + Opportunities: renderiza no container changesBanner se existir + persiste novo snap
     if (_itemIdForSnap && analysisData?.detail) {
+        const suffixMatch = (containerId || '').match(/scoreCircle(.*)$/);
+        const suffix = suffixMatch ? suffixMatch[1] : '';
         const _currSnap = MF_buildSnap(analysisData.detail, analysisData.visitsData, analysisData.adsData, score);
         const _diff = MF_diffSnap(_prevSnap, _currSnap);
         const bannerHtml = MF_renderDiffBanner(_diff);
-        // Oportunidades (Phase 2): cálculos defensíveis com base em preço, visitas, vendas, estoque
-        const _opps = MF_buildOpportunities(analysisData.detail, analysisData.visitsData, analysisData.adsData);
-        const oppsHtml = MF_renderOpportunityCard(_opps);
-        // Procura container de banner no mesmo container suffix
-        const suffixMatch = (containerId || '').match(/scoreCircle(.*)$/);
-        const suffix = suffixMatch ? suffixMatch[1] : '';
+        const _opps = MF_buildOpportunities(analysisData.detail, analysisData.visitsData, analysisData.adsData, { suffix });
+        const oppsHtml = MF_renderOpportunityCard(_opps, { suffix, itemId: _itemIdForSnap });
         const bannerEl = document.getElementById(`changesBanner${suffix}`);
         if (bannerEl) bannerEl.innerHTML = bannerHtml + oppsHtml;
-        // Salva snap atualizado
         MF_saveSnap(_itemIdForSnap, _currSnap);
     }
 
@@ -2408,12 +2585,21 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             const totalCvr = cvr(totalSales, totalVisits);
             const colorFor = (v) => v >= 5 ? 'var(--green-dark)' : (v >= 1 ? 'var(--yellow)' : 'var(--red)');
             const insight = (() => {
-                if (totalVisits === 0) return '';
-                if (adsCvr > orgCvr * 2 && adsVisits > 10) return 'Ads converte muito mais que orgânico — vale subir o lance.';
-                if (orgCvr > adsCvr * 2 && organicVisits > 10) return 'Orgânico converte mais que Ads — investir em SEO/preço/título dá mais retorno que aumentar lance.';
-                if (totalCvr < 0.5) return 'Conversão geral baixa — revise preço, fotos, descrição, reviews.';
-                return '';
+                if (totalVisits === 0) return null;
+                if (adsCvr > orgCvr * 2 && adsVisits > 10) return { kind: 'info', icon: '💡', text: 'Ads converte muito mais que orgânico — vale subir o lance.' };
+                if (orgCvr > adsCvr * 2 && organicVisits > 10) return { kind: 'info', icon: '💡', text: 'Orgânico converte mais que Ads — investir em SEO/preço/título dá mais retorno que aumentar lance.' };
+                if (totalCvr < 0.5) return { kind: 'warning', icon: '⚠️', text: 'Conversão geral baixa — revise preço, fotos, descrição, reviews.' };
+                return null;
             })();
+            const insightHtml = insight ? (() => {
+                const isWarn = insight.kind === 'warning';
+                const bg = isWarn ? 'var(--yellow-light, #fef3c7)' : 'var(--blue-light, #dbeafe)';
+                const bd = isWarn ? 'var(--yellow, #f59e0b)' : 'var(--blue, #3b82f6)';
+                return `<div style="margin-top:8px; padding:8px 12px; background:${bg}; border-left:3px solid ${bd}; border-radius:var(--radius-sm, 6px); display:flex; gap:8px; align-items:flex-start;">
+                    <span style="font-size:0.95rem; line-height:1.2; flex-shrink:0;">${insight.icon}</span>
+                    <span style="font-size:0.78rem; color:var(--text); line-height:1.45;">${insight.text}</span>
+                </div>`;
+            })() : '';
             return `
             <div style="margin-bottom:16px;">
                 <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${activeDays} dias)</div>
@@ -2440,7 +2626,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${totalCvr.toFixed(2)}%</span>
                     </div>
                 </div>
-                ${insight ? `<div style="margin-top:6px; font-size:0.75rem; color:var(--text-secondary); font-style:italic;">${insight}</div>` : ''}
+                ${insightHtml}
             </div>`;
         })()}
         ${campaign.name ? `
