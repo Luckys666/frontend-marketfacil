@@ -225,15 +225,19 @@ function MF_validateAttrInput(catAttr, rawValue) {
 
     // GTIN/EAN/UPC — limpa não-dígitos e valida tamanho (8, 12, 13 ou 14)
     if (MF_isGtinLike(id)) {
-        const onlyDigits = val.replace(/\D+/g, '');
-        if (onlyDigits.length === 0) {
+        // Limpa só separadores comuns (espaço, traço, ponto, parêntese), preservando letras pra detectar erro
+        const cleaned = val.replace(/[\s\-.()]+/g, '');
+        if (/[^\d]/.test(cleaned)) {
+            return { ok: false, error: `${name}: digite só números. Use o código de barras do produto (8, 12, 13 ou 14 dígitos).` };
+        }
+        if (cleaned.length === 0) {
             return { ok: false, error: `${name} precisa ser numérico. Use o código de barras do produto (8, 12, 13 ou 14 dígitos).` };
         }
         const validLengths = [8, 12, 13, 14];
-        if (!validLengths.includes(onlyDigits.length)) {
-            return { ok: false, error: `${name} precisa ter 8, 12, 13 ou 14 dígitos. Você digitou ${onlyDigits.length}.` };
+        if (!validLengths.includes(cleaned.length)) {
+            return { ok: false, error: `${name} precisa ter 8, 12, 13 ou 14 dígitos. Você digitou ${cleaned.length}.` };
         }
-        return { ok: true, cleanedValue: onlyDigits, autoCleaned: onlyDigits !== val };
+        return { ok: true, cleanedValue: cleaned, autoCleaned: cleaned !== val };
     }
 
     // SKU — limita pelo max_length da categoria (default 60)
