@@ -489,6 +489,95 @@ function MF_renderScoreDelta(prevSnap, currScore) {
     return `<span style="display:inline-flex; align-items:center; gap:3px; margin-top:4px; padding:2px 8px; background:${delta > 0 ? '#d1fae5' : '#fee2e2'}; border-radius:10px; font-size:0.7rem; color:${color}; font-weight:700;">${arrow} ${sign}${delta} vs última análise</span>`;
 }
 
+// ============================================================
+// MF Opportunities — calcula oportunidades defensíveis (sem inventar thresholds)
+// Cada item tem cálculo simples e auditável.
+// ============================================================
+function MF_buildOpportunities(detail, visitsData, adsData) {
+    const opps = [];
+    const _site = (typeof window !== 'undefined' && window.MF_currentSiteId) ? window.MF_currentSiteId() : 'MLB';
+    const _cfg = (typeof window !== 'undefined' && window.MF_getSiteConfig) ? window.MF_getSiteConfig(_site) : { locale: 'pt-BR', currency: 'BRL' };
+    const fmtMoney = (n) => new Intl.NumberFormat(_cfg.locale, { style: 'currency', currency: _cfg.currency }).format(n || 0);
+    const price = detail?.price || 0;
+    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    const soldQuantityLifetime = detail?.sold_quantity || 0;
+    const availableQty = detail?.available_quantity || 0;
+
+    let sales30 = null;
+    if (adsData?.has_ads && Array.isArray(adsData.daily)) {
+        const ads = adsData.daily.reduce((s, x) => s + (x.units_quantity || 0), 0);
+        const org = adsData.daily.reduce((s, x) => s + (x.organic_units_quantity || 0), 0);
+        sales30 = ads + org;
+    }
+
+    // (1) Upside de conversão — só quando temos visits e sales 30d defensíveis
+    if (price > 0 && visits30 >= 50 && sales30 !== null) {
+        const cvr = visits30 > 0 ? (sales30 / visits30) : 0;
+        const cvrPct = cvr * 100;
+        // Cada 0,1% adicional = (visits * 0.001) * price / mês
+        const monthlyUpside = visits30 * 0.001 * price;
+        if (monthlyUpside >= 1) {
+            opps.push({
+                kind: 'cvr_upside',
+                priority: cvrPct < 2 ? 1 : 3,
+                title: `Cada 0,1% a mais em conversão = +${fmtMoney(monthlyUpside)}/mês`,
+                detail: `Hoje: ${visits30} visitas em 30d × conversão de ${cvrPct.toFixed(2)}% × ${fmtMoney(price)}.`,
+                value: monthlyUpside,
+            });
+        }
+    }
+
+    // (2) Estoque parado — quando anúncio active + 0 vendas 30d + estoque > 0 + tem histórico de vendas (não é anúncio recém-criado)
+    if (availableQty > 0 && price > 0 && sales30 === 0 && soldQuantityLifetime > 0) {
+        const stockValue = availableQty * price;
+        opps.push({
+            kind: 'stuck_stock',
+            priority: 1,
+            title: `${fmtMoney(stockValue)} parados em estoque`,
+            detail: `${availableQty} ${availableQty === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — sem vendas em 30 dias. Considere revisar preço ou republicar.`,
+            value: stockValue,
+        });
+    }
+
+    // (3) Ads pausado em anúncio que já vende organicamente — oportunidade de amplificar
+    if (!adsData?.has_ads && soldQuantityLifetime >= 5) {
+        opps.push({
+            kind: 'ads_off',
+            priority: 2,
+            title: `Anúncio vendendo sem Ads`,
+            detail: `${soldQuantityLifetime.toLocaleString(_cfg.locale)} ${soldQuantityLifetime === 1 ? 'venda' : 'vendas'} no histórico, sem campanha ativa. Ads pode amplificar a exposição.`,
+            cta: { label: 'Ir pro Planejador de Ads', href: '/planejador-ads' },
+            value: 0,
+        });
+    }
+
+    // Ordena por prioridade (1 mais urgente) e depois por valor R$ desc
+    opps.sort((a, b) => (a.priority - b.priority) || (b.value - a.value));
+    return opps.slice(0, 3);
+}
+
+function MF_renderOpportunityCard(opps) {
+    if (!opps || opps.length === 0) return '';
+    const itemsHtml = opps.map(o => {
+        const ctaHtml = o.cta ? `<a href="${o.cta.href}" style="display:inline-block; margin-top:4px; font-size:0.72rem; color:var(--blue); text-decoration:underline;">${o.cta.label} →</a>` : '';
+        return `
+            <div style="padding:8px 0; border-top:1px solid rgba(0,0,0,0.06);">
+                <div style="font-size:0.85rem; font-weight:700; color:var(--text);">${o.title}</div>
+                <div style="font-size:0.72rem; color:var(--text-secondary); line-height:1.4; margin-top:2px;">${o.detail}</div>
+                ${ctaHtml}
+            </div>`;
+    }).join('');
+    return `
+        <div style="background:linear-gradient(135deg, #fef9c3, #fef3c7); border:1px solid #facc15; border-left:4px solid #ca8a04; padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:12px;">
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:4px;">
+                <span style="font-size:1.1rem;">💰</span>
+                <div style="font-size:0.82rem; font-weight:700; color:var(--text);">Oportunidades</div>
+                <span style="font-size:0.7rem; color:var(--text-muted); margin-left:auto;">${opps.length} ${opps.length === 1 ? 'item' : 'itens'}</span>
+            </div>
+            ${itemsHtml}
+        </div>`;
+}
+
 const MF_VARIATION_ATTR_IDS = new Set(['COLOR', 'SIZE', 'MAIN_COLOR', 'SELLER_SKU', 'GTIN']);
 
 window.openAttrEditor = function (attrId) {
@@ -1836,16 +1925,19 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         </div>
     `;
 
-    // Diff banner: render no container changesBanner se existir + persiste novo snap
+    // Diff banner + Opportunities: renderiza no container changesBanner se existir + persiste novo snap
     if (_itemIdForSnap && analysisData?.detail) {
         const _currSnap = MF_buildSnap(analysisData.detail, analysisData.visitsData, analysisData.adsData, score);
         const _diff = MF_diffSnap(_prevSnap, _currSnap);
         const bannerHtml = MF_renderDiffBanner(_diff);
+        // Oportunidades (Phase 2): cálculos defensíveis com base em preço, visitas, vendas, estoque
+        const _opps = MF_buildOpportunities(analysisData.detail, analysisData.visitsData, analysisData.adsData);
+        const oppsHtml = MF_renderOpportunityCard(_opps);
         // Procura container de banner no mesmo container suffix
         const suffixMatch = (containerId || '').match(/scoreCircle(.*)$/);
         const suffix = suffixMatch ? suffixMatch[1] : '';
         const bannerEl = document.getElementById(`changesBanner${suffix}`);
-        if (bannerEl) bannerEl.innerHTML = bannerHtml;
+        if (bannerEl) bannerEl.innerHTML = bannerHtml + oppsHtml;
         // Salva snap atualizado
         MF_saveSnap(_itemIdForSnap, _currSnap);
     }
