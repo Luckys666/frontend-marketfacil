@@ -695,24 +695,24 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
 
                     ${varHtml}
 
-                    ${state !== 'good' && !hasVariation ? `
+                    ${state !== 'good' && !hasVariation && (detail?.sold_quantity || 0) === 0 ? `
                     <div class="info-box" style="margin-bottom:0; margin-top:8px; background:#fff7ed; border-color:#fed7aa; color:#9a3412;">
-                         <p><strong>Dica:</strong> Títulos detalhados acima de ${idealMin} caracteres ajudam na busca do Mercado Livre.</p>
+                         <p><strong>Dica:</strong> Como esse anúncio ainda não vendeu, vale otimizar pra ${idealMin}+ caracteres. Depois de começar a vender, <strong>não mexa mais no título</strong> — alterá-lo reseta a indexação do ML.</p>
                     </div>
                     ` : ''}
                     ${(() => {
-                        // Aviso especial: se o título NÃO está bom mas o anúncio tem muitas vendas,
-                        // NÃO mexer — alterar título reseta o histórico e perde exposição.
+                        // REGRA CRÍTICA: anúncio com QUALQUER venda no histórico não deve ter título alterado.
+                        // Alterar reseta indexação do ML e derruba exposição.
                         const soldQty = detail?.sold_quantity || 0;
-                        const HEAVY_SALES_THRESHOLD = 50; // ~50+ vendas já é um histórico forte
-                        if (state !== 'good' && soldQty >= HEAVY_SALES_THRESHOLD) {
+                        if (state !== 'good' && soldQty > 0) {
+                            const _locale = (window.MF_getSiteConfig && window.MF_currentSiteId) ? window.MF_getSiteConfig(window.MF_currentSiteId()).locale : 'pt-BR';
                             return `
                             <div style="margin-top:10px; padding:12px 14px; background:linear-gradient(135deg, #fef3c7, #fde68a); border:1px solid #f59e0b; border-left:4px solid #d97706; border-radius:var(--radius-sm);">
                                 <div style="display:flex; align-items:flex-start; gap:10px;">
                                     <span style="font-size:1.2rem; flex-shrink:0;">🛡️</span>
                                     <div style="flex:1; min-width:0;">
-                                        <div style="font-weight:700; font-size:0.85rem; color:#78350f; margin-bottom:3px;">Atenção: anúncio com histórico consolidado</div>
-                                        <div class="text-small" style="color:#78350f; line-height:1.4;">Este anúncio já tem <strong>${soldQty.toLocaleString((window.MF_getSiteConfig && window.MF_currentSiteId) ? window.MF_getSiteConfig(window.MF_currentSiteId()).locale : 'pt-BR')} vendas</strong>. Mesmo que o título pudesse ser otimizado, <strong>alterar o título agora pode fazer o anúncio perder posicionamento e exposição</strong> — o Mercado Livre tende a repensar o ranking quando o título muda. Avalie com cuidado antes de mexer.</div>
+                                        <div style="font-weight:700; font-size:0.85rem; color:#78350f; margin-bottom:3px;">Não mexa no título desse anúncio</div>
+                                        <div class="text-small" style="color:#78350f; line-height:1.4;">Este anúncio já tem <strong>${soldQty.toLocaleString(_locale)} ${soldQty === 1 ? 'venda' : 'vendas'}</strong>. Mesmo que o título não esteja no tamanho ideal, <strong>alterá-lo reseta a indexação do Mercado Livre</strong> — o anúncio perde posicionamento e exposição. Para subir a qualidade, mexa em fotos, atributos, descrição, garantia e frete; deixe o título como está.</div>
                                     </div>
                                 </div>
                             </div>`;
@@ -1574,11 +1574,19 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
     if (analysisData) {
         const checks = [];
         const d = analysisData;
-        // Title check
+        // Title check — REGRA CRÍTICA: se anúncio já tem vendas, não sugerir mudar título
+        // (alterar título reseta indexação ML e derruba exposição). Ver feedback_titulo_nao_mudar_se_vende.
         const titleLen = (d.title || '').length;
-        if (titleLen < 40) checks.push({ ok: false, text: `Título muito curto (${titleLen} chars)` });
-        else if (titleLen < 50) checks.push({ ok: false, text: `Título poderia ser maior (${titleLen}/50+)` });
-        else checks.push({ ok: true, text: 'Título otimizado' });
+        const hasSales = (d.detail?.sold_quantity || 0) > 0;
+        if (titleLen >= 50) {
+            checks.push({ ok: true, text: 'Título otimizado' });
+        } else if (hasSales) {
+            checks.push({ ok: true, text: 'Título mantido (anúncio com histórico de vendas)' });
+        } else if (titleLen < 40) {
+            checks.push({ ok: false, text: `Título muito curto (${titleLen} chars)` });
+        } else {
+            checks.push({ ok: false, text: `Título poderia ser maior (${titleLen}/50+)` });
+        }
         // Description
         const hasDesc = !!((d.descriptionData?.plain_text?.trim()) || (d.descriptionData?.text?.trim()));
         const src = d.descriptionData?.source;
@@ -3491,12 +3499,16 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     const isMlbu = detail.id && detail.id.startsWith('MLBU');
 
     // --- TÍTULO (-15 curto, -8 médio) ---
-    if (isMlbu) {
-        if (titleLen < 40) score += PONTOS_PENALIDADE_TITULO_CURTO;
-        else if (titleLen < 50) score += PONTOS_PENALIDADE_TITULO_MEDIO;
-    } else {
-        if (titleLen < MIN_CHARS_TITULO_RUIM) score += PONTOS_PENALIDADE_TITULO_CURTO;
-        else if (titleLen < MIN_CHARS_TITULO_BOM) score += PONTOS_PENALIDADE_TITULO_MEDIO;
+    // REGRA: Se anúncio já tem vendas, não penalizar título — mudá-lo reseta indexação ML.
+    const hasSalesForTitle = (detail.sold_quantity || 0) > 0;
+    if (!hasSalesForTitle) {
+        if (isMlbu) {
+            if (titleLen < 40) score += PONTOS_PENALIDADE_TITULO_CURTO;
+            else if (titleLen < 50) score += PONTOS_PENALIDADE_TITULO_MEDIO;
+        } else {
+            if (titleLen < MIN_CHARS_TITULO_RUIM) score += PONTOS_PENALIDADE_TITULO_CURTO;
+            else if (titleLen < MIN_CHARS_TITULO_BOM) score += PONTOS_PENALIDADE_TITULO_MEDIO;
+        }
     }
 
     // --- DESCRIÇÃO (-10 se não tem, +3 bônus se tem) ---
