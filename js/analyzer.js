@@ -204,6 +204,110 @@ function exampleNumberForUnit(unit) {
 }
 
 
+// ============================================================
+// MF Attribute Validation Helpers
+// Pré-valida e traduz erros do ML pra mensagens amigáveis em PT-BR.
+// ============================================================
+const MF_GTIN_LIKE_IDS = new Set(['GTIN', 'UPC', 'EAN', 'JAN', 'ISBN']);
+function MF_isGtinLike(attrId) {
+    return MF_GTIN_LIKE_IDS.has(String(attrId || '').toUpperCase());
+}
+
+function MF_validateAttrInput(catAttr, rawValue) {
+    if (!catAttr) return { ok: true, cleanedValue: rawValue };
+    const val = String(rawValue || '').trim();
+    if (!val) return { ok: false, error: 'Preencha um valor.' };
+
+    const id = String(catAttr.id || '').toUpperCase();
+    const valueType = catAttr.value_type;
+    const maxLen = catAttr.value_max_length;
+    const name = catAttr.name || 'campo';
+
+    // GTIN/EAN/UPC — limpa não-dígitos e valida tamanho (8, 12, 13 ou 14)
+    if (MF_isGtinLike(id)) {
+        const onlyDigits = val.replace(/\D+/g, '');
+        if (onlyDigits.length === 0) {
+            return { ok: false, error: `${name} precisa ser numérico. Use o código de barras do produto (8, 12, 13 ou 14 dígitos).` };
+        }
+        const validLengths = [8, 12, 13, 14];
+        if (!validLengths.includes(onlyDigits.length)) {
+            return { ok: false, error: `${name} precisa ter 8, 12, 13 ou 14 dígitos. Você digitou ${onlyDigits.length}.` };
+        }
+        return { ok: true, cleanedValue: onlyDigits, autoCleaned: onlyDigits !== val };
+    }
+
+    // SKU — limita pelo max_length da categoria (default 60)
+    if (id === 'SELLER_SKU') {
+        const limit = maxLen || 60;
+        if (val.length > limit) {
+            return { ok: false, error: `SKU pode ter no máximo ${limit} caracteres. Você digitou ${val.length}.` };
+        }
+        return { ok: true, cleanedValue: val };
+    }
+
+    // Numéricos / dimensões — precisa começar com dígito
+    if (valueType === 'number' || valueType === 'number_unit') {
+        if (!/^[\d.,]/.test(val)) {
+            const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
+            return { ok: false, error: `${name} precisa começar com um número${unit ? ` (ex: 30 ${unit})` : ' (ex: 30)'}.` };
+        }
+        return { ok: true, cleanedValue: val };
+    }
+
+    // Texto livre com max_length
+    if (maxLen && val.length > maxLen) {
+        return { ok: false, error: `${name}: máximo de ${maxLen} caracteres. Você digitou ${val.length}.` };
+    }
+
+    return { ok: true, cleanedValue: val };
+}
+
+function MF_translateMlError(errData, catAttr) {
+    const fallbackName = catAttr?.name || 'campo';
+    if (!errData) return 'Erro desconhecido.';
+
+    const cause = Array.isArray(errData.cause) ? errData.cause[0] : null;
+    const code = String(cause?.code || errData.ml_error || errData.error || '');
+    const rawMsg = String(cause?.message || errData.message || '');
+
+    if (/invalid_format/i.test(code)) {
+        return `${fallbackName}: formato inválido. Veja a dica logo abaixo do campo.`;
+    }
+    if (/value_not_in_allowed_values|invalid_value/i.test(code)) {
+        return `${fallbackName}: escolha uma opção da lista de sugestões — texto livre não é aceito aqui.`;
+    }
+    if (/invalid_length|too_long|too_short/i.test(code) || /length|too\s+(long|short)/i.test(rawMsg)) {
+        return `${fallbackName}: tamanho fora do permitido. ${rawMsg}`.trim();
+    }
+    if (/required/i.test(code)) {
+        return `${fallbackName} é obrigatório.`;
+    }
+
+    // Traduz mensagens ES → PT comuns
+    let translated = (rawMsg || '')
+        .replace(/no es valido/gi, 'não é válido')
+        .replace(/no es válido/gi, 'não é válido')
+        .replace(/debe contener/gi, 'precisa ter')
+        .replace(/atributo/gi, 'campo')
+        .replace(/El formato/gi, 'O formato')
+        .replace(/no puede ser/gi, 'não pode ser')
+        .replace(/Validation error/gi, `Não foi possível validar ${fallbackName}`);
+
+    return translated || `Não foi possível validar ${fallbackName}.`;
+}
+
+function MF_getAttrPlaceholder(catAttr) {
+    if (!catAttr) return '';
+    const id = String(catAttr.id || '').toUpperCase();
+    if (MF_isGtinLike(id)) return 'ex: 7891234567890 (código de barras, 8/12/13/14 dígitos)';
+    if (id === 'SELLER_SKU') return 'ex: SKU-001 (código interno seu)';
+    if (id === 'PACKAGE_LENGTH') return 'ex: 30 cm';
+    if (id === 'PACKAGE_WIDTH') return 'ex: 20 cm';
+    if (id === 'PACKAGE_HEIGHT') return 'ex: 10 cm';
+    if (id === 'PACKAGE_WEIGHT') return 'ex: 500 g';
+    return '';
+}
+
 window.openAttrEditor = function (attrId) {
     const state = window.currentAnalysisState;
     if (!state) return;
@@ -254,11 +358,14 @@ window.openAttrEditor = function (attrId) {
     } else if (valueType === 'number' || valueType === 'number_unit') {
         const unit = catAttr.default_unit || (Array.isArray(catAttr.allowed_units) ? (catAttr.allowed_units[0]?.id || catAttr.allowed_units[0]?.name) : '');
         const exNum = exampleNumberForUnit(unit);
-        const placeholder = valueType === 'number_unit' && unit ? `ex: ${exNum} ${unit}` : `ex: ${exNum}`;
+        const fromHelper = MF_getAttrPlaceholder(catAttr);
+        const placeholder = fromHelper || (valueType === 'number_unit' && unit ? `ex: ${exNum} ${unit}` : `ex: ${exNum}`);
         inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(placeholder)}" maxlength="${maxLen}" />`;
     } else {
         // Default: string free text
-        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}" />`;
+        const placeholder = MF_getAttrPlaceholder(catAttr);
+        const phAttr = placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : '';
+        inputHtml = `<input type="text" id="attr-input-${attrId}" class="attr-edit-input" value="${escapeHtml(currentValueName)}" maxlength="${maxLen}"${phAttr} />`;
     }
 
     wrapper.innerHTML = `
@@ -310,16 +417,21 @@ window.saveAttr = async function (attrId) {
     if (input) input.disabled = true;
     if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
 
+    const catAttr = (state.categoryAttributes || []).find(a => a.id === attrId);
     let attrPayload;
     if (input.tagName === 'SELECT') {
         const opt = input.options[input.selectedIndex];
-        if (!opt || !opt.value) return showError('Selecione um valor.');
+        if (!opt || !opt.value) return showError(`Selecione uma opção da lista para "${catAttr?.name || 'este campo'}".`);
         attrPayload = { id: attrId, value_id: opt.value, value_name: opt.dataset.name || opt.textContent.trim() };
     } else {
-        const val = (input.value || '').trim();
-        if (!val) return showError('Preencha um valor.');
+        const rawVal = (input.value || '').trim();
+        // Pré-validação amigável antes de chamar a ML
+        const validation = MF_validateAttrInput(catAttr, rawVal);
+        if (!validation.ok) return showError(validation.error);
+        const val = validation.cleanedValue || rawVal;
+        // Se a auto-correção limpou caracteres inválidos (ex: GTIN), reflete no input
+        if (validation.autoCleaned && input) input.value = val;
         // Se bater exato com uma allowed_value, manda value_id também (mais robusto)
-        const catAttr = (state.categoryAttributes || []).find(a => a.id === attrId);
         const exactMatch = Array.isArray(catAttr?.values)
             ? catAttr.values.find(v => String(v.name || '').toLowerCase() === val.toLowerCase())
             : null;
@@ -347,8 +459,7 @@ window.saveAttr = async function (attrId) {
             let msg = `Erro ${res.status}`;
             try {
                 const err = await res.json();
-                msg = err.error || err.message || msg;
-                if (Array.isArray(err.cause) && err.cause[0]?.message) msg = err.cause[0].message;
+                msg = MF_translateMlError(err, catAttr) || err.error || err.message || msg;
             } catch (_) {}
             return showError(msg);
         }
