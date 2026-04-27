@@ -322,9 +322,12 @@ function MF_translateMlError(errData, catAttr) {
         return `${fallbackName}: conflito com outro campo do anúncio. ${toPt(rawMsg)}`.trim();
     }
 
-    // Pattern específico do ML: atributo presente tanto em item.attributes quanto em variation.attributes
-    // Significa que esse campo é gerenciado por variação e não pode ser editado no campo geral.
-    if (/Same attributes are used in.*(item\.attributes|variation\.attribute)/i.test(rawMsg)) {
+    // ML retorna code "item.attributes.invalid" + references com "variation.attribute_combinations"
+    // quando o atributo é gerenciado por variação. Detectamos por references (mais robusto que regex em msg).
+    const refs = Array.isArray(cause?.references) ? cause.references : [];
+    const isVariationConflict = /Same attributes are used in/i.test(rawMsg)
+        || refs.some(r => /variation[s]?\.attribute_combinations/i.test(String(r)));
+    if (isVariationConflict) {
         return `${fallbackName} é gerenciado por variação nesse anúncio. Não dá pra editar aqui no campo geral — você precisa editar em cada variação separadamente, na página do anúncio no Mercado Livre.`;
     }
 
