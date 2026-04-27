@@ -274,30 +274,60 @@ function MF_translateMlError(errData, catAttr) {
     const code = String(cause?.code || errData.ml_error || errData.error || '');
     const rawMsg = String(cause?.message || errData.message || '');
 
-    if (/invalid_format/i.test(code)) {
-        return `${fallbackName}: formato inválido. Veja a dica logo abaixo do campo.`;
-    }
-    if (/value_not_in_allowed_values|invalid_value/i.test(code)) {
-        return `${fallbackName}: escolha uma opção da lista de sugestões — texto livre não é aceito aqui.`;
-    }
-    if (/invalid_length|too_long|too_short/i.test(code) || /length|too\s+(long|short)/i.test(rawMsg)) {
-        return `${fallbackName}: tamanho fora do permitido. ${rawMsg}`.trim();
-    }
-    if (/required/i.test(code)) {
-        return `${fallbackName} é obrigatório.`;
-    }
-
-    // Traduz mensagens ES → PT comuns
-    let translated = (rawMsg || '')
+    // Traduz texto ES/EN → PT comum (usado tanto em mensagens mapeadas como no fallback)
+    const toPt = (txt) => String(txt || '')
         .replace(/no es valido/gi, 'não é válido')
         .replace(/no es válido/gi, 'não é válido')
         .replace(/debe contener/gi, 'precisa ter')
-        .replace(/atributo/gi, 'campo')
-        .replace(/El formato/gi, 'O formato')
+        .replace(/debe ser/gi, 'precisa ser')
         .replace(/no puede ser/gi, 'não pode ser')
+        .replace(/atributo/gi, 'campo')
+        .replace(/atributos/gi, 'campos')
+        .replace(/El formato/gi, 'O formato')
+        .replace(/El valor/gi, 'O valor')
+        .replace(/valor del campo/gi, 'valor do campo')
+        .replace(/duplicado/gi, 'duplicado (já existe)')
+        .replace(/obligatorio/gi, 'obrigatório')
+        .replace(/caractere/gi, 'caractere')
         .replace(/Validation error/gi, `Não foi possível validar ${fallbackName}`);
 
-    return translated || `Não foi possível validar ${fallbackName}.`;
+    if (/invalid_format/i.test(code)) {
+        return `${fallbackName}: formato inválido. Veja a dica logo abaixo do campo.${rawMsg ? ` (Detalhe: ${toPt(rawMsg)})` : ''}`;
+    }
+    if (/value_not_in_allowed_values/i.test(code)) {
+        return `${fallbackName}: escolha uma opção da lista de sugestões — texto livre não é aceito aqui.`;
+    }
+    if (/invalid_value/i.test(code)) {
+        return `${fallbackName}: valor não aceito pelo Mercado Livre. ${toPt(rawMsg)}`.trim();
+    }
+    if (/invalid_length|too_long|too_short|max_length|min_length/i.test(code) || /length|too\s+(long|short)|caracteres/i.test(rawMsg)) {
+        return `${fallbackName}: tamanho fora do permitido. ${toPt(rawMsg)}`.trim();
+    }
+    if (/required|missing/i.test(code)) {
+        return `${fallbackName} é obrigatório — você precisa preencher esse campo.`;
+    }
+    if (/duplicated|already_exists/i.test(code)) {
+        return `${fallbackName}: esse valor já está em uso em outro anúncio seu.`;
+    }
+    if (/read[_\s-]?only/i.test(code)) {
+        return `${fallbackName} não pode ser editado depois que o anúncio foi publicado.`;
+    }
+    if (/deprecated/i.test(code)) {
+        return `${fallbackName}: esse campo foi descontinuado pelo Mercado Livre.`;
+    }
+    if (/forbidden|not_allowed|not_authorized/i.test(code) || /forbidden/i.test(rawMsg)) {
+        return `${fallbackName}: esse campo não pode ser alterado nessa categoria/anúncio.`;
+    }
+    if (/conflict/i.test(code)) {
+        return `${fallbackName}: conflito com outro campo do anúncio. ${toPt(rawMsg)}`.trim();
+    }
+
+    // Fallback: mensagem traduzida + nome do campo + código (se houver)
+    const ptMsg = toPt(rawMsg);
+    if (ptMsg) {
+        return `${fallbackName}: ${ptMsg}`;
+    }
+    return `Não foi possível validar ${fallbackName}.${code ? ` (código: ${code})` : ''}`;
 }
 
 function MF_getAttrPlaceholder(catAttr) {
