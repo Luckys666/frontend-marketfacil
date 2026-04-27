@@ -502,6 +502,9 @@ function MF_buildOpportunities(detail, visitsData, adsData) {
     const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
     const soldQuantityLifetime = detail?.sold_quantity || 0;
     const availableQty = detail?.available_quantity || 0;
+    const itemId = detail?.id || '';
+    const editUrl = itemId ? `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar` : '';
+    const tags = Array.isArray(detail?.tags) ? detail.tags : [];
 
     let sales30 = null;
     if (adsData?.has_ads && Array.isArray(adsData.daily)) {
@@ -527,14 +530,17 @@ function MF_buildOpportunities(detail, visitsData, adsData) {
         }
     }
 
-    // (2) Estoque parado — quando anúncio active + 0 vendas 30d + estoque > 0 + tem histórico de vendas (não é anúncio recém-criado)
-    if (availableQty > 0 && price > 0 && sales30 === 0 && soldQuantityLifetime > 0) {
+    // (2) Estoque parado — anúncio active sem movimentação. Detecta via vendas 30d (com ads) OU 0 visitas 30d (sem ads)
+    const _stuckCondition = (sales30 === 0) || (!adsData?.has_ads && visits30 === 0);
+    if (availableQty > 0 && price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
         const stockValue = availableQty * price;
+        const _reason = sales30 === 0 ? 'sem vendas em 30 dias' : 'sem visitas em 30 dias';
         opps.push({
             kind: 'stuck_stock',
             priority: 1,
             title: `${fmtMoney(stockValue)} parados em estoque`,
-            detail: `${availableQty} ${availableQty === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — sem vendas em 30 dias. Considere revisar preço ou republicar.`,
+            detail: `${availableQty} ${availableQty === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço ou republicar.`,
+            cta: editUrl ? { label: 'Editar no ML', href: editUrl } : null,
             value: stockValue,
         });
     }
@@ -547,6 +553,54 @@ function MF_buildOpportunities(detail, visitsData, adsData) {
             title: `Anúncio vendendo sem Ads`,
             detail: `${soldQuantityLifetime.toLocaleString(_cfg.locale)} ${soldQuantityLifetime === 1 ? 'venda' : 'vendas'} no histórico, sem campanha ativa. Ads pode amplificar a exposição.`,
             cta: { label: 'Ir pro Planejador de Ads', href: '/planejador-ads' },
+            value: 0,
+        });
+    }
+
+    // (4) Tag específica `incomplete_technical_specs` — afeta ranking
+    if (tags.includes('incomplete_technical_specs')) {
+        opps.push({
+            kind: 'tag_specs',
+            priority: 1,
+            title: `Ficha técnica incompleta`,
+            detail: `O ML marcou esse anúncio com a tag "incomplete_technical_specs" — afeta posicionamento. Preencha os campos da categoria abaixo (na seção 📂 Campos da Categoria).`,
+            value: 0,
+        });
+    }
+
+    // (5) Tag `moderation_penalty` — sinal grave
+    if (tags.includes('moderation_penalty')) {
+        opps.push({
+            kind: 'tag_moderation',
+            priority: 1,
+            title: `Penalidade de moderação`,
+            detail: `O anúncio recebeu uma penalidade do ML — exposição reduzida até regularizar. Verifique no painel do ML em "Saúde do anúncio".`,
+            cta: editUrl ? { label: 'Abrir anúncio no ML', href: editUrl } : null,
+            value: 0,
+        });
+    }
+
+    // (6) Tag de fotos ruins
+    if (tags.includes('poor_quality_picture') || tags.includes('poor_quality_thumbnail')) {
+        opps.push({
+            kind: 'tag_pics',
+            priority: 2,
+            title: `Fotos com qualidade baixa`,
+            detail: `O ML detectou imagens de baixa qualidade — afeta conversão e ranking. Suba fotos com 1200×1540, fundo branco e produto centralizado.`,
+            cta: editUrl ? { label: 'Trocar fotos no ML', href: editUrl } : null,
+            value: 0,
+        });
+    }
+
+    // (7) Ads ativo mas em "hold" — anúncio elegível porém não rodando
+    const _adLevel = adsData?.ad_info?.current_level;
+    if (adsData?.has_ads && _adLevel === 'hold') {
+        opps.push({
+            kind: 'ads_hold',
+            priority: 1,
+            title: `Ads em hold (não está rodando)`,
+            detail: `Sua campanha está ativa mas esse anúncio está com nível "hold" — provavelmente o lance está abaixo do mínimo da categoria. Aumente o lance ou troque a estratégia.`,
+            cta: { label: 'Ajustar no Planejador', href: '/planejador-ads' },
             value: 0,
         });
     }
