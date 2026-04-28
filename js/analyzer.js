@@ -530,6 +530,21 @@ function MF_oppPriorityColor(prio) {
     return 'var(--blue, #3b82f6)';
 }
 
+function _mfSplitByDate(arr) {
+    const sorted = [...arr].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const mid = Math.floor(sorted.length / 2);
+    return { older: sorted.slice(0, mid), recent: sorted.slice(mid) };
+}
+
+function _mfTrend(olderSum, recentSum) {
+    if (olderSum === 0 && recentSum === 0) return { arrow: '➡️', label: 'estável', dir: 0 };
+    if (olderSum === 0) return { arrow: '📈', label: 'em alta', dir: 1 };
+    const ratio = recentSum / olderSum;
+    if (ratio >= 1.15) return { arrow: '📈', label: 'em alta', dir: 1 };
+    if (ratio <= 0.85) return { arrow: '📉', label: 'em queda', dir: -1 };
+    return { arrow: '➡️', label: 'estável', dir: 0 };
+}
+
 function MF_buildOpportunities(detail, visitsData, adsData, opts) {
     const opps = [];
     const _site = (typeof window !== 'undefined' && window.MF_currentSiteId) ? window.MF_currentSiteId() : 'MLB';
@@ -575,27 +590,73 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         }
     }
 
-    // (2) Estoque parado — sem threshold mínimo: todo vendedor deve conhecer o ajuste de "estoque real"
+    // (2) Estoque parado — gatilho é "estar parado" (sem vendas/visitas + histórico). As unidades só servem pra calcular o valor parado.
+    // O override de "estoque real" é local (localStorage) e demonstrativo — não altera o estoque do anúncio no ML.
     const realStockOverride = overrides.stuck_stock && typeof overrides.stuck_stock.real_stock === 'number'
         ? overrides.stuck_stock.real_stock
         : null;
     const effectiveStock = (realStockOverride !== null) ? Math.min(availableQty, realStockOverride) : availableQty;
     const _stuckCondition = (sales30 === 0) || (!adsData?.has_ads && visits30 === 0);
-    if (effectiveStock > 0 && price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
+    if (price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
         const stockValue = effectiveStock * price;
         const _reason = sales30 === 0 ? 'sem vendas em 30 dias' : 'sem visitas em 30 dias';
         const _adjustedNote = (realStockOverride !== null) ? ' (ajustado por você)' : '';
+        const _hasStock = effectiveStock > 0;
+        const title = _hasStock
+            ? `${fmtMoney(stockValue)} parados em estoque${_adjustedNote}`
+            : `Anúncio parado sem estoque registrado`;
+        const detail = _hasStock
+            ? `${effectiveStock.toLocaleString(_cfg.locale)} ${effectiveStock === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço, criar um anúncio novo, revisar fotos ou entrar em catálogos.`
+            : `${_reason}. Se você ainda tem estoque por fora desse anúncio, informe a quantidade real abaixo pra ver o capital parado (cálculo apenas demonstrativo, não altera o estoque no ML).`;
         push({
             kind: 'stuck_stock',
             priority: 1,
             icon: MF_OPP_KIND_ICON.stuck_stock,
-            title: `${fmtMoney(stockValue)} parados em estoque${_adjustedNote}`,
-            detail: `${effectiveStock.toLocaleString(_cfg.locale)} ${effectiveStock === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço, criar um anúncio novo, revisar fotos ou entrar em catálogos.`,
+            title,
+            detail,
             value: stockValue,
             actions: [
                 { type: 'real_stock', label: 'Tenho mais estoque por fora' },
                 { type: 'hide', label: 'Ocultar' },
             ],
+        });
+    }
+
+    // (2.5) Runway de estoque — projeção de quando o estoque do ML vai zerar com a venda atual + tendência (vendas e visitas, 15d vs 15d anteriores)
+    if (price > 0 && availableQty > 0 && sales30 !== null && sales30 > 0 && Array.isArray(adsData?.daily) && adsData.daily.length > 0) {
+        const dailyRate = sales30 / 30;
+        const daysToEmpty = Math.max(1, Math.floor(availableQty / dailyRate));
+
+        const dailySplit = _mfSplitByDate(adsData.daily);
+        const salesOlder = dailySplit.older.reduce((s, x) => s + (x.units_quantity || 0) + (x.organic_units_quantity || 0), 0);
+        const salesRecent = dailySplit.recent.reduce((s, x) => s + (x.units_quantity || 0) + (x.organic_units_quantity || 0), 0);
+        const salesTrend = _mfTrend(salesOlder, salesRecent);
+
+        let visitsTrend = null;
+        if (Array.isArray(visitsData?.results) && visitsData.results.length >= 4) {
+            const visitsSplit = _mfSplitByDate(visitsData.results);
+            const visitsOlder = visitsSplit.older.reduce((s, v) => s + (v.total || 0), 0);
+            const visitsRecent = visitsSplit.recent.reduce((s, v) => s + (v.total || 0), 0);
+            visitsTrend = _mfTrend(visitsOlder, visitsRecent);
+        }
+
+        let prio = 3;
+        if (daysToEmpty <= 7) prio = 1;
+        else if (daysToEmpty <= 30) prio = 2;
+        if (salesTrend.dir > 0 && prio > 1) prio--;
+
+        const trendLine = `Vendas ${salesTrend.arrow} ${salesTrend.label}`
+            + (visitsTrend ? `, visitas ${visitsTrend.arrow} ${visitsTrend.label}` : '')
+            + ' (últimos 15d vs 15 anteriores)';
+
+        push({
+            kind: 'stock_runway',
+            priority: prio,
+            icon: '⏳',
+            title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
+            detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d (~${dailyRate.toFixed(1)}/dia) com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.`,
+            value: 0,
+            actions: [],
         });
     }
 
