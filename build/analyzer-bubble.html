@@ -2366,6 +2366,32 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             + (visitsTrend ? `, visitas ${visitsTrend.arrow} ${visitsTrend.label}` : '')
             + ' (últimos 15d vs 15 anteriores)';
 
+        // Chart: histórico reconstruído (30d) + projeção até zerar
+        const dailyMap = {};
+        adsData.daily.forEach(d => {
+            if (!d.date) return;
+            const key = String(d.date).substring(0, 10);
+            dailyMap[key] = (dailyMap[key] || 0) + (d.units_quantity || 0) + (d.organic_units_quantity || 0);
+        });
+        const _todayDt = new Date();
+        _todayDt.setHours(0, 0, 0, 0);
+        const _histDays = 30;
+        const histPoints = [];
+        let _stockBack = availableQty;
+        for (let i = 0; i <= _histDays; i++) {
+            const _d = new Date(_todayDt);
+            _d.setDate(_todayDt.getDate() - i);
+            const _key = _d.toISOString().substring(0, 10);
+            histPoints.push({ day: -i, stock: _stockBack });
+            _stockBack += (dailyMap[_key] || 0);
+        }
+        histPoints.reverse();
+        const _projDays = Math.min(60, daysToEmpty + 3);
+        const projPoints = [];
+        for (let i = 1; i <= _projDays; i++) {
+            projPoints.push({ day: i, stock: Math.max(0, availableQty - dailyRate * i) });
+        }
+
         push({
             kind: 'stock_runway',
             priority: prio,
@@ -2374,6 +2400,7 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d (~${dailyRate.toFixed(1)}/dia) com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.`,
             value: 0,
             actions: [],
+            chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
         });
     }
 
@@ -2464,9 +2491,17 @@ function MF_renderOpportunityCard(opps, opts) {
         return btns ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">${btns}</div>` : '';
     };
 
+    if (typeof window !== 'undefined' && !window.MF_runwayChartData) window.MF_runwayChartData = {};
+
     const itemsHtml = opps.map(o => {
         const color = MF_oppPriorityColor(o.priority);
         const icon = o.icon || '•';
+        let chartHtml = '';
+        if (o.chart && o.chart.history && o.chart.projection) {
+            const chartId = `mf-runway-${escapeHtml(itemId)}-${escapeHtml(o.kind)}`;
+            if (typeof window !== 'undefined') window.MF_runwayChartData[chartId] = o.chart;
+            chartHtml = `<div style="margin-top:10px; height:90px; position:relative;"><canvas data-mf-runway-chart="${chartId}"></canvas></div>`;
+        }
         return `
             <div data-mf-opp-kind="${escapeHtml(o.kind)}" style="border:1px solid var(--border, #e5e7eb); border-radius:var(--radius, 8px); border-left:4px solid ${color}; background:var(--bg-card, #fff); padding:12px 14px; margin-top:10px;">
                 <div style="display:flex; gap:10px; align-items:flex-start;">
@@ -2474,6 +2509,7 @@ function MF_renderOpportunityCard(opps, opts) {
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:0.85rem; font-weight:700; color:var(--text);">${o.title}</div>
                         <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.45; margin-top:3px;">${o.detail}</div>
+                        ${chartHtml}
                         ${renderActions(o)}
                     </div>
                 </div>
@@ -2591,10 +2627,65 @@ window.MF_oppRefresh = function () {
             const tmp = document.createElement('div');
             tmp.innerHTML = newHtml;
             const fresh = tmp.firstElementChild;
-            if (fresh) wrapper.replaceChild(fresh, c);
+            if (fresh) {
+                wrapper.replaceChild(fresh, c);
+                window.MF_oppHydrateRunwayCharts(fresh);
+            }
         } else {
             c.remove();
         }
+    });
+};
+
+window.MF_runwayCharts = window.MF_runwayCharts || {};
+window.MF_oppHydrateRunwayCharts = function (rootEl) {
+    if (typeof window.Chart === 'undefined') return;
+    const root = rootEl || document;
+    const canvases = root.querySelectorAll('canvas[data-mf-runway-chart]');
+    canvases.forEach(canvas => {
+        const id = canvas.getAttribute('data-mf-runway-chart');
+        const data = window.MF_runwayChartData && window.MF_runwayChartData[id];
+        if (!data) return;
+        const existing = window.MF_runwayCharts[id];
+        if (existing) { try { existing.destroy(); } catch (e) {} }
+        const all = [...data.history, ...data.projection];
+        const labels = all.map(p => p.day === 0 ? 'Hoje' : (p.day > 0 ? `+${p.day}d` : `${p.day}d`));
+        const histLen = data.history.length;
+        const histSeries = all.map((p, i) => i < histLen ? p.stock : null);
+        const projSeries = all.map((p, i) => i >= histLen - 1 ? p.stock : null);
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 90);
+        grad.addColorStop(0, 'rgba(220, 38, 38, 0.28)');
+        grad.addColorStop(1, 'rgba(220, 38, 38, 0)');
+        const chart = new window.Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Histórico', data: histSeries, borderColor: '#dc2626', backgroundColor: grad, borderWidth: 1.5, fill: 'origin', tension: 0.25, pointRadius: 0, pointHoverRadius: 3, spanGaps: false },
+                    { label: 'Projeção', data: projSeries, borderColor: '#dc2626', backgroundColor: 'transparent', borderWidth: 1.5, borderDash: [4, 4], fill: false, tension: 0, pointRadius: 0, pointHoverRadius: 3, spanGaps: false },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => items[0] ? labels[items[0].dataIndex] : '',
+                            label: (item) => `${Math.round(item.parsed.y)} unid.`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { ticks: { font: { size: 9 }, color: '#6b7280', maxRotation: 0, autoSkip: true, maxTicksLimit: 6 }, grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { font: { size: 9 }, color: '#6b7280', maxTicksLimit: 4 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                },
+            },
+        });
+        window.MF_runwayCharts[id] = chart;
     });
 };
 
@@ -3957,7 +4048,10 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         const _penalties = MF_buildPenalties(analysisData.detail, { suffix });
         const penaltyHtml = MF_renderPenaltyCard(_penalties);
         const bannerEl = document.getElementById(`changesBanner${suffix}`);
-        if (bannerEl) bannerEl.innerHTML = penaltyHtml + bannerHtml + oppsHtml;
+        if (bannerEl) {
+            bannerEl.innerHTML = penaltyHtml + bannerHtml + oppsHtml;
+            if (typeof window.MF_oppHydrateRunwayCharts === 'function') window.MF_oppHydrateRunwayCharts(bannerEl);
+        }
         MF_saveSnap(_itemIdForSnap, _currSnap);
     }
 
