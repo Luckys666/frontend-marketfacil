@@ -4944,10 +4944,10 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
         if (prev === 0) return curr > 0 ? 100 : 0;
         return ((curr - prev) / prev) * 100;
     };
-    // Só mostra % se o dataset cobre o período da comparação (sem dado anterior, % é enganoso)
-    const percentChange7 = _oldestAge >= 14 ? calcPct(total7, totalPrev7) : null;
-    const percentChange15 = _oldestAge >= 30 ? calcPct(total15, totalPrev15) : null;
-    const percentChange30 = _oldestAge >= 60 ? calcPct(total30, totalPrev30) : null;
+    // Sempre mostra % com o que tem (mesmo dado parcial — usuário tem contexto pra interpretar)
+    const percentChange7 = calcPct(total7, totalPrev7);
+    const percentChange15 = calcPct(total15, totalPrev15);
+    const percentChange30 = calcPct(total30, totalPrev30);
 
     let trend = 'Estável';
     let icon = '➡️';
