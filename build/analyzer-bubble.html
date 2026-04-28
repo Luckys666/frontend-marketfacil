@@ -2321,33 +2321,19 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         }
     }
 
-    // (2) Estoque parado — gatilho é "estar parado" (sem vendas/visitas + histórico). As unidades só servem pra calcular o valor parado.
-    // O override de "estoque real" é local (localStorage) e demonstrativo — não altera o estoque do anúncio no ML.
-    const realStockOverride = overrides.stuck_stock && typeof overrides.stuck_stock.real_stock === 'number'
-        ? overrides.stuck_stock.real_stock
-        : null;
-    const effectiveStock = (realStockOverride !== null) ? Math.min(availableQty, realStockOverride) : availableQty;
+    // (2) Estoque parado — usa o available_quantity do ML como verdade. Sem override.
     const _stuckCondition = (sales30 === 0) || (!adsData?.has_ads && visits30 === 0);
-    if (price > 0 && _stuckCondition && soldQuantityLifetime > 0) {
-        const stockValue = effectiveStock * price;
+    if (price > 0 && availableQty > 0 && _stuckCondition && soldQuantityLifetime > 0) {
+        const stockValue = availableQty * price;
         const _reason = sales30 === 0 ? 'sem vendas em 30 dias' : 'sem visitas em 30 dias';
-        const _adjustedNote = (realStockOverride !== null) ? ' (ajustado por você)' : '';
-        const _hasStock = effectiveStock > 0;
-        const title = _hasStock
-            ? `${fmtMoney(stockValue)} parados em estoque${_adjustedNote}`
-            : `Anúncio parado sem estoque registrado`;
-        const detail = _hasStock
-            ? `${effectiveStock.toLocaleString(_cfg.locale)} ${effectiveStock === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço, criar um anúncio novo, revisar fotos ou entrar em catálogos.`
-            : `${_reason}. Se você ainda tem estoque por fora desse anúncio, informe a quantidade real abaixo pra ver o capital parado (cálculo apenas demonstrativo, não altera o estoque no ML).`;
         push({
             kind: 'stuck_stock',
             priority: 1,
             icon: MF_OPP_KIND_ICON.stuck_stock,
-            title,
-            detail,
+            title: `${fmtMoney(stockValue)} parados em estoque`,
+            detail: `${availableQty.toLocaleString(_cfg.locale)} ${availableQty === 1 ? 'unidade' : 'unidades'} × ${fmtMoney(price)} — ${_reason}. Considere revisar preço, criar um anúncio novo, revisar fotos ou entrar em catálogos.`,
             value: stockValue,
             actions: [
-                { type: 'real_stock', label: 'Tenho mais estoque por fora' },
                 { type: 'hide', label: 'Ocultar' },
             ],
         });
@@ -2470,9 +2456,6 @@ function MF_renderOpportunityCard(opps, opts) {
                 const targetJs = String(a.target).replace(/'/g, "\\'");
                 return `<button type="button" onclick="window.MF_oppScrollTo('${targetJs}')" style="font-size:0.72rem; color:var(--blue, #3b82f6); background:transparent; border:1px solid var(--blue, #3b82f6); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel} ↓</button>`;
             }
-            if (a.type === 'real_stock') {
-                return `<button type="button" onclick="window.MF_oppOpenRealStock('${itemIdJs}', '${o.kind}')" style="font-size:0.72rem; color:var(--text); background:transparent; border:1px solid var(--border, #d1d5db); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel}</button>`;
-            }
             if (a.type === 'hide') {
                 return `<button type="button" onclick="window.MF_oppHide('${itemIdJs}', '${o.kind}')" style="font-size:0.72rem; color:var(--text-muted); background:transparent; border:1px solid var(--border, #d1d5db); border-radius:4px; padding:4px 8px; cursor:pointer;">${safeLabel}</button>`;
             }
@@ -2494,7 +2477,6 @@ function MF_renderOpportunityCard(opps, opts) {
                         ${renderActions(o)}
                     </div>
                 </div>
-                <div id="mf-opp-realstock-${escapeHtml(o.kind)}" style="display:none; margin-top:10px;"></div>
             </div>`;
     }).join('');
 
@@ -2592,39 +2574,6 @@ window.MF_oppScrollTo = function (elementId) {
 window.MF_oppHide = function (itemId, kind) {
     if (!itemId || !kind) return;
     MF_oppSaveOverride(itemId, kind, { hidden: true });
-    window.MF_oppRefresh();
-};
-
-window.MF_oppOpenRealStock = function (itemId, kind) {
-    if (!itemId || !kind) return;
-    const box = document.getElementById('mf-opp-realstock-' + kind);
-    if (!box) return;
-    const curr = MF_oppLoadOverride(itemId)[kind] && MF_oppLoadOverride(itemId)[kind].real_stock;
-    const initial = (typeof curr === 'number') ? curr : '';
-    const itemIdJs = String(itemId).replace(/'/g, "\\'");
-    box.style.display = 'block';
-    box.innerHTML = `
-        <div style="padding:10px 12px; background:var(--bg-subtle, #f8fafc); border:1px solid var(--border, #e5e7eb); border-radius:var(--radius-sm, 6px);">
-            <div style="font-size:0.78rem; color:var(--text); margin-bottom:6px;">Quantas unidades você realmente quer vender desse anúncio?</div>
-            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                <input id="mf-opp-realstock-input-${kind}" type="number" min="0" step="1" value="${initial}" placeholder="ex: 50" style="flex:1; min-width:120px; padding:6px 8px; border:1px solid var(--border, #d1d5db); border-radius:4px; font-size:0.82rem;">
-                <button type="button" onclick="window.MF_oppSaveRealStock('${itemIdJs}', '${kind}')" style="padding:6px 12px; background:var(--blue, #3b82f6); color:#fff; border:0; border-radius:4px; font-size:0.78rem; cursor:pointer;">Salvar</button>
-                <button type="button" onclick="document.getElementById('mf-opp-realstock-${kind}').style.display='none';" style="padding:6px 8px; background:transparent; color:var(--text-muted); border:1px solid var(--border, #d1d5db); border-radius:4px; font-size:0.78rem; cursor:pointer;">Cancelar</button>
-            </div>
-        </div>`;
-    setTimeout(() => {
-        const inp = document.getElementById('mf-opp-realstock-input-' + kind);
-        if (inp) inp.focus();
-    }, 50);
-};
-
-window.MF_oppSaveRealStock = function (itemId, kind) {
-    if (!itemId || !kind) return;
-    const inp = document.getElementById('mf-opp-realstock-input-' + kind);
-    if (!inp) return;
-    const n = Math.max(0, Math.floor(Number(inp.value)));
-    if (!isFinite(n)) return;
-    MF_oppSaveOverride(itemId, kind, { real_stock: n });
     window.MF_oppRefresh();
 };
 
