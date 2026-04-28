@@ -608,23 +608,32 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         });
     }
 
-    // (2.5) Runway de estoque — projeção de quando o estoque do ML vai zerar com a venda atual + tendência (vendas e visitas, 15d vs 15d anteriores)
+    // (2.5) Runway de estoque — projeção ajustada por ritmo recente de vendas + tendência de visitas
     if (price > 0 && availableQty > 0 && sales30 !== null && sales30 > 0 && Array.isArray(adsData?.daily) && adsData.daily.length > 0) {
-        const dailyRate = sales30 / 30;
-        const daysToEmpty = Math.max(1, Math.floor(availableQty / dailyRate));
-
         const dailySplit = _mfSplitByDate(adsData.daily);
         const salesOlder = dailySplit.older.reduce((s, x) => s + (x.units_quantity || 0) + (x.organic_units_quantity || 0), 0);
         const salesRecent = dailySplit.recent.reduce((s, x) => s + (x.units_quantity || 0) + (x.organic_units_quantity || 0), 0);
         const salesTrend = _mfTrend(salesOlder, salesRecent);
 
         let visitsTrend = null;
+        let visitsRatio = 1;
         if (Array.isArray(visitsData?.results) && visitsData.results.length >= 4) {
             const visitsSplit = _mfSplitByDate(visitsData.results);
             const visitsOlder = visitsSplit.older.reduce((s, v) => s + (v.total || 0), 0);
             const visitsRecent = visitsSplit.recent.reduce((s, v) => s + (v.total || 0), 0);
             visitsTrend = _mfTrend(visitsOlder, visitsRecent);
+            if (visitsOlder > 0) visitsRatio = visitsRecent / visitsOlder;
+            else if (visitsRecent > 0) visitsRatio = 1.5; // sem dado anterior mas tem visitas atuais → assume crescimento moderado
         }
+
+        // Ritmo: usa últimos 15d (mais responsivo). Aplica boost suave (metade) baseado em visitas, clamp [0.5, 2.5].
+        const recentDays = Math.max(1, dailySplit.recent.length);
+        const salesRate15 = salesRecent / recentDays;
+        const salesRate30 = sales30 / 30;
+        const baseRate = salesRate15 > 0 ? salesRate15 : salesRate30;
+        const visitsBoost = Math.max(0.5, Math.min(2.5, 1 + (visitsRatio - 1) * 0.5));
+        const projectedRate = Math.max(0.01, baseRate * visitsBoost);
+        const daysToEmpty = Math.max(1, Math.floor(availableQty / projectedRate));
 
         let prio = 3;
         if (daysToEmpty <= 7) prio = 1;
@@ -634,8 +643,11 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         const trendLine = `Vendas ${salesTrend.arrow} ${salesTrend.label}`
             + (visitsTrend ? `, visitas ${visitsTrend.arrow} ${visitsTrend.label}` : '')
             + ' (últimos 15d vs 15 anteriores)';
+        const boostNote = visitsBoost > 1.05 ? ` Projeção acelerada por +${Math.round((visitsBoost - 1) * 100)}% (visitas em alta).`
+                       : visitsBoost < 0.95 ? ` Projeção desacelerada em ${Math.round((1 - visitsBoost) * 100)}% (visitas em queda).`
+                       : '';
 
-        // Chart: histórico reconstruído (30d) + projeção até zerar
+        // Chart: histórico reconstruído (30d) + projeção ajustada
         const dailyMap = {};
         adsData.daily.forEach(d => {
             if (!d.date) return;
@@ -658,7 +670,7 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         const _projDays = Math.min(60, daysToEmpty + 3);
         const projPoints = [];
         for (let i = 1; i <= _projDays; i++) {
-            projPoints.push({ day: i, stock: Math.max(0, availableQty - dailyRate * i) });
+            projPoints.push({ day: i, stock: Math.max(0, availableQty - projectedRate * i) });
         }
 
         push({
@@ -666,7 +678,7 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             priority: prio,
             icon: '⏳',
             title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
-            detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d (~${dailyRate.toFixed(1)}/dia) com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.`,
+            detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d, ${salesRecent} nos últimos 15d (~${salesRate15.toFixed(1)}/dia). Com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.${boostNote}`,
             value: 0,
             actions: [],
             chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
