@@ -4305,7 +4305,7 @@ function MF_analyzeVariationProblems(variation, allVariations) {
     const qScore = variation.quality?.performance_score ?? variation.quality?.score;
     if (typeof qScore === 'number') {
         const pct = qScore <= 1 ? qScore * 100 : qScore;
-        if (pct < 40) problems.push({ sev: 'neg', icon: '⚡', label: 'Qualidade baixa', detail: `Score ${Math.round(pct)} (alvo ≥70)` });
+        if (pct < 40) problems.push({ sev: 'neg', icon: '⚡', label: 'Qualidade baixa', detail: `Pontuação ${Math.round(pct)} (alvo ≥70)` });
     }
 
     return { problems };
@@ -4356,7 +4356,7 @@ function MF_renderQualityBadge(quality) {
     if (score === null) return '<span class="mfd-fb-empty">—</span>';
     const pct = Math.round(score * (score <= 1 ? 100 : 1));
     const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'neutral' : 'neg';
-    return `<span class="mfd-fb-tag ${cls}" title="Performance score">${pct}</span>`;
+    return `<span class="mfd-fb-tag ${cls}" title="Pontuação de desempenho">${pct}</span>`;
 }
 
 function MF_renderPurchaseExpBadge(pe) {
@@ -4619,7 +4619,7 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId, familySummary) 
     if (typeof qScore === 'number') {
         const pct = Math.round(qScore <= 1 ? qScore * 100 : qScore);
         const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'warn' : 'neg';
-        qualityChip = `<span class="mfd-tag-chip ${cls}" title="Performance score">${MF_ICONS.bolt}<span>Qualidade ${pct}</span></span>`;
+        qualityChip = `<span class="mfd-tag-chip ${cls}" title="Pontuação de desempenho">${MF_ICONS.bolt}<span>Qualidade ${pct}</span></span>`;
     }
     // Experiência compra
     let peChip = '';
@@ -4679,7 +4679,7 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId, familySummary) 
             const pct = Math.round(qScore <= 1 ? qScore * 100 : qScore);
             const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'warn' : 'neg';
             bars.push(`
-                <div class="mfd-fb-cmp-row" title="Score de qualidade ${pct} (alvo ≥70)">
+                <div class="mfd-fb-cmp-row" title="Pontuação de qualidade ${pct} (alvo ≥70)">
                     <span class="mfd-fb-cmp-label">${MF_ICONS.bolt}<span>Qualidade</span></span>
                     <span class="mfd-fb-cmp-bar"><span class="mfd-fb-cmp-fill ${cls}" style="width:${Math.max(2, pct)}%"></span><span class="mfd-fb-cmp-target" style="left:70%" title="alvo 70"></span></span>
                     <span class="mfd-fb-cmp-value">${pct}</span>
@@ -4945,7 +4945,7 @@ function MF_renderVariationHealthDetail(variation) {
         <div class="mfd-fb-health">
             <div class="mfd-fb-health-header">
                 <span class="mfd-fb-health-title">Saúde do anúncio (ML)</span>
-                <span class="mfd-tag-chip ${cls}" title="Score reportado pelo ML">${MF_ICONS.bolt}<span>Score ${score}${levelLabel ? ` · ${levelLabel}` : ''}</span></span>
+                <span class="mfd-tag-chip ${cls}" title="Pontuação reportada pelo ML">${MF_ICONS.bolt}<span>Pontuação ${score}${levelLabel ? ` · ${levelLabel}` : ''}</span></span>
             </div>
             ${pending.length ? `<div class="mfd-fb-health-buckets">${bucketsHtml}</div>` : '<div class="mfd-fb-health-allgood">✓ Tudo OK do lado do ML</div>'}
             ${completedSummary}
