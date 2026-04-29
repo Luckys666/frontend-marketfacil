@@ -1546,6 +1546,31 @@ function MF_classifyTag(tag) {
     return meta;
 }
 
+// Ícones SVG inline pequenos — usados em chips, badges, etc.
+const MF_ICONS = {
+    check: '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 8 7 12 13 4"></polyline></svg>',
+    warn:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 L14.5 13.5 L1.5 13.5 Z"></path><line x1="8" y1="6" x2="8" y2="9.5"></line><circle cx="8" cy="11.6" r="0.6" fill="currentColor"></circle></svg>',
+    info:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><line x1="8" y1="7" x2="8" y2="11"></line><circle cx="8" cy="4.6" r="0.6" fill="currentColor"></circle></svg>',
+    spark: '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M9 1l-1 5h-4l3 2.5-1 5 3.5-2.6 3.5 2.6-1-5 3-2.5h-4z"></path></svg>',
+    cart:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="13.5" r="1"></circle><circle cx="11" cy="13.5" r="1"></circle><polyline points="1 1 3 1 4.5 9 12.5 9 14 4 4 4"></polyline></svg>',
+    img:   '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.4"></rect><circle cx="6" cy="6.5" r="1.2"></circle><polyline points="14 11 10 7 2 13"></polyline></svg>',
+    bolt:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M9.5 1L3 9h4l-1.5 6L13 7H9z"></path></svg>',
+    star:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M8 1.2l2.1 4.4 4.7.6-3.4 3.3.8 4.7L8 12l-4.2 2.2.8-4.7-3.4-3.3 4.7-.6z"></path></svg>',
+    money: '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="1" x2="8" y2="15"></line><path d="M11.5 4.5h-5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4h-5"></path></svg>',
+    box:   '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="2 5 8 2 14 5 14 12 8 15 2 12"></polygon><polyline points="2 5 8 8 14 5"></polyline><line x1="8" y1="8" x2="8" y2="15"></line></svg>',
+    drop:  '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2 11 6 7 9 10 14 4"></polyline></svg>',
+};
+function MF_iconForTag(tag) {
+    if (/picture|thumbnail/i.test(tag)) return MF_ICONS.img;
+    if (/cart_eligible/i.test(tag)) return MF_ICONS.cart;
+    if (/best_seller|best_listing|high_quality|brand_verified/i.test(tag)) return MF_ICONS.star;
+    if (/immediate_payment/i.test(tag)) return MF_ICONS.bolt;
+    return null;
+}
+function MF_iconForSeverity(sev) {
+    return sev === 'pos' ? MF_ICONS.check : sev === 'neg' ? MF_ICONS.warn : sev === 'warn' ? MF_ICONS.warn : MF_ICONS.info;
+}
+
 function MF_renderTagsBadges(tags) {
     if (!Array.isArray(tags) || !tags.length) return '<span class="mfd-fb-empty">sem tags</span>';
     const visible = tags.map(t => ({ tag: t, ...MF_classifyTag(t) })).filter(m => m.sev !== 'ignore');
@@ -1553,7 +1578,28 @@ function MF_renderTagsBadges(tags) {
     // Ordena: neg primeiro, depois pos, depois info
     const order = { neg: 0, pos: 1, info: 2 };
     visible.sort((a, b) => order[a.sev] - order[b.sev]);
-    return visible.map(m => `<span class="mfd-tag-chip ${m.sev}" title="${escapeHtml(m.tag)}">${escapeHtml(m.label || m.tag)}</span>`).join('');
+    return visible.map(m => {
+        const icon = MF_iconForTag(m.tag) || MF_iconForSeverity(m.sev);
+        return `<span class="mfd-tag-chip ${m.sev}" title="${escapeHtml(m.tag)}">${icon}<span>${escapeHtml(m.label || m.tag)}</span></span>`;
+    }).join('');
+}
+
+// Identifica a "melhor variação" da família: mais qualidade + sem problemas + estoque > 1.
+function MF_pickHeroVariation(variations) {
+    if (!Array.isArray(variations) || variations.length < 2) return null;
+    let best = null, bestScore = -1;
+    for (const v of variations) {
+        const q = v.quality?.performance_score ?? v.quality?.score;
+        if (typeof q !== 'number') continue;
+        const pct = q <= 1 ? q * 100 : q;
+        const stock = v.summary?.available_quantity || 0;
+        const status = v.summary?.status;
+        if (status !== 'active' || stock <= 1) continue;
+        const probs = MF_analyzeVariationProblems(v, variations).problems.length;
+        const score = pct - probs * 5 + Math.min(stock, 50) * 0.2;
+        if (score > bestScore) { bestScore = score; best = v.up_id; }
+    }
+    return best;
 }
 
 // Detecta problemas específicos de uma variação. Reutiliza categoryAttributes do state.
@@ -1770,7 +1816,8 @@ function MF_renderFamilyOverview(data, body) {
     });
 
     const summary = MF_summarizeFamily(variations);
-    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations)).join('');
+    const heroUpId = MF_pickHeroVariation(variations);
+    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations, heroUpId)).join('');
     // Conta variações com problemas pro sumário
     const variationsWithProblems = variations.filter(v => MF_analyzeVariationProblems(v, variations).problems.length > 0).length;
 
@@ -1861,16 +1908,17 @@ function MF_renderFamilyOverview(data, body) {
             quality_asc: (a, b) => ((a.v.quality?.performance_score ?? a.v.quality?.score ?? 1) - (b.v.quality?.performance_score ?? b.v.quality?.score ?? 1)),
         }[mode] || (() => 0);
         list = list.slice().sort(cmp);
-        grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations)).join('') || '<div class="mfd-fb-empty">Nenhuma variação corresponde aos filtros.</div>';
+        grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations, heroUpId)).join('') || '<div class="mfd-fb-empty">Nenhuma variação corresponde aos filtros.</div>';
     };
     sortSel.addEventListener('change', apply);
     filterCk.addEventListener('change', apply);
 }
 
-function MF_renderVariationCard(v, idx, allVariations) {
+function MF_renderVariationCard(v, idx, allVariations, heroUpId) {
     const s = v.summary || {};
     const ident = [s.color, s.size].filter(Boolean).join(' · ') || s.sku || s.title || v.up_id;
     const diag = MF_analyzeVariationProblems(v, allVariations || []);
+    const isHero = heroUpId && v.up_id === heroUpId;
     const status = s.status || '—';
     const statusClass = status === 'active' ? 'pos' : status === 'paused' ? 'warn' : 'neg';
     const statusLabel = { active: 'Ativo', paused: 'Pausado', closed: 'Fechado', under_review: 'Em revisão' }[status] || status;
@@ -1881,7 +1929,7 @@ function MF_renderVariationCard(v, idx, allVariations) {
     if (typeof qScore === 'number') {
         const pct = Math.round(qScore <= 1 ? qScore * 100 : qScore);
         const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'warn' : 'neg';
-        qualityChip = `<span class="mfd-tag-chip ${cls}" title="Performance score">⚡ Qualidade ${pct}</span>`;
+        qualityChip = `<span class="mfd-tag-chip ${cls}" title="Performance score">${MF_ICONS.bolt}<span>Qualidade ${pct}</span></span>`;
     }
     // Experiência compra
     let peChip = '';
@@ -1891,17 +1939,19 @@ function MF_renderVariationCard(v, idx, allVariations) {
         const cls = peLevel === 'green' || (peScore !== null && peScore >= 4) ? 'pos'
                   : peLevel === 'yellow' || (peScore !== null && peScore >= 3) ? 'warn'
                   : 'neg';
-        const label = peLevel ? ({ green: 'Boa', yellow: 'Média', red: 'Ruim' }[peLevel] || peLevel)
-                              : peScore.toFixed(1);
-        peChip = `<span class="mfd-tag-chip ${cls}" title="Experiência de compra">🛒 ${label}</span>`;
+        const label = peLevel ? ({ green: 'Compra boa', yellow: 'Compra média', red: 'Compra ruim' }[peLevel] || peLevel)
+                              : `Exp. ${peScore.toFixed(1)}`;
+        peChip = `<span class="mfd-tag-chip ${cls}" title="Experiência de compra">${MF_ICONS.cart}<span>${escapeHtml(label)}</span></span>`;
     }
 
     const priceTxt = (typeof s.price === 'number') ? `R$ ${s.price.toFixed(2).replace('.', ',')}` : '';
     const stockTxt = (typeof s.available_quantity === 'number') ? `${s.available_quantity}` : '';
     const stockClass = (typeof s.available_quantity === 'number' && s.available_quantity <= 1) ? 'mfd-stock-low' : '';
 
+    const heroBadge = isHero ? `<span class="mfd-fb-hero-badge" title="Variação com melhor combinação de qualidade, estoque e ausência de problemas">${MF_ICONS.star}<span>Destaque</span></span>` : '';
     return `
-        <div class="mfd-fb-var-card" data-up-id="${escapeHtml(v.up_id || '')}" data-item-id="${escapeHtml(v.item_id || '')}">
+        <div class="mfd-fb-var-card${isHero ? ' is-hero' : ''}" data-up-id="${escapeHtml(v.up_id || '')}" data-item-id="${escapeHtml(v.item_id || '')}">
+            ${heroBadge}
             <div class="mfd-fb-var-head">
                 <div class="mfd-fb-var-thumb">
                     ${s.thumbnail ? `<img src="${escapeHtml(s.thumbnail)}" alt="" loading="lazy" />` : ''}
