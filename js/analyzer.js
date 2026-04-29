@@ -2142,13 +2142,87 @@ function MF_renderVariationEditPanel(variation) {
 
     const fieldsHtml = editable.map(c => MF_renderVariationField(c, itemAttrMap.get(c.id), variation.item_id)).join('');
     const healthHtml = MF_renderVariationHealthDetail(variation);
+    const peHtml = MF_renderPurchaseExpDetail(variation);
 
     return `
         <div class="mfd-fb-edit-panel-inner">
             ${diagHtml}
             ${healthHtml}
+            ${peHtml}
             <div class="mfd-fb-edit-fields-title">Editar campos por variação</div>
             <div class="mfd-fb-edit-fields">${fieldsHtml || '<span class="mfd-fb-empty">Nenhum campo editável por variação nesta categoria.</span>'}</div>
+        </div>`;
+}
+
+// Iter 8 — purchase experience detalhado.
+// /reputation/items/{id}/purchase_experience/integrators retorna estrutura com level, score, e
+// vários campos de breakdown (metrics, items, historic, level_wording, level_status, etc).
+// Como o shape varia por categoria/região, renderiza defensivamente: campos primários sempre,
+// breakdown opcional se presente.
+function MF_renderPurchaseExpDetail(variation) {
+    const pe = variation.purchase_experience;
+    if (!pe || typeof pe !== 'object') return '';
+    const level = (pe.level || pe.global_level || '').toLowerCase();
+    const score = typeof pe.score === 'number' ? pe.score
+                : typeof pe.global_score === 'number' ? pe.global_score : null;
+    const wording = pe.level_wording || pe.level_status || pe.label || '';
+    if (!level && score === null) return '';
+
+    const cls = level === 'green' || (score !== null && score >= 4) ? 'pos'
+              : level === 'yellow' || (score !== null && score >= 3) ? 'warn'
+              : 'neg';
+    const levelLabel = level
+        ? ({ green: 'Boa', yellow: 'Média', red: 'Ruim' }[level] || level)
+        : '';
+    const headerChip = `<span class="mfd-tag-chip ${cls}" title="Experiência de compra reportada pelo ML">${MF_ICONS.cart}<span>${levelLabel}${score !== null ? ` · ${score.toFixed(1)}` : ''}</span></span>`;
+
+    // Metrics: ML às vezes retorna { metrics: [{ id, title, status, value }] } ou { items: [...] }.
+    // Tenta ambos antes de desistir.
+    const rawMetrics = Array.isArray(pe.metrics) ? pe.metrics
+                     : Array.isArray(pe.items) ? pe.items
+                     : Array.isArray(pe.indicators) ? pe.indicators
+                     : null;
+    const metrics = rawMetrics
+        ? rawMetrics.map(m => ({
+            title: m.title || m.name || m.label || m.id || '',
+            status: (m.status || m.level || '').toString().toLowerCase(),
+            value: m.value ?? m.score ?? null,
+            target: m.target ?? null,
+            description: m.description || m.wording || m.tooltip || '',
+        })).filter(m => m.title)
+        : [];
+
+    const metricsHtml = metrics.length
+        ? `<ul class="mfd-fb-pe-list">
+            ${metrics.slice(0, 12).map(m => {
+                const sCls = /good|green|completed|ok|pos/i.test(m.status) ? 'pos'
+                           : /regular|yellow|warn|partial/i.test(m.status) ? 'warn'
+                           : /bad|red|fail|neg/i.test(m.status) ? 'neg'
+                           : 'info';
+                const icon = sCls === 'pos' ? MF_ICONS.check
+                           : sCls === 'neg' ? MF_ICONS.warn
+                           : sCls === 'warn' ? MF_ICONS.warn
+                           : MF_ICONS.info;
+                const valueTxt = m.value !== null && m.value !== undefined ? `${typeof m.value === 'number' ? m.value : escapeHtml(String(m.value))}${m.target !== null && m.target !== undefined ? ` / ${m.target}` : ''}` : '';
+                return `<li class="mfd-fb-pe-item ${sCls}">
+                    <span class="mfd-fb-pe-icon">${icon}</span>
+                    <span class="mfd-fb-pe-title">${escapeHtml(m.title)}</span>
+                    ${valueTxt ? `<span class="mfd-fb-pe-value">${valueTxt}</span>` : ''}
+                    ${m.description ? `<span class="mfd-fb-pe-desc">${escapeHtml(String(m.description).slice(0, 120))}</span>` : ''}
+                </li>`;
+            }).join('')}
+            ${metrics.length > 12 ? `<li class="mfd-fb-pe-more">+${metrics.length - 12} métrica${metrics.length - 12 > 1 ? 's' : ''}…</li>` : ''}
+        </ul>`
+        : '';
+
+    return `
+        <div class="mfd-fb-pe">
+            <div class="mfd-fb-pe-header">
+                <span class="mfd-fb-pe-headline">Experiência de compra</span>
+                ${headerChip}
+            </div>
+            ${wording ? `<div class="mfd-fb-pe-wording">${escapeHtml(wording)}</div>` : ''}
+            ${metricsHtml || (level && !metrics.length ? `<div class="mfd-fb-pe-empty">ML não retornou breakdown desta variação — só o nível agregado.</div>` : '')}
         </div>`;
 }
 

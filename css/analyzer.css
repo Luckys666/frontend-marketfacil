@@ -2278,3 +2278,82 @@
     color: var(--green-dark);
 }
 .mfd-fb-health-completed svg { color: var(--green); }
+
+/* Iter 8 — Purchase experience detalhado */
+.mfd-fb-pe {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-sm);
+}
+.mfd-fb-pe-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+.mfd-fb-pe-headline {
+    font-size: 0.82rem; font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.005em;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.mfd-fb-pe-headline::before {
+    content: '';
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #d97706;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.20);
+}
+.mfd-fb-pe-wording {
+    font-size: 0.78rem; color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--blue);
+}
+.mfd-fb-pe-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.mfd-fb-pe-item {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 8px; align-items: center;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+.mfd-fb-pe-item.pos { border-left: 3px solid var(--green); }
+.mfd-fb-pe-item.warn { border-left: 3px solid #f59e0b; }
+.mfd-fb-pe-item.neg { border-left: 3px solid var(--red); }
+.mfd-fb-pe-item.info { border-left: 3px solid var(--blue); }
+.mfd-fb-pe-icon { display: inline-flex; align-items: center; }
+.mfd-fb-pe-item.pos .mfd-fb-pe-icon { color: var(--green); }
+.mfd-fb-pe-item.warn .mfd-fb-pe-icon { color: #d97706; }
+.mfd-fb-pe-item.neg .mfd-fb-pe-icon { color: var(--red); }
+.mfd-fb-pe-item.info .mfd-fb-pe-icon { color: var(--blue); }
+.mfd-fb-pe-title { font-weight: 600; color: var(--text); }
+.mfd-fb-pe-value {
+    font-size: 0.72rem; font-weight: 700;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    padding: 1px 8px; border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.mfd-fb-pe-desc {
+    grid-column: 2 / -1;
+    font-size: 0.7rem; color: var(--text-muted);
+    margin-top: 2px;
+}
+.mfd-fb-pe-more { font-size: 0.72rem; color: var(--text-muted); padding-left: 26px; font-style: italic; }
+.mfd-fb-pe-empty {
+    font-size: 0.78rem; font-style: italic;
+    color: var(--text-muted);
+    padding: 8px 10px;
+}
