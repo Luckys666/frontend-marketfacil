@@ -2106,7 +2106,11 @@ window.MF_expandVariation = function (upId) {
     panel.innerHTML = MF_renderVariationEditPanel(variation);
     card.appendChild(panel);
     card.classList.add('is-expanded');
-    setTimeout(() => panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+    // Iter 9 — smooth scroll mais suave (block 'start' c/ offset evita ficar colado no topo)
+    setTimeout(() => {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        card.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    }, 80);
 };
 
 function MF_renderVariationEditPanel(variation) {
