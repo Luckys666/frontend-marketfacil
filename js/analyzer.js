@@ -1556,6 +1556,95 @@ function MF_renderTagsBadges(tags) {
     return visible.map(m => `<span class="mfd-tag-chip ${m.sev}" title="${escapeHtml(m.tag)}">${escapeHtml(m.label || m.tag)}</span>`).join('');
 }
 
+// Detecta problemas específicos de uma variação. Reutiliza categoryAttributes do state.
+// `allVariations` é usado pra calcular outliers de preço dentro da família.
+function MF_analyzeVariationProblems(variation, allVariations) {
+    const problems = [];
+    const cats = window.currentAnalysisState?.categoryAttributes || [];
+    const itemAttrs = Array.isArray(variation.item_attributes) ? variation.item_attributes : [];
+    const itemAttrMap = new Map(itemAttrs.map(a => [a.id, a]));
+
+    // 1) Atributos required + editáveis por variação que estão vazios
+    const VAR_HIER = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER']);
+    const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
+    const requiredMissing = [];
+    const recommendedMissing = [];
+    for (const c of cats) {
+        if (!EDITABLE_TYPES.has(c.value_type) || c.tags?.read_only) continue;
+        if (!VAR_HIER.has(c.hierarchy)) continue; // só por-variação
+        const a = itemAttrMap.get(c.id);
+        const filled = !!(a && (a.value_name || (Array.isArray(a.values) && a.values.length)));
+        if (filled) continue;
+        if (c.tags?.required) requiredMissing.push(c.name || c.id);
+        else if (c.tags?.catalog_required || c.tags?.fixed) recommendedMissing.push(c.name || c.id);
+    }
+    if (requiredMissing.length) {
+        problems.push({ sev: 'neg', icon: '⚠', label: `${requiredMissing.length} obrigatório${requiredMissing.length > 1 ? 's' : ''} vazio${requiredMissing.length > 1 ? 's' : ''}`, detail: requiredMissing.join(', ') });
+    }
+    if (recommendedMissing.length) {
+        problems.push({ sev: 'warn', icon: '○', label: `${recommendedMissing.length} recomendado${recommendedMissing.length > 1 ? 's' : ''} vazio${recommendedMissing.length > 1 ? 's' : ''}`, detail: recommendedMissing.join(', ') });
+    }
+
+    // 2) GTIN ausente
+    const gtinAttr = itemAttrMap.get('GTIN');
+    const gtinFilled = !!(gtinAttr && (gtinAttr.value_name || (Array.isArray(gtinAttr.values) && gtinAttr.values.length)));
+    const hasGtinInCategory = cats.some(c => c.id === 'GTIN');
+    if (hasGtinInCategory && !gtinFilled) {
+        problems.push({ sev: 'warn', icon: '#', label: 'GTIN ausente', detail: 'Código universal do produto não preenchido' });
+    }
+
+    // 3) SKU ausente
+    const skuFilled = !!(itemAttrMap.get('SELLER_SKU')?.value_name);
+    if (!skuFilled) {
+        problems.push({ sev: 'info', icon: '#', label: 'SKU vazio', detail: 'Sem código interno do vendedor' });
+    }
+
+    // 4) Dimensões inválidas (0 ou ausentes)
+    const dimAttrs = ['SELLER_PACKAGE_LENGTH', 'SELLER_PACKAGE_WIDTH', 'SELLER_PACKAGE_HEIGHT', 'SELLER_PACKAGE_WEIGHT'];
+    const dimMissing = dimAttrs.filter(id => {
+        const a = itemAttrMap.get(id);
+        if (!a) return cats.some(c => c.id === id); // se categoria pede e não tem
+        const num = parseFloat(String(a.value_name || '').replace(',', '.'));
+        return !a.value_name || (isFinite(num) && num <= 0);
+    });
+    if (dimMissing.length >= 2) {
+        problems.push({ sev: 'warn', icon: '📦', label: 'Embalagem incompleta', detail: `${dimMissing.length} medida${dimMissing.length > 1 ? 's' : ''} faltando ou zerada${dimMissing.length > 1 ? 's' : ''}` });
+    }
+
+    // 5) Estoque baixo (≤ 1)
+    const qty = variation.summary?.available_quantity;
+    if (typeof qty === 'number' && qty <= 1) {
+        problems.push({ sev: 'warn', icon: '📉', label: qty === 0 ? 'Sem estoque' : 'Estoque crítico', detail: `Apenas ${qty} unidade${qty === 1 ? '' : 's'}` });
+    }
+
+    // 6) Preço outlier (>30% diferente da mediana da família)
+    const prices = (allVariations || []).map(v => v.summary?.price).filter(p => typeof p === 'number');
+    if (prices.length >= 3 && typeof variation.summary?.price === 'number') {
+        const sorted = prices.slice().sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        const diff = Math.abs(variation.summary.price - median) / (median || 1);
+        if (diff > 0.30) {
+            const sign = variation.summary.price > median ? '+' : '−';
+            problems.push({ sev: 'warn', icon: '💲', label: 'Preço fora da curva', detail: `${sign}${Math.round(diff * 100)}% vs mediana R$ ${median.toFixed(2).replace('.', ',')}` });
+        }
+    }
+
+    // 7) Tags negativas explícitas
+    const negTagsCount = Array.isArray(variation.tags) ? variation.tags.filter(t => MF_classifyTag(t).sev === 'neg').length : 0;
+    if (negTagsCount) {
+        problems.push({ sev: 'neg', icon: '⚠', label: `${negTagsCount} tag${negTagsCount > 1 ? 's' : ''} negativa${negTagsCount > 1 ? 's' : ''}`, detail: variation.tags.filter(t => MF_classifyTag(t).sev === 'neg').map(t => MF_classifyTag(t).label || t).join(', ') });
+    }
+
+    // 8) Score qualidade muito baixo
+    const qScore = variation.quality?.performance_score ?? variation.quality?.score;
+    if (typeof qScore === 'number') {
+        const pct = qScore <= 1 ? qScore * 100 : qScore;
+        if (pct < 40) problems.push({ sev: 'neg', icon: '⚡', label: 'Qualidade baixa', detail: `Score ${Math.round(pct)} (alvo ≥70)` });
+    }
+
+    return { problems };
+}
+
 function MF_summarizeFamily(variations) {
     let active = 0, paused = 0, closed = 0;
     let withNegTags = 0, withLowQuality = 0, lowStock = 0;
@@ -1681,14 +1770,16 @@ function MF_renderFamilyOverview(data, body) {
     });
 
     const summary = MF_summarizeFamily(variations);
-    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx)).join('');
+    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations)).join('');
+    // Conta variações com problemas pro sumário
+    const variationsWithProblems = variations.filter(v => MF_analyzeVariationProblems(v, variations).problems.length > 0).length;
 
     // Header sumário: chips com contadores agregados
     const summaryChips = [];
     if (summary.active) summaryChips.push(`<span class="mfd-summary-chip pos">${summary.active} ativa${summary.active > 1 ? 's' : ''}</span>`);
     if (summary.paused) summaryChips.push(`<span class="mfd-summary-chip neutral">${summary.paused} pausada${summary.paused > 1 ? 's' : ''}</span>`);
     if (summary.closed) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.closed} fechada${summary.closed > 1 ? 's' : ''}</span>`);
-    if (summary.withNegTags) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.withNegTags} com problema</span>`);
+    if (variationsWithProblems) summaryChips.push(`<span class="mfd-summary-chip neg">${variationsWithProblems} com problemas</span>`);
     if (summary.withLowQuality) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.withLowQuality} qualidade baixa</span>`);
     if (summary.lowStock) summaryChips.push(`<span class="mfd-summary-chip warn">${summary.lowStock} estoque ≤1</span>`);
     summaryChips.push(`<span class="mfd-summary-chip info">Estoque total: ${summary.totalStock}</span>`);
@@ -1729,9 +1820,10 @@ function MF_renderFamilyOverview(data, body) {
     `;
 }
 
-function MF_renderVariationCard(v, idx) {
+function MF_renderVariationCard(v, idx, allVariations) {
     const s = v.summary || {};
     const ident = [s.color, s.size].filter(Boolean).join(' · ') || s.sku || s.title || v.up_id;
+    const diag = MF_analyzeVariationProblems(v, allVariations || []);
     const status = s.status || '—';
     const statusClass = status === 'active' ? 'pos' : status === 'paused' ? 'warn' : 'neg';
     const statusLabel = { active: 'Ativo', paused: 'Pausado', closed: 'Fechado', under_review: 'Em revisão' }[status] || status;
@@ -1788,6 +1880,11 @@ function MF_renderVariationCard(v, idx) {
                 ${peChip}
                 ${MF_renderTagsBadges(v.tags)}
             </div>
+            ${diag.problems.length ? `<div class="mfd-fb-var-problems" title="${escapeHtml(diag.problems.map(p => p.label + (p.detail ? ': ' + p.detail : '')).join(' • '))}">
+                <span class="mfd-fb-prob-count">${diag.problems.length} problema${diag.problems.length > 1 ? 's' : ''} detectado${diag.problems.length > 1 ? 's' : ''}</span>
+                ${diag.problems.slice(0, 3).map(p => `<span class="mfd-fb-prob-chip ${p.sev}">${p.icon} ${escapeHtml(p.label)}</span>`).join('')}
+                ${diag.problems.length > 3 ? `<span class="mfd-fb-prob-more">+${diag.problems.length - 3}</span>` : ''}
+            </div>` : ''}
         </div>`;
 }
 
@@ -1805,18 +1902,25 @@ window.MF_expandVariation = function (upId) {
 
     // Toggle: se já tem painel expandido, colapsa
     let panel = card.querySelector('.mfd-fb-var-edit-panel');
-    if (panel) { panel.remove(); return; }
+    if (panel) {
+        panel.remove();
+        card.classList.remove('is-expanded');
+        return;
+    }
 
     panel = document.createElement('div');
     panel.className = 'mfd-fb-var-edit-panel';
     panel.innerHTML = MF_renderVariationEditPanel(variation);
     card.appendChild(panel);
+    card.classList.add('is-expanded');
+    setTimeout(() => panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
 };
 
 function MF_renderVariationEditPanel(variation) {
     const cats = window.currentAnalysisState?.categoryAttributes || [];
     const itemAttrs = Array.isArray(variation.item_attributes) ? variation.item_attributes : [];
     const itemAttrMap = new Map(itemAttrs.map(a => [a.id, a]));
+    const allVariations = window.__mfFamilyOverview?.variations || [];
 
     // Filtra atributos da categoria que são editáveis por variação
     const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
@@ -1826,23 +1930,29 @@ function MF_renderVariationEditPanel(variation) {
         && MF_VARIATION_EDITABLE_HIERARCHIES.has(c.hierarchy)
     );
 
-    // Detecta erros: atributos required vazios, GTIN ausente em itens identificáveis, etc.
-    const errors = [];
-    for (const c of editable) {
-        const attr = itemAttrMap.get(c.id);
-        const filled = attr && (attr.value_name || (Array.isArray(attr.values) && attr.values.length));
-        if (c.tags?.required && !filled) errors.push({ attrId: c.id, name: c.name, kind: 'required_missing' });
-    }
-
-    const errorsHtml = errors.length
-        ? `<div class="mfd-fb-edit-errors">⚠ ${errors.length} ${errors.length === 1 ? 'campo obrigatório vazio' : 'campos obrigatórios vazios'}: ${errors.map(e => escapeHtml(e.name || e.attrId)).join(', ')}</div>`
-        : '';
+    // Diagnóstico — usa o mesmo analisador do cartão
+    const diag = MF_analyzeVariationProblems(variation, allVariations);
+    const diagHtml = diag.problems.length
+        ? `<div class="mfd-fb-diag">
+            <div class="mfd-fb-diag-title">🩺 Diagnóstico desta variação</div>
+            <ul class="mfd-fb-diag-list">
+                ${diag.problems.map(p => `<li class="mfd-fb-diag-item ${p.sev}">
+                    <span class="mfd-fb-diag-icon">${p.icon}</span>
+                    <span class="mfd-fb-diag-label">${escapeHtml(p.label)}</span>
+                    ${p.detail ? `<span class="mfd-fb-diag-detail">${escapeHtml(p.detail)}</span>` : ''}
+                </li>`).join('')}
+            </ul>
+        </div>`
+        : `<div class="mfd-fb-diag ok">
+            <div class="mfd-fb-diag-title">✓ Sem problemas detectados</div>
+        </div>`;
 
     const fieldsHtml = editable.map(c => MF_renderVariationField(c, itemAttrMap.get(c.id), variation.item_id)).join('');
 
     return `
         <div class="mfd-fb-edit-panel-inner">
-            ${errorsHtml}
+            ${diagHtml}
+            <div class="mfd-fb-edit-fields-title">Editar campos por variação</div>
             <div class="mfd-fb-edit-fields">${fieldsHtml || '<span class="mfd-fb-empty">Nenhum campo editável por variação nesta categoria.</span>'}</div>
         </div>`;
 }

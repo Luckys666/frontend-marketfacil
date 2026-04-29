@@ -1910,3 +1910,94 @@
 .mfd-fb-var-chips:empty { display: none; padding: 0; border: 0; margin: 0; }
 .mfd-fb-var-actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 .mfd-fb-empty { color: #94a3b8; font-size: 0.74rem; font-style: italic; }
+
+/* === Iter 2: Problemas por variação =========================================== */
+.mfd-fb-var-problems {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #fee2e2;
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
+.mfd-fb-prob-count {
+    font-size: 0.7rem; font-weight: 700;
+    color: #b91c1c;
+    margin-right: 4px;
+}
+.mfd-fb-prob-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; border-radius: 5px;
+    font-size: 0.68rem; font-weight: 600;
+    background: #fef3c7; color: #78350f;
+    border: 1px solid #fde68a;
+}
+.mfd-fb-prob-chip.neg { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.mfd-fb-prob-chip.warn { background: #fef3c7; color: #78350f; border-color: #fde68a; }
+.mfd-fb-prob-chip.info { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
+.mfd-fb-prob-more { font-size: 0.7rem; color: #94a3b8; font-weight: 600; }
+
+.mfd-fb-diag {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+}
+.mfd-fb-diag.ok { background: #f0fdf4; border-color: #bbf7d0; }
+.mfd-fb-diag-title {
+    font-weight: 700; font-size: 0.82rem;
+    color: #78350f; margin-bottom: 6px;
+}
+.mfd-fb-diag.ok .mfd-fb-diag-title { color: #14532d; }
+.mfd-fb-diag-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mfd-fb-diag-item {
+    display: grid;
+    grid-template-columns: 20px max-content 1fr;
+    gap: 6px; align-items: center;
+    font-size: 0.78rem; line-height: 1.3;
+}
+.mfd-fb-diag-icon { font-size: 0.9rem; text-align: center; }
+.mfd-fb-diag-label { font-weight: 600; color: #1e293b; }
+.mfd-fb-diag-detail { color: #64748b; font-size: 0.74rem; }
+.mfd-fb-diag-item.neg .mfd-fb-diag-label { color: #991b1b; }
+.mfd-fb-diag-item.warn .mfd-fb-diag-label { color: #78350f; }
+
+.mfd-fb-edit-fields-title {
+    font-size: 0.78rem; font-weight: 700;
+    color: #475569; text-transform: uppercase; letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+/* Cartão expandido ocupa row inteira do grid pra evitar overlap */
+.mfd-fb-var-card.is-expanded {
+    grid-column: 1 / -1;
+    border-color: #93c5fd;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.10);
+}
+.mfd-fb-var-card.is-expanded .mfd-fb-var-head { border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 4px; }
+.mfd-fb-var-edit-panel {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    padding: 14px;
+    background: #fafbfc;
+    border-top: 1px solid #e2e8f0;
+    border-radius: 0 0 8px 8px;
+    width: auto;
+    flex-basis: auto;
+}
+.mfd-fb-edit-panel-inner { display: flex; flex-direction: column; gap: 10px; }
+.mfd-fb-edit-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+}
+.mfd-fb-edit-field {
+    display: grid;
+    grid-template-columns: 130px 1fr auto;
+    gap: 6px; align-items: center;
+    background: #fff;
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+.mfd-fb-edit-field:focus-within { border-color: #2563eb; }
+.mfd-fb-edit-error { grid-column: 1 / -1; }
