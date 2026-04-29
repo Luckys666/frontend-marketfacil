@@ -2194,6 +2194,96 @@
 .mfd-fb-empty-title { font-size: 0.92rem; font-weight: 700; color: var(--text); }
 .mfd-fb-empty-hint { font-size: 0.78rem; color: var(--text-muted); font-style: normal; }
 
+/* Iter 7 — Saúde do anúncio (ML quality buckets) */
+.mfd-fb-health {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-sm);
+}
+.mfd-fb-health-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+.mfd-fb-health-title {
+    font-size: 0.82rem; font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.005em;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.mfd-fb-health-title::before {
+    content: '';
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.18);
+}
+.mfd-fb-health-buckets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+}
+.mfd-fb-health-bucket {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+.mfd-fb-health-bucket-title {
+    font-size: 0.7rem; font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+.mfd-fb-health-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.mfd-fb-health-item {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 0.78rem; line-height: 1.35;
+    color: var(--text-secondary);
+}
+.mfd-fb-health-icon {
+    display: inline-flex; flex-shrink: 0;
+    color: #d97706;
+    margin-top: 2px;
+}
+.mfd-fb-health-text { flex: 1; min-width: 0; word-break: break-word; }
+.mfd-fb-health-tag {
+    flex-shrink: 0; align-self: flex-start;
+    font-size: 0.62rem; font-weight: 700;
+    background: var(--yellow-light); color: #92400e;
+    padding: 1px 6px; border-radius: var(--radius-sm);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.mfd-fb-health-link {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--blue);
+    text-decoration: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    transition: background 0.15s;
+}
+.mfd-fb-health-link:hover { background: var(--blue-light); }
+.mfd-fb-health-more { font-size: 0.72rem; color: var(--text-muted); padding-left: 18px; font-style: italic; }
+.mfd-fb-health-allgood {
+    padding: 8px 10px;
+    background: var(--green-light);
+    color: var(--green-dark);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem; font-weight: 600;
+}
+.mfd-fb-health-completed {
+    margin-top: 8px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 600;
+    color: var(--green-dark);
+}
+.mfd-fb-health-completed svg { color: var(--green); }
+
 </style>
 <div class="ana-wrapper">
     <div class="input-area">
@@ -4384,12 +4474,70 @@ function MF_renderVariationEditPanel(variation) {
         </div>`;
 
     const fieldsHtml = editable.map(c => MF_renderVariationField(c, itemAttrMap.get(c.id), variation.item_id)).join('');
+    const healthHtml = MF_renderVariationHealthDetail(variation);
 
     return `
         <div class="mfd-fb-edit-panel-inner">
             ${diagHtml}
+            ${healthHtml}
             <div class="mfd-fb-edit-fields-title">Editar campos por variação</div>
             <div class="mfd-fb-edit-fields">${fieldsHtml || '<span class="mfd-fb-empty">Nenhum campo editável por variação nesta categoria.</span>'}</div>
+        </div>`;
+}
+
+// Iter 7 — health indicators detalhados do /item/{id}/performance.
+// Reusa extractMLQualityItems pra parsear buckets/variables/rules → pendentes + completados.
+function MF_renderVariationHealthDetail(variation) {
+    const q = variation.quality;
+    if (!q) return '';
+    const ml = (typeof extractMLQualityItems === 'function') ? extractMLQualityItems(q) : null;
+    if (!ml) return '';
+    const score = ml.score;
+    const level = (ml.level || '').toLowerCase();
+    const levelLabel = ml.level_wording || (level ? ({ good: 'Boa', regular: 'Regular', bad: 'Ruim' }[level] || level) : '');
+    const cls = level === 'good' ? 'pos' : level === 'regular' ? 'warn' : 'neg';
+    const pending = Array.isArray(ml.pending) ? ml.pending : [];
+    const completed = Array.isArray(ml.completed) ? ml.completed : [];
+
+    // Agrupa pendentes por bucket pra densidade visual
+    const grouped = {};
+    for (const p of pending) {
+        const k = p.bucket || 'Outros';
+        (grouped[k] = grouped[k] || []).push(p);
+    }
+    const bucketsHtml = Object.keys(grouped).map(b => `
+        <div class="mfd-fb-health-bucket">
+            <div class="mfd-fb-health-bucket-title">${escapeHtml(b)}</div>
+            <ul class="mfd-fb-health-list">
+                ${grouped[b].slice(0, 8).map(p => {
+                    const link = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" class="mfd-fb-health-link" title="Abrir no Mercado Livre">${MF_ICONS.info}</a>` : '';
+                    const lbl = p.label ? `<span class="mfd-fb-health-tag">${escapeHtml(p.label)}</span>` : '';
+                    return `<li class="mfd-fb-health-item">
+                        <span class="mfd-fb-health-icon">${MF_ICONS.warn}</span>
+                        <span class="mfd-fb-health-text">${escapeHtml(p.text || 'Item pendente')}</span>
+                        ${lbl}
+                        ${link}
+                    </li>`;
+                }).join('')}
+                ${grouped[b].length > 8 ? `<li class="mfd-fb-health-more">+${grouped[b].length - 8} pendente${grouped[b].length - 8 > 1 ? 's' : ''}…</li>` : ''}
+            </ul>
+        </div>
+    `).join('');
+
+    const completedSummary = completed.length
+        ? `<div class="mfd-fb-health-completed">${MF_ICONS.check}<span>${completed.length} item${completed.length > 1 ? 's' : ''} já completado${completed.length > 1 ? 's' : ''} pelo ML</span></div>`
+        : '';
+
+    if (!pending.length && !completed.length && (score === 0 || score === undefined)) return '';
+
+    return `
+        <div class="mfd-fb-health">
+            <div class="mfd-fb-health-header">
+                <span class="mfd-fb-health-title">Saúde do anúncio (ML)</span>
+                <span class="mfd-tag-chip ${cls}" title="Score reportado pelo ML">${MF_ICONS.bolt}<span>Score ${score}${levelLabel ? ` · ${levelLabel}` : ''}</span></span>
+            </div>
+            ${pending.length ? `<div class="mfd-fb-health-buckets">${bucketsHtml}</div>` : '<div class="mfd-fb-health-allgood">✓ Tudo OK do lado do ML</div>'}
+            ${completedSummary}
         </div>`;
 }
 

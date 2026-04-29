@@ -2141,12 +2141,70 @@ function MF_renderVariationEditPanel(variation) {
         </div>`;
 
     const fieldsHtml = editable.map(c => MF_renderVariationField(c, itemAttrMap.get(c.id), variation.item_id)).join('');
+    const healthHtml = MF_renderVariationHealthDetail(variation);
 
     return `
         <div class="mfd-fb-edit-panel-inner">
             ${diagHtml}
+            ${healthHtml}
             <div class="mfd-fb-edit-fields-title">Editar campos por variação</div>
             <div class="mfd-fb-edit-fields">${fieldsHtml || '<span class="mfd-fb-empty">Nenhum campo editável por variação nesta categoria.</span>'}</div>
+        </div>`;
+}
+
+// Iter 7 — health indicators detalhados do /item/{id}/performance.
+// Reusa extractMLQualityItems pra parsear buckets/variables/rules → pendentes + completados.
+function MF_renderVariationHealthDetail(variation) {
+    const q = variation.quality;
+    if (!q) return '';
+    const ml = (typeof extractMLQualityItems === 'function') ? extractMLQualityItems(q) : null;
+    if (!ml) return '';
+    const score = ml.score;
+    const level = (ml.level || '').toLowerCase();
+    const levelLabel = ml.level_wording || (level ? ({ good: 'Boa', regular: 'Regular', bad: 'Ruim' }[level] || level) : '');
+    const cls = level === 'good' ? 'pos' : level === 'regular' ? 'warn' : 'neg';
+    const pending = Array.isArray(ml.pending) ? ml.pending : [];
+    const completed = Array.isArray(ml.completed) ? ml.completed : [];
+
+    // Agrupa pendentes por bucket pra densidade visual
+    const grouped = {};
+    for (const p of pending) {
+        const k = p.bucket || 'Outros';
+        (grouped[k] = grouped[k] || []).push(p);
+    }
+    const bucketsHtml = Object.keys(grouped).map(b => `
+        <div class="mfd-fb-health-bucket">
+            <div class="mfd-fb-health-bucket-title">${escapeHtml(b)}</div>
+            <ul class="mfd-fb-health-list">
+                ${grouped[b].slice(0, 8).map(p => {
+                    const link = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" class="mfd-fb-health-link" title="Abrir no Mercado Livre">${MF_ICONS.info}</a>` : '';
+                    const lbl = p.label ? `<span class="mfd-fb-health-tag">${escapeHtml(p.label)}</span>` : '';
+                    return `<li class="mfd-fb-health-item">
+                        <span class="mfd-fb-health-icon">${MF_ICONS.warn}</span>
+                        <span class="mfd-fb-health-text">${escapeHtml(p.text || 'Item pendente')}</span>
+                        ${lbl}
+                        ${link}
+                    </li>`;
+                }).join('')}
+                ${grouped[b].length > 8 ? `<li class="mfd-fb-health-more">+${grouped[b].length - 8} pendente${grouped[b].length - 8 > 1 ? 's' : ''}…</li>` : ''}
+            </ul>
+        </div>
+    `).join('');
+
+    const completedSummary = completed.length
+        ? `<div class="mfd-fb-health-completed">${MF_ICONS.check}<span>${completed.length} item${completed.length > 1 ? 's' : ''} já completado${completed.length > 1 ? 's' : ''} pelo ML</span></div>`
+        : '';
+
+    if (!pending.length && !completed.length && (score === 0 || score === undefined)) return '';
+
+    return `
+        <div class="mfd-fb-health">
+            <div class="mfd-fb-health-header">
+                <span class="mfd-fb-health-title">Saúde do anúncio (ML)</span>
+                <span class="mfd-tag-chip ${cls}" title="Score reportado pelo ML">${MF_ICONS.bolt}<span>Score ${score}${levelLabel ? ` · ${levelLabel}` : ''}</span></span>
+            </div>
+            ${pending.length ? `<div class="mfd-fb-health-buckets">${bucketsHtml}</div>` : '<div class="mfd-fb-health-allgood">✓ Tudo OK do lado do ML</div>'}
+            ${completedSummary}
         </div>`;
 }
 

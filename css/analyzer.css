@@ -2188,3 +2188,93 @@
 .mfd-fb-empty-icon svg { width: 18px; height: 18px; }
 .mfd-fb-empty-title { font-size: 0.92rem; font-weight: 700; color: var(--text); }
 .mfd-fb-empty-hint { font-size: 0.78rem; color: var(--text-muted); font-style: normal; }
+
+/* Iter 7 — Saúde do anúncio (ML quality buckets) */
+.mfd-fb-health {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-sm);
+}
+.mfd-fb-health-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+.mfd-fb-health-title {
+    font-size: 0.82rem; font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.005em;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.mfd-fb-health-title::before {
+    content: '';
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.18);
+}
+.mfd-fb-health-buckets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+}
+.mfd-fb-health-bucket {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+.mfd-fb-health-bucket-title {
+    font-size: 0.7rem; font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+.mfd-fb-health-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.mfd-fb-health-item {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 0.78rem; line-height: 1.35;
+    color: var(--text-secondary);
+}
+.mfd-fb-health-icon {
+    display: inline-flex; flex-shrink: 0;
+    color: #d97706;
+    margin-top: 2px;
+}
+.mfd-fb-health-text { flex: 1; min-width: 0; word-break: break-word; }
+.mfd-fb-health-tag {
+    flex-shrink: 0; align-self: flex-start;
+    font-size: 0.62rem; font-weight: 700;
+    background: var(--yellow-light); color: #92400e;
+    padding: 1px 6px; border-radius: var(--radius-sm);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.mfd-fb-health-link {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--blue);
+    text-decoration: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    transition: background 0.15s;
+}
+.mfd-fb-health-link:hover { background: var(--blue-light); }
+.mfd-fb-health-more { font-size: 0.72rem; color: var(--text-muted); padding-left: 18px; font-style: italic; }
+.mfd-fb-health-allgood {
+    padding: 8px 10px;
+    background: var(--green-light);
+    color: var(--green-dark);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem; font-weight: 600;
+}
+.mfd-fb-health-completed {
+    margin-top: 8px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 600;
+    color: var(--green-dark);
+}
+.mfd-fb-health-completed svg { color: var(--green); }
