@@ -1695,6 +1695,7 @@ function MF_summarizeFamily(variations) {
     let active = 0, paused = 0, closed = 0;
     let withNegTags = 0, withLowQuality = 0, lowStock = 0;
     let totalStock = 0, maxStock = 0, prices = [];
+    let totalSold = 0, maxSold = 0, soldDataPoints = 0;
     for (const v of variations) {
         const s = v.summary || {};
         if (s.status === 'active') active++;
@@ -1713,12 +1714,17 @@ function MF_summarizeFamily(variations) {
             if (qty <= 1) lowStock++;
         }
         if (typeof s.price === 'number') prices.push(s.price);
+        if (typeof s.sold_quantity === 'number') {
+            totalSold += s.sold_quantity;
+            if (s.sold_quantity > maxSold) maxSold = s.sold_quantity;
+            soldDataPoints++;
+        }
     }
     const minPrice = prices.length ? Math.min(...prices) : null;
     const maxPrice = prices.length ? Math.max(...prices) : null;
     const priceRangePct = (minPrice !== null && maxPrice !== null && maxPrice > minPrice)
         ? Math.round(((maxPrice - minPrice) / minPrice) * 100) : 0;
-    return { active, paused, closed, withNegTags, withLowQuality, lowStock, totalStock, maxStock, minPrice, maxPrice, priceRangePct, total: variations.length };
+    return { active, paused, closed, withNegTags, withLowQuality, lowStock, totalStock, maxStock, minPrice, maxPrice, priceRangePct, totalSold, maxSold, soldDataPoints, total: variations.length };
 }
 
 function MF_renderQualityBadge(quality) {
@@ -2057,6 +2063,23 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId, familySummary) 
                     <span class="mfd-fb-cmp-label">${MF_ICONS.bolt}<span>Qualidade</span></span>
                     <span class="mfd-fb-cmp-bar"><span class="mfd-fb-cmp-fill ${cls}" style="width:${Math.max(2, pct)}%"></span><span class="mfd-fb-cmp-target" style="left:70%" title="alvo 70"></span></span>
                     <span class="mfd-fb-cmp-value">${pct}</span>
+                </div>`);
+        }
+        // Vendas acumuladas (sold_quantity total) — comparação com a maior da família
+        if (typeof s.sold_quantity === 'number'
+            && familySummary.maxSold > 0
+            && familySummary.soldDataPoints > 1) {
+            const pct = Math.max(0, Math.min(100, (s.sold_quantity / familySummary.maxSold) * 100));
+            const sharePct = familySummary.totalSold > 0
+                ? Math.round((s.sold_quantity / familySummary.totalSold) * 100) : 0;
+            const cls = s.sold_quantity === familySummary.maxSold && familySummary.maxSold > 0 ? 'pos'
+                      : s.sold_quantity === 0 ? 'neg'
+                      : 'neutral';
+            bars.push(`
+                <div class="mfd-fb-cmp-row" title="${s.sold_quantity} venda${s.sold_quantity === 1 ? '' : 's'} acumuladas — ${sharePct}% das vendas da família (${familySummary.totalSold} total)">
+                    <span class="mfd-fb-cmp-label">${MF_ICONS.cart}<span>Vendas</span></span>
+                    <span class="mfd-fb-cmp-bar"><span class="mfd-fb-cmp-fill ${cls}" style="width:${pct.toFixed(1)}%"></span></span>
+                    <span class="mfd-fb-cmp-value">${sharePct}%</span>
                 </div>`);
         }
         if (bars.length) compareHtml = `<div class="mfd-fb-cmp">${bars.join('')}</div>`;
