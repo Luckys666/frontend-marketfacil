@@ -1826,6 +1826,96 @@
     margin-top: 4px;
 }
 
+/* === Iter 1: Sumário, chips polidos, layout cartão refinado ================== */
+.mfd-fb-summary {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #eff6ff 0%, #faf5ff 100%);
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+}
+.mfd-fb-summary-title {
+    font-weight: 700; font-size: 0.9rem;
+    color: #1e293b; margin-bottom: 8px;
+    line-height: 1.3;
+}
+.mfd-fb-summary-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mfd-summary-chip {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 0.74rem; font-weight: 600; letter-spacing: 0.01em;
+    background: #f1f5f9; color: #334155;
+    border: 1px solid #e2e8f0;
+}
+.mfd-summary-chip.pos { background: #dcfce7; color: #14532d; border-color: #bbf7d0; }
+.mfd-summary-chip.neg { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.mfd-summary-chip.warn { background: #fef3c7; color: #78350f; border-color: #fde68a; }
+.mfd-summary-chip.neutral { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+.mfd-summary-chip.info { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+
+/* Tag-chip — chip leve com cor semântica (substitui mfd-fb-tag pra info de tags) */
+.mfd-tag-chip {
+    display: inline-flex; align-items: center;
+    padding: 3px 9px; border-radius: 6px;
+    font-size: 0.72rem; font-weight: 600;
+    background: #f1f5f9; color: #334155;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+.mfd-tag-chip.pos { background: #dcfce7; color: #14532d; }
+.mfd-tag-chip.neg { background: #fee2e2; color: #991b1b; }
+.mfd-tag-chip.warn { background: #fef3c7; color: #78350f; }
+.mfd-tag-chip.info { background: #e0e7ff; color: #3730a3; }
+.mfd-status-chip { margin-left: auto; flex-shrink: 0; font-size: 0.68rem; padding: 2px 8px; }
+
+/* Cartão refeito */
+.mfd-fb-var-card {
+    display: flex; flex-direction: column;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.mfd-fb-var-card:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+}
+.mfd-fb-var-head { display: flex; gap: 10px; align-items: flex-start; }
+.mfd-fb-var-thumb {
+    flex-shrink: 0; width: 76px; height: 76px;
+    background: #f1f5f9; border-radius: 8px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+}
+.mfd-fb-var-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mfd-fb-var-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mfd-fb-var-titlerow { display: flex; align-items: center; gap: 6px; }
+.mfd-fb-var-ident {
+    font-weight: 700; font-size: 0.92rem;
+    color: #0f172a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex: 1; min-width: 0;
+}
+.mfd-fb-var-sku {
+    font-size: 0.7rem; color: #64748b;
+    font-family: 'SF Mono', Consolas, monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mfd-fb-var-stats { display: flex; gap: 14px; margin-top: 2px; }
+.mfd-fb-stat { display: flex; flex-direction: column; line-height: 1.1; }
+.mfd-fb-stat-label { font-size: 0.62rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.mfd-fb-stat-value { font-size: 0.84rem; font-weight: 600; color: #0f172a; }
+.mfd-fb-stat.mfd-stock-low .mfd-fb-stat-value { color: #dc2626; }
+.mfd-fb-var-chips {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #e2e8f0;
+}
+.mfd-fb-var-chips:empty { display: none; padding: 0; border: 0; margin: 0; }
+.mfd-fb-var-actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.mfd-fb-empty { color: #94a3b8; font-size: 0.74rem; font-style: italic; }
+
 </style>
 <div class="ana-wrapper">
     <div class="input-area">
@@ -3384,22 +3474,78 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
 }
 
 // === Editor de Variações em Lote (modal) ============================================
-// Mapa de tags conhecidas → severidade visual.
-const MF_TAG_SEVERITY = (() => {
-    const positive = new Set(['good_quality_picture', 'good_quality_thumbnail', 'brand_verified', 'best_seller_candidate', 'cart_eligible', 'extended_warranty_eligible', 'high_quality', 'best_listing']);
-    const negative = new Set(['poor_quality_picture', 'poor_quality_thumbnail', 'incomplete_technical_specs', 'moderation_penalty', 'low_health', 'manufacturing_time', 'forbidden']);
-    return { positive, negative };
-})();
+// Catálogo de tags conhecidas: severity + label amigável + ícone.
+// Tags técnicas ou irrelevantes pra UI ficam em "ignored".
+const MF_TAG_CATALOG = {
+    // Positivas (verde)
+    good_quality_picture:        { sev: 'pos', label: 'Imagem boa' },
+    good_quality_thumbnail:      { sev: 'pos', label: 'Thumb boa' },
+    brand_verified:              { sev: 'pos', label: 'Marca verificada' },
+    best_seller_candidate:       { sev: 'pos', label: 'Candidato a top' },
+    cart_eligible:               { sev: 'pos', label: 'Carrinho ✓' },
+    extended_warranty_eligible:  { sev: 'pos', label: 'Garantia ext.' },
+    high_quality:                { sev: 'pos', label: 'Alta qualidade' },
+    best_listing:                { sev: 'pos', label: 'Top listing' },
+    immediate_payment:           { sev: 'pos', label: 'Pgto imediato' },
+    catalog_boost:               { sev: 'pos', label: 'Boost catálogo' },
+    supermarket_eligible:        { sev: 'pos', label: 'Supermercado' },
+    // Negativas (vermelho)
+    poor_quality_picture:        { sev: 'neg', label: 'Imagem ruim' },
+    poor_quality_thumbnail:      { sev: 'neg', label: 'Thumb ruim' },
+    incomplete_technical_specs:  { sev: 'neg', label: 'Specs incompletas' },
+    moderation_penalty:          { sev: 'neg', label: 'Punição mod.' },
+    low_health:                  { sev: 'neg', label: 'Saúde baixa' },
+    manufacturing_time:          { sev: 'neg', label: 'Sob encomenda' },
+    forbidden:                   { sev: 'neg', label: 'Proibido' },
+    // Neutras / informacionais (cinza)
+    catalog_listing:             { sev: 'info', label: 'Catálogo' },
+    dragged_bids_and_visits:     { sev: 'info', label: 'Histórico migrado' },
+    // Ignoradas (técnicas)
+    user_product_listing:        { sev: 'ignore' },
+    variations_migration_uptin:  { sev: 'ignore' },
+};
+
+function MF_classifyTag(tag) {
+    const meta = MF_TAG_CATALOG[tag];
+    if (!meta) return { sev: 'info', label: tag.replace(/_/g, ' ') };
+    return meta;
+}
 
 function MF_renderTagsBadges(tags) {
-    if (!Array.isArray(tags) || !tags.length) return '<span class="mfd-fb-empty">—</span>';
-    const pos = tags.filter(t => MF_TAG_SEVERITY.positive.has(t)).length;
-    const neg = tags.filter(t => MF_TAG_SEVERITY.negative.has(t)).length;
-    const out = [];
-    if (pos) out.push(`<span class="mfd-fb-tag pos" title="${tags.filter(t=>MF_TAG_SEVERITY.positive.has(t)).join(', ')}">✓ ${pos}</span>`);
-    if (neg) out.push(`<span class="mfd-fb-tag neg" title="${tags.filter(t=>MF_TAG_SEVERITY.negative.has(t)).join(', ')}">⚠ ${neg}</span>`);
-    if (!out.length) out.push(`<span class="mfd-fb-tag neutral" title="${tags.join(', ')}">${tags.length} tags</span>`);
-    return out.join(' ');
+    if (!Array.isArray(tags) || !tags.length) return '<span class="mfd-fb-empty">sem tags</span>';
+    const visible = tags.map(t => ({ tag: t, ...MF_classifyTag(t) })).filter(m => m.sev !== 'ignore');
+    if (!visible.length) return '<span class="mfd-fb-empty">—</span>';
+    // Ordena: neg primeiro, depois pos, depois info
+    const order = { neg: 0, pos: 1, info: 2 };
+    visible.sort((a, b) => order[a.sev] - order[b.sev]);
+    return visible.map(m => `<span class="mfd-tag-chip ${m.sev}" title="${escapeHtml(m.tag)}">${escapeHtml(m.label || m.tag)}</span>`).join('');
+}
+
+function MF_summarizeFamily(variations) {
+    let active = 0, paused = 0, closed = 0;
+    let withNegTags = 0, withLowQuality = 0, lowStock = 0;
+    let totalStock = 0, prices = [];
+    for (const v of variations) {
+        const s = v.summary || {};
+        if (s.status === 'active') active++;
+        else if (s.status === 'paused') paused++;
+        else if (s.status === 'closed') closed++;
+        if (Array.isArray(v.tags) && v.tags.some(t => MF_classifyTag(t).sev === 'neg')) withNegTags++;
+        const score = v.quality?.performance_score ?? v.quality?.score;
+        if (typeof score === 'number') {
+            const pct = score <= 1 ? score * 100 : score;
+            if (pct < 70) withLowQuality++;
+        }
+        const qty = s.available_quantity;
+        if (typeof qty === 'number') {
+            totalStock += qty;
+            if (qty <= 1) lowStock++;
+        }
+        if (typeof s.price === 'number') prices.push(s.price);
+    }
+    const minPrice = prices.length ? Math.min(...prices) : null;
+    const maxPrice = prices.length ? Math.max(...prices) : null;
+    return { active, paused, closed, withNegTags, withLowQuality, lowStock, totalStock, minPrice, maxPrice, total: variations.length };
 }
 
 function MF_renderQualityBadge(quality) {
@@ -3499,9 +3645,30 @@ function MF_renderFamilyOverview(data, body) {
         return cat && (cat.hierarchy === 'PARENT_PK' || cat.hierarchy === 'FAMILY');
     });
 
+    const summary = MF_summarizeFamily(variations);
     const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx)).join('');
 
+    // Header sumário: chips com contadores agregados
+    const summaryChips = [];
+    if (summary.active) summaryChips.push(`<span class="mfd-summary-chip pos">${summary.active} ativa${summary.active > 1 ? 's' : ''}</span>`);
+    if (summary.paused) summaryChips.push(`<span class="mfd-summary-chip neutral">${summary.paused} pausada${summary.paused > 1 ? 's' : ''}</span>`);
+    if (summary.closed) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.closed} fechada${summary.closed > 1 ? 's' : ''}</span>`);
+    if (summary.withNegTags) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.withNegTags} com problema</span>`);
+    if (summary.withLowQuality) summaryChips.push(`<span class="mfd-summary-chip neg">${summary.withLowQuality} qualidade baixa</span>`);
+    if (summary.lowStock) summaryChips.push(`<span class="mfd-summary-chip warn">${summary.lowStock} estoque ≤1</span>`);
+    summaryChips.push(`<span class="mfd-summary-chip info">Estoque total: ${summary.totalStock}</span>`);
+    if (summary.minPrice !== null && summary.maxPrice !== null) {
+        const priceTxt = summary.minPrice === summary.maxPrice
+            ? `R$ ${summary.minPrice.toFixed(2)}`
+            : `R$ ${summary.minPrice.toFixed(2)} – ${summary.maxPrice.toFixed(2)}`;
+        summaryChips.push(`<span class="mfd-summary-chip info">${priceTxt}</span>`);
+    }
+
     body.innerHTML = `
+        <div class="mfd-fb-summary">
+            <div class="mfd-fb-summary-title">${escapeHtml(fam.name || 'Família')}</div>
+            <div class="mfd-fb-summary-chips">${summaryChips.join('')}</div>
+        </div>
         <div class="mfd-fb-section">
             <div class="mfd-fb-section-title">Compartilhado entre as ${variations.length} variações</div>
             <div class="mfd-fb-shared-grid">
@@ -3529,32 +3696,62 @@ function MF_renderFamilyOverview(data, body) {
 
 function MF_renderVariationCard(v, idx) {
     const s = v.summary || {};
-    const id = v.up_id || ('var-' + idx);
-    const ident = [s.color, s.size].filter(Boolean).join(' / ') || s.sku || s.title || v.up_id;
+    const ident = [s.color, s.size].filter(Boolean).join(' · ') || s.sku || s.title || v.up_id;
     const status = s.status || '—';
-    const statusClass = status === 'active' ? 'pos' : status === 'paused' ? 'neutral' : 'neg';
+    const statusClass = status === 'active' ? 'pos' : status === 'paused' ? 'warn' : 'neg';
+    const statusLabel = { active: 'Ativo', paused: 'Pausado', closed: 'Fechado', under_review: 'Em revisão' }[status] || status;
+
+    // Score qualidade
+    let qualityChip = '';
+    const qScore = v.quality?.performance_score ?? v.quality?.score;
+    if (typeof qScore === 'number') {
+        const pct = Math.round(qScore <= 1 ? qScore * 100 : qScore);
+        const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'warn' : 'neg';
+        qualityChip = `<span class="mfd-tag-chip ${cls}" title="Performance score">⚡ Qualidade ${pct}</span>`;
+    }
+    // Experiência compra
+    let peChip = '';
+    const peLevel = v.purchase_experience?.level || v.purchase_experience?.global_level;
+    const peScore = v.purchase_experience?.score ?? v.purchase_experience?.global_score;
+    if (peLevel || typeof peScore === 'number') {
+        const cls = peLevel === 'green' || (peScore !== null && peScore >= 4) ? 'pos'
+                  : peLevel === 'yellow' || (peScore !== null && peScore >= 3) ? 'warn'
+                  : 'neg';
+        const label = peLevel ? ({ green: 'Boa', yellow: 'Média', red: 'Ruim' }[peLevel] || peLevel)
+                              : peScore.toFixed(1);
+        peChip = `<span class="mfd-tag-chip ${cls}" title="Experiência de compra">🛒 ${label}</span>`;
+    }
+
+    const priceTxt = (typeof s.price === 'number') ? `R$ ${s.price.toFixed(2).replace('.', ',')}` : '';
+    const stockTxt = (typeof s.available_quantity === 'number') ? `${s.available_quantity}` : '';
+    const stockClass = (typeof s.available_quantity === 'number' && s.available_quantity <= 1) ? 'mfd-stock-low' : '';
+
     return `
         <div class="mfd-fb-var-card" data-up-id="${escapeHtml(v.up_id || '')}" data-item-id="${escapeHtml(v.item_id || '')}">
-            <div class="mfd-fb-var-thumb">
-                ${s.thumbnail ? `<img src="${escapeHtml(s.thumbnail)}" alt="" loading="lazy" />` : ''}
-            </div>
-            <div class="mfd-fb-var-body">
-                <div class="mfd-fb-var-ident">${escapeHtml(ident)}</div>
-                <div class="mfd-fb-var-meta">
-                    ${s.sku ? `<span class="mfd-fb-meta">SKU: ${escapeHtml(s.sku)}</span>` : ''}
-                    ${s.price !== null && s.price !== undefined ? `<span class="mfd-fb-meta">R$ ${Number(s.price).toFixed(2)}</span>` : ''}
-                    ${s.available_quantity !== null && s.available_quantity !== undefined ? `<span class="mfd-fb-meta">Estoque: ${s.available_quantity}</span>` : ''}
+            <div class="mfd-fb-var-head">
+                <div class="mfd-fb-var-thumb">
+                    ${s.thumbnail ? `<img src="${escapeHtml(s.thumbnail)}" alt="" loading="lazy" />` : ''}
                 </div>
-                <div class="mfd-fb-var-badges">
-                    <span class="mfd-fb-tag ${statusClass}" title="Status">${escapeHtml(status)}</span>
-                    ${MF_renderTagsBadges(v.tags)}
-                    ${MF_renderQualityBadge(v.quality)}
-                    ${MF_renderPurchaseExpBadge(v.purchase_experience)}
+                <div class="mfd-fb-var-body">
+                    <div class="mfd-fb-var-titlerow">
+                        <span class="mfd-fb-var-ident">${escapeHtml(ident)}</span>
+                        <span class="mfd-tag-chip ${statusClass} mfd-status-chip">${escapeHtml(statusLabel)}</span>
+                    </div>
+                    ${s.sku ? `<div class="mfd-fb-var-sku">${escapeHtml(s.sku)}</div>` : ''}
+                    <div class="mfd-fb-var-stats">
+                        ${priceTxt ? `<span class="mfd-fb-stat"><span class="mfd-fb-stat-label">Preço</span><span class="mfd-fb-stat-value">${priceTxt}</span></span>` : ''}
+                        ${stockTxt ? `<span class="mfd-fb-stat ${stockClass}"><span class="mfd-fb-stat-label">Estoque</span><span class="mfd-fb-stat-value">${stockTxt}</span></span>` : ''}
+                    </div>
+                </div>
+                <div class="mfd-fb-var-actions">
+                    <button onclick="window.MF_expandVariation('${escapeHtml(v.up_id || '')}')" class="mfd-fb-expand-btn">Editar</button>
+                    ${s.permalink ? `<a href="${escapeHtml(s.permalink)}" target="_blank" rel="noopener" class="mfd-fb-link-btn" title="Abrir no Mercado Livre">↗</a>` : ''}
                 </div>
             </div>
-            <div class="mfd-fb-var-actions">
-                <button onclick="window.MF_expandVariation('${escapeHtml(v.up_id || '')}')" class="mfd-fb-expand-btn">Editar</button>
-                ${s.permalink ? `<a href="${escapeHtml(s.permalink)}" target="_blank" rel="noopener" class="mfd-fb-link-btn" title="Abrir no Mercado Livre">↗</a>` : ''}
+            <div class="mfd-fb-var-chips">
+                ${qualityChip}
+                ${peChip}
+                ${MF_renderTagsBadges(v.tags)}
             </div>
         </div>`;
 }
