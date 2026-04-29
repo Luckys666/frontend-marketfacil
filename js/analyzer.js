@@ -1787,12 +1787,15 @@ function MF_familyEditorEnsureModal() {
     modal = document.createElement('div');
     modal.id = 'mfd-family-editor-modal';
     modal.className = 'mfd-fb-overlay';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'mfd-fb-title-id');
     modal.style.display = 'none';
     modal.innerHTML = `
-        <div class="mfd-fb-dialog">
+        <div class="mfd-fb-dialog" role="document">
             <div class="mfd-fb-header">
-                <div class="mfd-fb-title">Editar variações</div>
-                <button class="mfd-fb-close" onclick="window.MF_closeFamilyBatchEditor()" title="Fechar">✕</button>
+                <div class="mfd-fb-title" id="mfd-fb-title-id">Editor de Variações em Lote</div>
+                <button class="mfd-fb-close" onclick="window.MF_closeFamilyBatchEditor()" title="Fechar (Esc)" aria-label="Fechar editor de variações">✕</button>
             </div>
             <div class="mfd-fb-body" id="mfd-fb-body"></div>
         </div>`;
@@ -1801,6 +1804,18 @@ function MF_familyEditorEnsureModal() {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) window.MF_closeFamilyBatchEditor();
     });
+    // Iter 11 — ESC fecha o modal
+    if (!window.__mfFamilyEditorEscBound) {
+        window.__mfFamilyEditorEscBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const m = document.getElementById('mfd-family-editor-modal');
+            if (m && m.style.display !== 'none') {
+                window.MF_closeFamilyBatchEditor();
+                e.stopPropagation();
+            }
+        });
+    }
     return modal;
 }
 
@@ -1896,7 +1911,7 @@ function MF_renderFamilyOverview(data, body) {
         </div>
         <div class="mfd-fb-section">
             <div class="mfd-fb-toolbar">
-                <span class="mfd-fb-section-title" style="margin:0;">Por variação (${variations.length})</span>
+                <span class="mfd-fb-section-title" style="margin:0;">Por variação <span id="mfd-fb-counter">(${variations.length})</span></span>
                 <span class="mfd-fb-toolbar-spacer"></span>
                 <label class="mfd-fb-toolbar-label">
                     <input type="checkbox" id="mfd-fb-filter-problems" />
@@ -1944,6 +1959,14 @@ function MF_renderFamilyOverview(data, body) {
             quality_asc: (a, b) => ((a.v.quality?.performance_score ?? a.v.quality?.score ?? 1) - (b.v.quality?.performance_score ?? b.v.quality?.score ?? 1)),
         }[mode] || (() => 0);
         list = list.slice().sort(cmp);
+        // Iter 11 — atualiza contador "X de Y" quando filtro/sort ativo
+        const counter = body.querySelector('#mfd-fb-counter');
+        if (counter) {
+            const total = variations.length;
+            const shown = list.length;
+            counter.textContent = (shown === total && mode === 'default') ? `(${total})` : `(${shown} de ${total})`;
+            counter.classList.toggle('mfd-fb-counter-active', shown !== total || mode !== 'default');
+        }
         grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations, heroUpId, summary)).join('') || `
             <div class="mfd-fb-empty-state">
                 <div class="mfd-fb-empty-icon">${MF_ICONS.info}</div>

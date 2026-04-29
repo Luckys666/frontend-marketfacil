@@ -2526,3 +2526,42 @@
     .mfd-fb-cmp-scale-dot,
     .mfd-fb-var-thumb { transition: none; transform: none !important; }
 }
+
+/* Iter 11 — separators no painel expandido + counter ativo + header polido */
+.mfd-fb-edit-panel-inner > * + * {
+    position: relative;
+}
+.mfd-fb-edit-panel-inner > * + *::before {
+    content: '';
+    position: absolute;
+    top: -7px; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent);
+    pointer-events: none;
+}
+.mfd-fb-counter-active {
+    color: var(--blue);
+    font-weight: 700;
+    background: var(--blue-light);
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-left: 4px;
+    font-size: 0.8em;
+    transition: all 0.18s;
+}
+.mfd-fb-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.mfd-fb-title::before {
+    content: '';
+    display: inline-block;
+    width: 4px; height: 18px;
+    background: linear-gradient(180deg, var(--blue) 0%, #00c4ff 100%);
+    border-radius: 2px;
+}
+.mfd-fb-close:hover {
+    background: var(--red-light);
+    color: var(--red);
+}
