@@ -1694,7 +1694,7 @@ function MF_analyzeVariationProblems(variation, allVariations) {
 function MF_summarizeFamily(variations) {
     let active = 0, paused = 0, closed = 0;
     let withNegTags = 0, withLowQuality = 0, lowStock = 0;
-    let totalStock = 0, prices = [];
+    let totalStock = 0, maxStock = 0, prices = [];
     for (const v of variations) {
         const s = v.summary || {};
         if (s.status === 'active') active++;
@@ -1709,13 +1709,16 @@ function MF_summarizeFamily(variations) {
         const qty = s.available_quantity;
         if (typeof qty === 'number') {
             totalStock += qty;
+            if (qty > maxStock) maxStock = qty;
             if (qty <= 1) lowStock++;
         }
         if (typeof s.price === 'number') prices.push(s.price);
     }
     const minPrice = prices.length ? Math.min(...prices) : null;
     const maxPrice = prices.length ? Math.max(...prices) : null;
-    return { active, paused, closed, withNegTags, withLowQuality, lowStock, totalStock, minPrice, maxPrice, total: variations.length };
+    const priceRangePct = (minPrice !== null && maxPrice !== null && maxPrice > minPrice)
+        ? Math.round(((maxPrice - minPrice) / minPrice) * 100) : 0;
+    return { active, paused, closed, withNegTags, withLowQuality, lowStock, totalStock, maxStock, minPrice, maxPrice, priceRangePct, total: variations.length };
 }
 
 function MF_renderQualityBadge(quality) {
@@ -1743,6 +1746,39 @@ function MF_renderPurchaseExpBadge(pe) {
               : 'neg';
     const label = level || (score !== null ? score.toFixed(1) : '?');
     return `<span class="mfd-fb-tag ${cls}" title="Experiência de compra">${label}</span>`;
+}
+
+function MF_renderFamilyEditorSkeleton() {
+    const card = `
+        <div class="mfd-fb-skeleton-card">
+            <div class="mfd-fb-skel-row">
+                <div class="mfd-fb-skel-thumb"></div>
+                <div class="mfd-fb-skel-body">
+                    <div class="mfd-fb-skel-line w-60"></div>
+                    <div class="mfd-fb-skel-line w-40"></div>
+                    <div class="mfd-fb-skel-stats">
+                        <div class="mfd-fb-skel-line w-30"></div>
+                        <div class="mfd-fb-skel-line w-30"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="mfd-fb-skel-chips">
+                <div class="mfd-fb-skel-chip"></div>
+                <div class="mfd-fb-skel-chip w-50"></div>
+                <div class="mfd-fb-skel-chip w-40"></div>
+            </div>
+        </div>`;
+    return `
+        <div class="mfd-fb-skeleton-summary">
+            <div class="mfd-fb-skel-line w-50 lg"></div>
+            <div class="mfd-fb-skel-chips">
+                <div class="mfd-fb-skel-chip"></div>
+                <div class="mfd-fb-skel-chip"></div>
+                <div class="mfd-fb-skel-chip w-40"></div>
+            </div>
+        </div>
+        <div class="mfd-fb-skeleton-grid">${card}${card}${card}${card}</div>
+        <div class="mfd-fb-skeleton-hint">Carregando família…</div>`;
 }
 
 function MF_familyEditorEnsureModal() {
@@ -1780,7 +1816,7 @@ window.MF_openFamilyBatchEditor = async function (upId) {
 
     const modal = MF_familyEditorEnsureModal();
     const body = modal.querySelector('#mfd-fb-body');
-    body.innerHTML = '<div class="mfd-fb-loading">Carregando variações…</div>';
+    body.innerHTML = MF_renderFamilyEditorSkeleton();
     modal.style.display = 'flex';
 
     try {
@@ -1817,7 +1853,7 @@ function MF_renderFamilyOverview(data, body) {
 
     const summary = MF_summarizeFamily(variations);
     const heroUpId = MF_pickHeroVariation(variations);
-    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations, heroUpId)).join('');
+    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations, heroUpId, summary)).join('');
     // Conta variações com problemas pro sumário
     const variationsWithProblems = variations.filter(v => MF_analyzeVariationProblems(v, variations).problems.length > 0).length;
 
@@ -1908,13 +1944,18 @@ function MF_renderFamilyOverview(data, body) {
             quality_asc: (a, b) => ((a.v.quality?.performance_score ?? a.v.quality?.score ?? 1) - (b.v.quality?.performance_score ?? b.v.quality?.score ?? 1)),
         }[mode] || (() => 0);
         list = list.slice().sort(cmp);
-        grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations, heroUpId)).join('') || '<div class="mfd-fb-empty">Nenhuma variação corresponde aos filtros.</div>';
+        grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations, heroUpId, summary)).join('') || `
+            <div class="mfd-fb-empty-state">
+                <div class="mfd-fb-empty-icon">${MF_ICONS.info}</div>
+                <div class="mfd-fb-empty-title">Nenhuma variação corresponde</div>
+                <div class="mfd-fb-empty-hint">Tente desmarcar "Só com problemas" ou trocar a ordenação.</div>
+            </div>`;
     };
     sortSel.addEventListener('change', apply);
     filterCk.addEventListener('change', apply);
 }
 
-function MF_renderVariationCard(v, idx, allVariations, heroUpId) {
+function MF_renderVariationCard(v, idx, allVariations, heroUpId, familySummary) {
     const s = v.summary || {};
     const ident = [s.color, s.size].filter(Boolean).join(' · ') || s.sku || s.title || v.up_id;
     const diag = MF_analyzeVariationProblems(v, allVariations || []);
@@ -1949,6 +1990,55 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId) {
     const stockClass = (typeof s.available_quantity === 'number' && s.available_quantity <= 1) ? 'mfd-stock-low' : '';
 
     const heroBadge = isHero ? `<span class="mfd-fb-hero-badge" title="Variação com melhor combinação de qualidade, estoque e ausência de problemas">${MF_ICONS.star}<span>Destaque</span></span>` : '';
+
+    // Comparison bars — só se múltiplas variações + dados disponíveis na família
+    let compareHtml = '';
+    if (familySummary && Array.isArray(allVariations) && allVariations.length > 1) {
+        const bars = [];
+        // Estoque na família: este vs maior do conjunto
+        if (typeof s.available_quantity === 'number' && familySummary.maxStock > 0) {
+            const pct = Math.max(0, Math.min(100, (s.available_quantity / familySummary.maxStock) * 100));
+            const sharePct = familySummary.totalStock > 0
+                ? Math.round((s.available_quantity / familySummary.totalStock) * 100) : 0;
+            const cls = s.available_quantity <= 1 ? 'neg' : s.available_quantity >= familySummary.maxStock ? 'pos' : 'neutral';
+            bars.push(`
+                <div class="mfd-fb-cmp-row" title="${s.available_quantity} unidade${s.available_quantity === 1 ? '' : 's'} — ${sharePct}% do estoque total da família (${familySummary.totalStock})">
+                    <span class="mfd-fb-cmp-label">${MF_ICONS.box}<span>Estoque</span></span>
+                    <span class="mfd-fb-cmp-bar"><span class="mfd-fb-cmp-fill ${cls}" style="width:${pct.toFixed(1)}%"></span></span>
+                    <span class="mfd-fb-cmp-value">${sharePct}%</span>
+                </div>`);
+        }
+        // Posição no range de preço da família
+        if (typeof s.price === 'number'
+            && familySummary.minPrice !== null && familySummary.maxPrice !== null
+            && familySummary.maxPrice > familySummary.minPrice) {
+            const range = familySummary.maxPrice - familySummary.minPrice;
+            const pct = Math.max(0, Math.min(100, ((s.price - familySummary.minPrice) / range) * 100));
+            const labelPos = s.price === familySummary.minPrice ? 'menor' : s.price === familySummary.maxPrice ? 'maior' : `${Math.round(pct)}%`;
+            bars.push(`
+                <div class="mfd-fb-cmp-row" title="R$ ${s.price.toFixed(2).replace('.', ',')} entre R$ ${familySummary.minPrice.toFixed(2).replace('.', ',')} e R$ ${familySummary.maxPrice.toFixed(2).replace('.', ',')} da família">
+                    <span class="mfd-fb-cmp-label">${MF_ICONS.money}<span>Preço</span></span>
+                    <span class="mfd-fb-cmp-scale">
+                        <span class="mfd-fb-cmp-scale-track"></span>
+                        <span class="mfd-fb-cmp-scale-dot" style="left:${pct.toFixed(1)}%"></span>
+                    </span>
+                    <span class="mfd-fb-cmp-value">${labelPos}</span>
+                </div>`);
+        }
+        // Score qualidade comparado ao alvo 70
+        if (typeof qScore === 'number') {
+            const pct = Math.round(qScore <= 1 ? qScore * 100 : qScore);
+            const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'warn' : 'neg';
+            bars.push(`
+                <div class="mfd-fb-cmp-row" title="Score de qualidade ${pct} (alvo ≥70)">
+                    <span class="mfd-fb-cmp-label">${MF_ICONS.bolt}<span>Qualidade</span></span>
+                    <span class="mfd-fb-cmp-bar"><span class="mfd-fb-cmp-fill ${cls}" style="width:${Math.max(2, pct)}%"></span><span class="mfd-fb-cmp-target" style="left:70%" title="alvo 70"></span></span>
+                    <span class="mfd-fb-cmp-value">${pct}</span>
+                </div>`);
+        }
+        if (bars.length) compareHtml = `<div class="mfd-fb-cmp">${bars.join('')}</div>`;
+    }
+
     return `
         <div class="mfd-fb-var-card${isHero ? ' is-hero' : ''}" data-up-id="${escapeHtml(v.up_id || '')}" data-item-id="${escapeHtml(v.item_id || '')}">
             ${heroBadge}
@@ -1982,6 +2072,7 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId) {
                 ${peChip}
                 ${MF_renderTagsBadges(v.tags)}
             </div>
+            ${compareHtml}
             ${diag.problems.length ? `<div class="mfd-fb-var-problems" title="${escapeHtml(diag.problems.map(p => p.label + (p.detail ? ': ' + p.detail : '')).join(' • '))}">
                 <span class="mfd-fb-prob-count">${diag.problems.length} problema${diag.problems.length > 1 ? 's' : ''} detectado${diag.problems.length > 1 ? 's' : ''}</span>
                 ${diag.problems.slice(0, 3).map(p => `<span class="mfd-fb-prob-chip ${p.sev}">${p.icon} ${escapeHtml(p.label)}</span>`).join('')}
