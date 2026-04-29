@@ -1700,21 +1700,41 @@
 }
 .mfd-family-edit-btn:hover { background: #0052d4; }
 
-/* Overlay & dialog */
+/* Overlay & dialog
+   Modal é appendado em document.body (fora de .ana-wrapper), então as design tokens
+   precisam ser redeclaradas aqui — senão var(--bg-card) etc resolvem pra transparent. */
 .mfd-fb-overlay {
+    /* Design tokens — duplicados de .ana-wrapper pra escopo de modal */
+    --bg: #f4f6fa; --bg-card: #ffffff;
+    --blue: #0066ff; --blue-light: #e8f0ff;
+    --green: #00d68f; --green-light: #e6fbf3; --green-dark: #059669;
+    --yellow: #f59e0b; --yellow-light: #fef3c7;
+    --red: #ff3b5c; --red-light: #fff0f2; --red-dark: #dc2626;
+    --text: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+    --border: #e2e8f0;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --radius: 10px; --radius-sm: 6px;
+
+    font-family: 'DM Sans', 'Geist', -apple-system, sans-serif;
+    color: var(--text);
+    line-height: 1.5;
+
     position: fixed; inset: 0; z-index: 9999;
-    background: rgba(15, 23, 42, 0.72);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     display: flex; align-items: center; justify-content: center;
     padding: 24px;
     animation: mfdOverlayIn 0.18s ease-out;
 }
 @keyframes mfdOverlayIn { from { opacity: 0; } to { opacity: 1; } }
 .mfd-fb-dialog {
+    background: #ffffff; /* fallback opaco — não depende de var */
     background: var(--bg-card);
+    color: var(--text);
     border-radius: var(--radius);
-    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.40);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.50), 0 0 0 1px rgba(15, 23, 42, 0.08);
     width: min(1100px, 100%);
     max-height: 92vh;
     display: flex; flex-direction: column;
