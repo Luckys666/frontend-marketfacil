@@ -1684,9 +1684,161 @@ function MF_renderVariationCard(v, idx) {
         </div>`;
 }
 
+// Hierarquias EDITÁVEIS por variação (per-UP). PARENT_PK/FAMILY ficam fora.
+const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER']);
+
 window.MF_expandVariation = function (upId) {
-    // Etapa 2 — placeholder. Implementação completa virá na próxima iteração.
-    alert('Etapa 2 (edição CHILD_PK/ITEM por variação) em construção.\nUP: ' + upId);
+    const ov = window.__mfFamilyOverview;
+    if (!ov) return;
+    const variation = ov.variations.find(v => v.up_id === upId);
+    if (!variation) return;
+
+    const card = document.querySelector(`.mfd-fb-var-card[data-up-id="${upId}"]`);
+    if (!card) return;
+
+    // Toggle: se já tem painel expandido, colapsa
+    let panel = card.querySelector('.mfd-fb-var-edit-panel');
+    if (panel) { panel.remove(); return; }
+
+    panel = document.createElement('div');
+    panel.className = 'mfd-fb-var-edit-panel';
+    panel.innerHTML = MF_renderVariationEditPanel(variation);
+    card.appendChild(panel);
+};
+
+function MF_renderVariationEditPanel(variation) {
+    const cats = window.currentAnalysisState?.categoryAttributes || [];
+    const itemAttrs = Array.isArray(variation.item_attributes) ? variation.item_attributes : [];
+    const itemAttrMap = new Map(itemAttrs.map(a => [a.id, a]));
+
+    // Filtra atributos da categoria que são editáveis por variação
+    const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
+    const editable = cats.filter(c =>
+        EDITABLE_TYPES.has(c.value_type)
+        && !c.tags?.read_only
+        && MF_VARIATION_EDITABLE_HIERARCHIES.has(c.hierarchy)
+    );
+
+    // Detecta erros: atributos required vazios, GTIN ausente em itens identificáveis, etc.
+    const errors = [];
+    for (const c of editable) {
+        const attr = itemAttrMap.get(c.id);
+        const filled = attr && (attr.value_name || (Array.isArray(attr.values) && attr.values.length));
+        if (c.tags?.required && !filled) errors.push({ attrId: c.id, name: c.name, kind: 'required_missing' });
+    }
+
+    const errorsHtml = errors.length
+        ? `<div class="mfd-fb-edit-errors">⚠ ${errors.length} ${errors.length === 1 ? 'campo obrigatório vazio' : 'campos obrigatórios vazios'}: ${errors.map(e => escapeHtml(e.name || e.attrId)).join(', ')}</div>`
+        : '';
+
+    const fieldsHtml = editable.map(c => MF_renderVariationField(c, itemAttrMap.get(c.id), variation.item_id)).join('');
+
+    return `
+        <div class="mfd-fb-edit-panel-inner">
+            ${errorsHtml}
+            <div class="mfd-fb-edit-fields">${fieldsHtml || '<span class="mfd-fb-empty">Nenhum campo editável por variação nesta categoria.</span>'}</div>
+        </div>`;
+}
+
+function MF_renderVariationField(catAttr, currentAttr, itemId) {
+    const id = catAttr.id;
+    const name = catAttr.name || id;
+    const valueType = catAttr.value_type;
+    const allowedValues = Array.isArray(catAttr.values) ? catAttr.values : null;
+    const currentValueId = currentAttr?.value_id || (currentAttr?.values?.[0]?.id) || '';
+    const currentValueName = currentAttr?.value_name || (Array.isArray(currentAttr?.values) ? currentAttr.values.map(v => v.name).filter(Boolean).join(', ') : '') || '';
+    const inputId = `mf-var-${itemId}-${id}`;
+    const errorId = `mf-var-err-${itemId}-${id}`;
+
+    let inputHtml;
+    if (valueType === 'list' && allowedValues && allowedValues.length) {
+        inputHtml = `<select id="${inputId}" class="mfd-fb-input">
+            <option value="">— selecione —</option>
+            ${allowedValues.map(v => `<option value="${escapeHtml(v.id)}" data-name="${escapeHtml(v.name)}" ${String(v.id) === String(currentValueId) ? 'selected' : ''}>${escapeHtml(v.name)}</option>`).join('')}
+        </select>`;
+    } else if (valueType === 'boolean') {
+        const sel = String(currentValueName).toLowerCase();
+        inputHtml = `<select id="${inputId}" class="mfd-fb-input">
+            <option value="">—</option>
+            <option value="Sim" ${sel === 'sim' ? 'selected' : ''}>Sim</option>
+            <option value="Não" ${sel === 'não' || sel === 'nao' ? 'selected' : ''}>Não</option>
+        </select>`;
+    } else {
+        const ph = MF_getAttrPlaceholder(catAttr) || '';
+        inputHtml = `<input type="text" id="${inputId}" class="mfd-fb-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(ph)}" />`;
+    }
+
+    return `
+        <div class="mfd-fb-edit-field">
+            <label for="${inputId}" class="mfd-fb-edit-label">${escapeHtml(name)}</label>
+            ${inputHtml}
+            <button onclick="window.MF_saveVariationAttr('${escapeHtml(itemId)}', '${escapeHtml(id)}', '${inputId}', '${errorId}')" class="mfd-fb-save-btn" title="Salvar">✓</button>
+            <div id="${errorId}" class="mfd-fb-edit-error" style="display:none;"></div>
+        </div>`;
+}
+
+window.MF_saveVariationAttr = async function (itemId, attrId, inputId, errorId) {
+    const state = window.currentAnalysisState;
+    const token = state?.accessToken || window._adsAccessToken;
+    const input = document.getElementById(inputId);
+    const errEl = document.getElementById(errorId);
+    const showError = (msg) => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+    const clearError = () => { if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; } };
+    if (!input || !token || !itemId) return showError('Sessão expirada — recarregue a página.');
+    clearError();
+
+    const cats = state?.categoryAttributes || [];
+    const catAttr = cats.find(c => c.id === attrId);
+
+    let attrPayload;
+    if (input.tagName === 'SELECT') {
+        const opt = input.options[input.selectedIndex];
+        if (!opt || !opt.value) return showError(`Selecione uma opção para "${catAttr?.name || attrId}".`);
+        attrPayload = { id: attrId, value_id: opt.value, value_name: opt.dataset.name || opt.textContent.trim() };
+    } else {
+        const raw = (input.value || '').trim();
+        const validation = MF_validateAttrInput(catAttr, raw);
+        if (!validation.ok) return showError(validation.error);
+        const val = validation.cleanedValue || raw;
+        if (validation.autoCleaned) input.value = val;
+        const exact = Array.isArray(catAttr?.values) ? catAttr.values.find(v => String(v.name||'').toLowerCase() === val.toLowerCase()) : null;
+        attrPayload = exact ? { id: attrId, value_id: exact.id, value_name: exact.name } : { id: attrId, value_name: val };
+    }
+
+    const btn = input.parentElement.querySelector('.mfd-fb-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+        const res = await fetch(`${BASE_URL_PROXY}/api/fetch-item-update?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attributes: [attrPayload] }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            const msg = MF_translateMlError(err, catAttr) || err.error || `Erro ${res.status}`;
+            return showError(msg);
+        }
+        const updated = await res.json();
+        const partialErr = MF_translateProxyPartialError(updated, catAttr);
+        if (partialErr) return showError(partialErr);
+        // Sucesso — feedback rápido
+        if (btn) { btn.textContent = '✓'; btn.style.background = 'var(--green, #10b981)'; setTimeout(() => { btn.style.background = ''; }, 1500); }
+        // Atualiza o overview cacheado
+        const ov = window.__mfFamilyOverview;
+        if (ov) {
+            const variation = ov.variations.find(v => v.item_id === itemId);
+            if (variation) {
+                const arr = (variation.item_attributes = variation.item_attributes || []);
+                const idx = arr.findIndex(a => a.id === attrId);
+                if (idx >= 0) arr[idx] = { ...arr[idx], ...attrPayload };
+                else arr.push(attrPayload);
+            }
+        }
+    } catch (e) {
+        showError(e.message || 'Falha de rede');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 };
 
 function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId = "categoryAttributes") {

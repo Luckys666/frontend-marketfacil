@@ -1770,3 +1770,53 @@
     border-radius: 3px;
 }
 .mfd-fb-link-btn:hover { background: var(--bg-hover, #f3f4f6); color: var(--blue, #2563eb); }
+
+/* Painel de edição inline (etapa 2) ============================================== */
+.mfd-fb-var-card { flex-wrap: wrap; }
+.mfd-fb-var-edit-panel {
+    flex-basis: 100%; width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--bg-soft, #f9fafb);
+    border-top: 1px solid var(--border, #e5e7eb);
+    border-radius: 0 0 6px 6px;
+}
+.mfd-fb-edit-errors {
+    background: #fef2f2; color: #991b1b;
+    padding: 6px 10px; border-radius: 4px;
+    font-size: 0.78rem; margin-bottom: 8px;
+}
+.mfd-fb-edit-fields { display: flex; flex-direction: column; gap: 8px; }
+.mfd-fb-edit-field { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; position: relative; }
+.mfd-fb-edit-label {
+    font-size: 0.74rem; color: var(--text-muted, #555);
+    flex-basis: 110px; flex-shrink: 0;
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.mfd-fb-input {
+    flex: 1; min-width: 100px;
+    padding: 5px 8px;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 4px;
+    font-size: 0.82rem;
+    background: var(--bg-card, #fff);
+}
+.mfd-fb-input:focus { outline: 2px solid var(--blue, #2563eb); outline-offset: -1px; }
+.mfd-fb-save-btn {
+    padding: 5px 10px;
+    background: var(--blue, #2563eb); color: white;
+    border: none; border-radius: 4px;
+    font-weight: 700; font-size: 0.85rem;
+    cursor: pointer; transition: background 0.15s;
+}
+.mfd-fb-save-btn:hover { background: var(--blue-dark, #1e40af); }
+.mfd-fb-save-btn:disabled { opacity: 0.6; cursor: wait; }
+.mfd-fb-edit-error {
+    flex-basis: 100%;
+    color: var(--red, #dc2626);
+    font-size: 0.74rem;
+    background: #fef2f2;
+    padding: 4px 8px;
+    border-radius: 3px;
+    margin-top: 4px;
+}
