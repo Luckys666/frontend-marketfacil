@@ -1676,3 +1676,97 @@
 .ana-wrapper .chart-card-icon { font-size: 1rem; }
 .ana-wrapper .chart-card-label { flex: 1; font-family: 'DM Sans', sans-serif; letter-spacing: .02em; }
 .ana-wrapper .chart-card-body { padding: 16px 14px 10px; }
+
+/* === Editor de Variações em Lote (modal) ===================================== */
+.mfd-fb-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+}
+.mfd-fb-dialog {
+    background: var(--bg-card, #fff);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    width: min(960px, 100%);
+    max-height: 92vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+}
+.mfd-fb-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    display: flex; align-items: center; justify-content: space-between;
+}
+.mfd-fb-title { font-weight: 700; font-size: 1.05rem; }
+.mfd-fb-close {
+    background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-muted, #666);
+    padding: 4px 8px; border-radius: 4px;
+}
+.mfd-fb-close:hover { background: var(--bg-hover, #f3f4f6); }
+.mfd-fb-body { padding: 18px; overflow-y: auto; flex: 1; }
+.mfd-fb-loading,
+.mfd-fb-error,
+.mfd-fb-empty { text-align: center; padding: 24px; color: var(--text-muted, #666); font-size: 0.9rem; }
+.mfd-fb-error { color: var(--red, #dc2626); }
+.mfd-fb-section { margin-bottom: 22px; }
+.mfd-fb-section-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 10px; color: var(--text, #111); }
+.mfd-fb-shared-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    background: var(--bg-soft, #f9fafb);
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border, #e5e7eb);
+}
+.mfd-fb-shared-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mfd-fb-shared-label { font-size: 0.72rem; color: var(--text-muted, #666); text-transform: uppercase; letter-spacing: 0.04em; }
+.mfd-fb-shared-value { font-size: 0.85rem; color: var(--text, #111); word-break: break-word; }
+.mfd-fb-shared-note { font-size: 0.74rem; color: var(--text-muted, #888); margin-top: 8px; font-style: italic; }
+.mfd-fb-variations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+.mfd-fb-var-card {
+    display: flex; gap: 10px;
+    padding: 10px;
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mfd-fb-var-card:hover { border-color: var(--blue, #2563eb); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+.mfd-fb-var-thumb {
+    flex-shrink: 0; width: 64px; height: 64px;
+    background: var(--bg-soft, #f3f4f6);
+    border-radius: 6px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+}
+.mfd-fb-var-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mfd-fb-var-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mfd-fb-var-ident { font-weight: 600; font-size: 0.88rem; color: var(--text, #111); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mfd-fb-var-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.mfd-fb-meta { font-size: 0.72rem; color: var(--text-muted, #666); }
+.mfd-fb-var-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.mfd-fb-tag {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 600;
+    background: var(--bg-soft, #f3f4f6); color: var(--text, #111);
+}
+.mfd-fb-tag.pos { background: #d1fae5; color: #065f46; }
+.mfd-fb-tag.neg { background: #fee2e2; color: #991b1b; }
+.mfd-fb-tag.neutral { background: #fef3c7; color: #92400e; }
+.mfd-fb-var-actions { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.mfd-fb-expand-btn {
+    padding: 4px 10px; background: var(--blue, #2563eb); color: white;
+    border: none; border-radius: 4px; font-size: 0.74rem; cursor: pointer; white-space: nowrap;
+}
+.mfd-fb-expand-btn:hover { background: var(--blue-dark, #1e40af); }
+.mfd-fb-link-btn {
+    text-decoration: none; padding: 2px 6px; font-size: 0.78rem; color: var(--text-muted, #666);
+    border-radius: 3px;
+}
+.mfd-fb-link-btn:hover { background: var(--bg-hover, #f3f4f6); color: var(--blue, #2563eb); }

@@ -347,6 +347,32 @@ function MF_translateMlError(errData, catAttr) {
     return `Não foi possível validar ${fallbackName}.${code ? ` (código: ${code})` : ''}`;
 }
 
+// O proxy mlb-proxy faz roteamento smart para anúncios em família: pode acionar PUT /items + POST family_task em paralelo.
+// Quando uma das pernas falha, o proxy ainda devolve 200 com `_family_task_error` ou `_item_put_error` no body.
+// Sem esse parser, o front trataria como sucesso e o usuário não veria que o ML rejeitou a alteração.
+function MF_translateProxyPartialError(payload, catAttr) {
+    if (!payload || typeof payload !== 'object') return null;
+    const fieldName = catAttr?.name || 'campo';
+    const familyErr = payload._family_task_error;
+    const itemErr = payload._item_put_error;
+
+    if (familyErr) {
+        const code = String(familyErr.code || familyErr.error || '');
+        const cause = Array.isArray(familyErr.cause) ? familyErr.cause[0] : null;
+        const rawMsg = String(familyErr.message || cause?.message || '');
+        if (/PA_UNAUTHORIZED|policy[_\s-]?agent/i.test(code) || /PolicyAgent/i.test(rawMsg)) {
+            return `${fieldName} é controlado pela família deste anúncio e o Mercado Livre não autorizou a edição por aqui. Edite direto na ficha técnica do anúncio no painel do Mercado Livre.`;
+        }
+        const translated = MF_translateMlError(familyErr, catAttr);
+        return translated || `Não foi possível salvar ${fieldName} no Mercado Livre (família de anúncios). Edite direto no painel do ML.`;
+    }
+    if (itemErr) {
+        const translated = MF_translateMlError(itemErr, catAttr);
+        return translated || `Não foi possível salvar ${fieldName} no Mercado Livre.`;
+    }
+    return null;
+}
+
 function MF_getAttrPlaceholder(catAttr) {
     if (!catAttr) return '';
     const id = String(catAttr.id || '').toUpperCase();
@@ -1158,6 +1184,8 @@ window.saveAttr = async function (attrId) {
             return showError(msg);
         }
         const updated = await res.json();
+        const partialErr = MF_translateProxyPartialError(updated, catAttr);
+        if (partialErr) return showError(partialErr);
         if (Array.isArray(updated?.attributes)) {
             state.detail.attributes = updated.attributes;
         } else {
@@ -1480,6 +1508,187 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
     `;
 }
 
+// === Editor de Variações em Lote (modal) ============================================
+// Mapa de tags conhecidas → severidade visual.
+const MF_TAG_SEVERITY = (() => {
+    const positive = new Set(['good_quality_picture', 'good_quality_thumbnail', 'brand_verified', 'best_seller_candidate', 'cart_eligible', 'extended_warranty_eligible', 'high_quality', 'best_listing']);
+    const negative = new Set(['poor_quality_picture', 'poor_quality_thumbnail', 'incomplete_technical_specs', 'moderation_penalty', 'low_health', 'manufacturing_time', 'forbidden']);
+    return { positive, negative };
+})();
+
+function MF_renderTagsBadges(tags) {
+    if (!Array.isArray(tags) || !tags.length) return '<span class="mfd-fb-empty">—</span>';
+    const pos = tags.filter(t => MF_TAG_SEVERITY.positive.has(t)).length;
+    const neg = tags.filter(t => MF_TAG_SEVERITY.negative.has(t)).length;
+    const out = [];
+    if (pos) out.push(`<span class="mfd-fb-tag pos" title="${tags.filter(t=>MF_TAG_SEVERITY.positive.has(t)).join(', ')}">✓ ${pos}</span>`);
+    if (neg) out.push(`<span class="mfd-fb-tag neg" title="${tags.filter(t=>MF_TAG_SEVERITY.negative.has(t)).join(', ')}">⚠ ${neg}</span>`);
+    if (!out.length) out.push(`<span class="mfd-fb-tag neutral" title="${tags.join(', ')}">${tags.length} tags</span>`);
+    return out.join(' ');
+}
+
+function MF_renderQualityBadge(quality) {
+    if (!quality || typeof quality !== 'object') return '<span class="mfd-fb-empty">—</span>';
+    // /item/{id}/performance retorna campos como performance_score, ranking_score, indicators
+    const score = typeof quality.performance_score === 'number' ? quality.performance_score
+                : typeof quality.score === 'number' ? quality.score
+                : null;
+    if (score === null) return '<span class="mfd-fb-empty">—</span>';
+    const pct = Math.round(score * (score <= 1 ? 100 : 1));
+    const cls = pct >= 70 ? 'pos' : pct >= 40 ? 'neutral' : 'neg';
+    return `<span class="mfd-fb-tag ${cls}" title="Performance score">${pct}</span>`;
+}
+
+function MF_renderPurchaseExpBadge(pe) {
+    if (!pe || typeof pe !== 'object') return '<span class="mfd-fb-empty">—</span>';
+    // /reputation/items/.../purchase_experience/integrators retorna { score, level, ... }
+    const score = typeof pe.score === 'number' ? pe.score
+                : typeof pe.global_score === 'number' ? pe.global_score
+                : null;
+    const level = pe.level || pe.global_level || null;
+    if (score === null && !level) return '<span class="mfd-fb-empty">—</span>';
+    const cls = level === 'green' || (score !== null && score >= 4) ? 'pos'
+              : level === 'yellow' || (score !== null && score >= 3) ? 'neutral'
+              : 'neg';
+    const label = level || (score !== null ? score.toFixed(1) : '?');
+    return `<span class="mfd-fb-tag ${cls}" title="Experiência de compra">${label}</span>`;
+}
+
+function MF_familyEditorEnsureModal() {
+    let modal = document.getElementById('mfd-family-editor-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'mfd-family-editor-modal';
+    modal.className = 'mfd-fb-overlay';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+        <div class="mfd-fb-dialog">
+            <div class="mfd-fb-header">
+                <div class="mfd-fb-title">Editar variações</div>
+                <button class="mfd-fb-close" onclick="window.MF_closeFamilyBatchEditor()" title="Fechar">✕</button>
+            </div>
+            <div class="mfd-fb-body" id="mfd-fb-body"></div>
+        </div>`;
+    document.body.appendChild(modal);
+    // Fecha no click no overlay (fora do dialog)
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) window.MF_closeFamilyBatchEditor();
+    });
+    return modal;
+}
+
+window.MF_closeFamilyBatchEditor = function () {
+    const modal = document.getElementById('mfd-family-editor-modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.MF_openFamilyBatchEditor = async function (upId) {
+    const state = window.currentAnalysisState;
+    const token = state?.accessToken || window._adsAccessToken;
+    if (!upId || !token) return alert('Sessão expirada. Recarregue a página.');
+
+    const modal = MF_familyEditorEnsureModal();
+    const body = modal.querySelector('#mfd-fb-body');
+    body.innerHTML = '<div class="mfd-fb-loading">Carregando variações…</div>';
+    modal.style.display = 'flex';
+
+    try {
+        const siteId = window.MF_CURRENT_SITE || 'MLB';
+        const res = await fetch(`${BASE_URL_PROXY}/api/families/overview/${encodeURIComponent(upId)}?site_id=${encodeURIComponent(siteId)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            body.innerHTML = `<div class="mfd-fb-error">Não foi possível carregar a família. ${e.error || `Erro ${res.status}`}</div>`;
+            return;
+        }
+        const data = await res.json();
+        // Guardar o overview pra reuso na etapa 2
+        window.__mfFamilyOverview = data;
+        MF_renderFamilyOverview(data, body);
+    } catch (e) {
+        body.innerHTML = `<div class="mfd-fb-error">Falha de rede: ${e.message}</div>`;
+    }
+};
+
+function MF_renderFamilyOverview(data, body) {
+    const fam = data.family || {};
+    const variations = Array.isArray(data.variations) ? data.variations : [];
+    const commonAttrs = Array.isArray(data.common_attrs) ? data.common_attrs : [];
+    const cats = window.currentAnalysisState?.categoryAttributes || [];
+    const catById = Object.fromEntries(cats.map(c => [c.id, c]));
+
+    // Filtrar comuns que SÃO de hierarquia FAMILY/PARENT_PK pra mostrar como info
+    const familyHierAttrs = commonAttrs.filter(a => {
+        const cat = catById[a.id];
+        return cat && (cat.hierarchy === 'PARENT_PK' || cat.hierarchy === 'FAMILY');
+    });
+
+    const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx)).join('');
+
+    body.innerHTML = `
+        <div class="mfd-fb-section">
+            <div class="mfd-fb-section-title">Compartilhado entre as ${variations.length} variações</div>
+            <div class="mfd-fb-shared-grid">
+                ${familyHierAttrs.length === 0 ? '<span class="mfd-fb-empty">Nenhum campo compartilhado preenchido.</span>' :
+                    familyHierAttrs.map(a => {
+                        const cat = catById[a.id];
+                        const name = cat?.name || a.name || a.id;
+                        const value = a.value_name || (Array.isArray(a.values) ? a.values.map(v => v.name).filter(Boolean).join(', ') : '') || '—';
+                        return `<div class="mfd-fb-shared-row">
+                            <span class="mfd-fb-shared-label">${escapeHtml(name)}</span>
+                            <span class="mfd-fb-shared-value">${escapeHtml(value)}</span>
+                        </div>`;
+                    }).join('')}
+            </div>
+            <div class="mfd-fb-shared-note">Esses campos só podem ser editados direto no painel do Mercado Livre.</div>
+        </div>
+        <div class="mfd-fb-section">
+            <div class="mfd-fb-section-title">Por variação (${variations.length})</div>
+            <div class="mfd-fb-variations-grid">
+                ${variationCardsHtml}
+            </div>
+        </div>
+    `;
+}
+
+function MF_renderVariationCard(v, idx) {
+    const s = v.summary || {};
+    const id = v.up_id || ('var-' + idx);
+    const ident = [s.color, s.size].filter(Boolean).join(' / ') || s.sku || s.title || v.up_id;
+    const status = s.status || '—';
+    const statusClass = status === 'active' ? 'pos' : status === 'paused' ? 'neutral' : 'neg';
+    return `
+        <div class="mfd-fb-var-card" data-up-id="${escapeHtml(v.up_id || '')}" data-item-id="${escapeHtml(v.item_id || '')}">
+            <div class="mfd-fb-var-thumb">
+                ${s.thumbnail ? `<img src="${escapeHtml(s.thumbnail)}" alt="" loading="lazy" />` : ''}
+            </div>
+            <div class="mfd-fb-var-body">
+                <div class="mfd-fb-var-ident">${escapeHtml(ident)}</div>
+                <div class="mfd-fb-var-meta">
+                    ${s.sku ? `<span class="mfd-fb-meta">SKU: ${escapeHtml(s.sku)}</span>` : ''}
+                    ${s.price !== null && s.price !== undefined ? `<span class="mfd-fb-meta">R$ ${Number(s.price).toFixed(2)}</span>` : ''}
+                    ${s.available_quantity !== null && s.available_quantity !== undefined ? `<span class="mfd-fb-meta">Estoque: ${s.available_quantity}</span>` : ''}
+                </div>
+                <div class="mfd-fb-var-badges">
+                    <span class="mfd-fb-tag ${statusClass}" title="Status">${escapeHtml(status)}</span>
+                    ${MF_renderTagsBadges(v.tags)}
+                    ${MF_renderQualityBadge(v.quality)}
+                    ${MF_renderPurchaseExpBadge(v.purchase_experience)}
+                </div>
+            </div>
+            <div class="mfd-fb-var-actions">
+                <button onclick="window.MF_expandVariation('${escapeHtml(v.up_id || '')}')" class="mfd-fb-expand-btn">Editar</button>
+                ${s.permalink ? `<a href="${escapeHtml(s.permalink)}" target="_blank" rel="noopener" class="mfd-fb-link-btn" title="Abrir no Mercado Livre">↗</a>` : ''}
+            </div>
+        </div>`;
+}
+
+window.MF_expandVariation = function (upId) {
+    // Etapa 2 — placeholder. Implementação completa virá na próxima iteração.
+    alert('Etapa 2 (edição CHILD_PK/ITEM por variação) em construção.\nUP: ' + upId);
+};
+
 function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId = "categoryAttributes") {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -1513,12 +1722,18 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const missingAttrs = [];
         const filledAttrs = [];
+        const isInFamily = !!detail?.user_product_id;
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
             const isFilled = adValue && adValue.trim() !== '';
             const isVariationAttr = hasVariations && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase());
+            const isFamilyControlled = isInFamily && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY');
             if (isVariationAttr) {
                 variationAttrs.push({ catAttr, adValue });
+            } else if (isFamilyControlled && !isFilled) {
+                // Não dá pra preencher PARENT_PK por aqui em anúncio em família.
+                // Se já está vazio, omite — evita mostrar "Faltando" sem caminho de edição.
+                return;
             } else if (isFilled) {
                 filledAttrs.push({ catAttr, adValue });
             } else {
@@ -1528,7 +1743,11 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const renderCatItem = (catAttr, adValue, isFilled) => {
             const isIgnored = window.ignoredAdAttributes.has(catAttr.id);
-            const canEdit = !isIgnored && !catAttr.tags?.read_only;
+            // Atributos PARENT_PK/FAMILY de itens em família ML não são editáveis pela API pública
+            // (o family editor exige scope que não temos). Em vez de mostrar o pencil e errar,
+            // omitimos a edição — o atributo continua visível como informação.
+            const isFamilyControlled = !!(detail?.user_product_id && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY'));
+            const canEdit = !isIgnored && !catAttr.tags?.read_only && !isFamilyControlled;
             const pencilSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>`;
             return `
              <div class="attribute-item" style="min-width:0; ${!isFilled ? 'background:var(--red-light); border-color:var(--red);' : 'background:var(--green-light); border-color:var(--green);'} ${isIgnored ? 'opacity: 0.5; filter: grayscale(1);' : ''}">
@@ -1587,11 +1806,22 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
     const totalItems = Array.isArray(categoryAttributes) ? categoryAttributes.filter(a => EDITABLE_TYPES.has(a.value_type) && !a.tags?.read_only).length : 0;
 
+    // Botão "Editar todas as variações" — só aparece se item está em família ML.
+    // O modal abre carregando o overview agregado (tags/quality/experience por variação).
+    const upIdForFamily = window.currentAnalysisState?.detail?.user_product_id || null;
+    const familyEditorButton = upIdForFamily
+        ? `<button onclick="window.MF_openFamilyBatchEditor('${upIdForFamily}')" class="mfd-family-edit-btn" style="margin-left:8px; padding:4px 10px; background:var(--blue); color:white; border:none; border-radius:4px; font-size:0.78rem; cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="Ver e editar todas as variações deste anúncio em família">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            Variações
+        </button>`
+        : '';
+
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.25s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📂</span>
                 <span class="ana-card-title">Campos da Categoria</span>
+                ${familyEditorButton}
                 <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${totalItems} campos</span>
             </div>
             ${contentHtml}
