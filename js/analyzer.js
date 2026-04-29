@@ -1812,12 +1812,59 @@ function MF_renderFamilyOverview(data, body) {
             <div class="mfd-fb-shared-note">Esses campos só podem ser editados direto no painel do Mercado Livre.</div>
         </div>
         <div class="mfd-fb-section">
-            <div class="mfd-fb-section-title">Por variação (${variations.length})</div>
-            <div class="mfd-fb-variations-grid">
+            <div class="mfd-fb-toolbar">
+                <span class="mfd-fb-section-title" style="margin:0;">Por variação (${variations.length})</span>
+                <span class="mfd-fb-toolbar-spacer"></span>
+                <label class="mfd-fb-toolbar-label">
+                    <input type="checkbox" id="mfd-fb-filter-problems" />
+                    <span>Só com problemas</span>
+                </label>
+                <label class="mfd-fb-toolbar-label">
+                    <span>Ordenar</span>
+                    <select id="mfd-fb-sort">
+                        <option value="default">Padrão</option>
+                        <option value="problems">Mais problemas</option>
+                        <option value="stock_asc">Menor estoque</option>
+                        <option value="stock_desc">Maior estoque</option>
+                        <option value="price_asc">Menor preço</option>
+                        <option value="price_desc">Maior preço</option>
+                        <option value="quality_asc">Pior qualidade</option>
+                    </select>
+                </label>
+            </div>
+            <div class="mfd-fb-variations-grid" id="mfd-fb-grid">
                 ${variationCardsHtml}
             </div>
         </div>
     `;
+
+    // Wire sort/filter
+    const sortSel = body.querySelector('#mfd-fb-sort');
+    const filterCk = body.querySelector('#mfd-fb-filter-problems');
+    const grid = body.querySelector('#mfd-fb-grid');
+    const apply = () => {
+        const mode = sortSel.value;
+        const onlyProblems = filterCk.checked;
+        const enriched = variations.map(v => ({
+            v,
+            diag: MF_analyzeVariationProblems(v, variations).problems,
+        }));
+        let list = enriched;
+        if (onlyProblems) list = list.filter(e => e.diag.length > 0);
+        const cmp = {
+            default: (a, b) => 0,
+            problems: (a, b) => b.diag.length - a.diag.length,
+            stock_asc: (a, b) => (a.v.summary?.available_quantity ?? Infinity) - (b.v.summary?.available_quantity ?? Infinity),
+            stock_desc: (a, b) => (b.v.summary?.available_quantity ?? -1) - (a.v.summary?.available_quantity ?? -1),
+            price_asc: (a, b) => (a.v.summary?.price ?? Infinity) - (b.v.summary?.price ?? Infinity),
+            price_desc: (a, b) => (b.v.summary?.price ?? -1) - (a.v.summary?.price ?? -1),
+            quality_asc: (a, b) => ((a.v.quality?.performance_score ?? a.v.quality?.score ?? 1) - (b.v.quality?.performance_score ?? b.v.quality?.score ?? 1)),
+        }[mode] || (() => 0);
+        list = list.slice().sort(cmp);
+        grid.innerHTML = list.map(e => MF_renderVariationCard(e.v, 0, variations)).join('') || '<div class="mfd-fb-empty">Nenhuma variação corresponde aos filtros.</div>';
+    };
+    sortSel.addEventListener('change', apply);
+    filterCk.addEventListener('change', apply);
 }
 
 function MF_renderVariationCard(v, idx, allVariations) {
@@ -1871,8 +1918,13 @@ function MF_renderVariationCard(v, idx, allVariations) {
                     </div>
                 </div>
                 <div class="mfd-fb-var-actions">
-                    <button onclick="window.MF_expandVariation('${escapeHtml(v.up_id || '')}')" class="mfd-fb-expand-btn">Editar</button>
-                    ${s.permalink ? `<a href="${escapeHtml(s.permalink)}" target="_blank" rel="noopener" class="mfd-fb-link-btn" title="Abrir no Mercado Livre">↗</a>` : ''}
+                    <button onclick="window.MF_expandVariation('${escapeHtml(v.up_id || '')}')" class="mfd-fb-expand-btn" title="Editar campos desta variação">
+                        <span class="mfd-fb-expand-text">Editar</span>
+                        <svg class="mfd-fb-expand-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    ${s.permalink ? `<a href="${escapeHtml(s.permalink)}" target="_blank" rel="noopener" class="mfd-fb-link-btn" title="Abrir no Mercado Livre">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    </a>` : ''}
                 </div>
             </div>
             <div class="mfd-fb-var-chips">
