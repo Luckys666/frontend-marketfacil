@@ -1,86 +1,471 @@
-/* --- Scanner Specific Controls --- */
+/* === SCANNER (Auditoria de Tags) — Proposta U (Light Trading) === */
+
+/* Tokens locais — espelhados do analyzer.css pra não depender de .ana-wrapper */
+.ml-analyzer-widget {
+    --sc-bg: #f4f6fa;
+    --sc-card: #ffffff;
+    --sc-navy: #0f172a;
+    --sc-blue: #0066ff;
+    --sc-blue-light: #e8f0ff;
+    --sc-green: #00d68f;
+    --sc-green-light: #e6fbf3;
+    --sc-green-dark: #059669;
+    --sc-yellow: #f59e0b;
+    --sc-yellow-light: #fef3c7;
+    --sc-red: #ff3b5c;
+    --sc-red-light: #fff0f2;
+    --sc-red-dark: #dc2626;
+    --sc-text: #0f172a;
+    --sc-text-secondary: #475569;
+    --sc-text-muted: #94a3b8;
+    --sc-border: #e2e8f0;
+    --sc-row-alt: #f8fafc;
+    --sc-shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+    --sc-shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --sc-radius: 10px;
+    --sc-radius-sm: 6px;
+    font-family: 'DM Sans', 'Geist', -apple-system, sans-serif;
+    color: var(--sc-text);
+}
+
+.ml-analyzer-widget .mono,
+.ml-analyzer-widget .text-value {
+    font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+/* === Filtro (combobox) === */
 .ml-analyzer-widget #tagFilter {
-    background-color: #ffffff;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 12px !important;
-    padding: 12px 16px !important;
-    font-size: 0.95rem;
-    color: #334155;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    transition: all 0.2s ease;
+    background-color: var(--sc-card);
+    border: 1px solid var(--sc-border) !important;
+    border-radius: var(--sc-radius-sm) !important;
+    padding: 10px 14px !important;
+    font-size: 0.9rem;
+    color: var(--sc-text);
+    box-shadow: var(--sc-shadow-sm);
+    transition: border-color .15s ease, box-shadow .15s ease;
     cursor: pointer;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 14px center;
-    background-size: 16px;
-    padding-right: 40px !important;
+    background-position: right 12px center;
+    background-size: 14px;
+    padding-right: 36px !important;
 }
 
 .ml-analyzer-widget #tagFilter:hover {
-    border-color: #94a3b8 !important;
+    border-color: #cbd5e1 !important;
 }
 
 .ml-analyzer-widget #tagFilter:focus {
     outline: none;
-    border-color: #3b82f6 !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--sc-blue) !important;
+    box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.12);
 }
 
+/* === Botão principal — Escanear Conta === */
 .ml-analyzer-widget #scanButton {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-    color: white;
+    background: var(--sc-blue) !important;
+    color: #fff;
     border: none;
-    border-radius: 12px !important;
-    padding: 0 32px !important;
+    border-radius: var(--sc-radius-sm) !important;
+    padding: 0 28px !important;
     font-weight: 600;
-    font-size: 1rem;
-    height: 48px !important;
+    font-size: 0.9rem;
+    height: 44px !important;
     cursor: pointer;
-    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.1), 0 2px 4px -1px rgba(37, 99, 235, 0.06);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 102, 255, 0.25);
+    transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     display: inline-flex;
     align-items: center;
     justify-content: center;
 }
 
-.ml-analyzer-widget #scanButton:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.2), 0 4px 6px -2px rgba(37, 99, 235, 0.1);
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+.ml-analyzer-widget #scanButton:hover:not(:disabled) {
+    background: #0052cc !important;
+    box-shadow: 0 4px 12px rgba(0, 102, 255, 0.3);
 }
 
-.ml-analyzer-widget #scanButton:active {
-    transform: translateY(0);
+.ml-analyzer-widget #scanButton:active:not(:disabled) {
+    transform: translateY(1px);
 }
 
 .ml-analyzer-widget #scanButton:disabled {
-    background: #e2e8f0 !important;
-    color: #94a3b8;
+    background: var(--sc-border) !important;
+    color: var(--sc-text-muted);
     cursor: not-allowed;
-    transform: none;
     box-shadow: none;
 }
 
+/* === Botão CSV — neon green === */
 .ml-analyzer-widget #exportCsvButton {
-    background: #ffffff !important;
-    color: #3b82f6;
-    border: 1px solid #3b82f6 !important;
-    border-radius: 12px !important;
-    padding: 0 20px !important;
+    background: var(--sc-green) !important;
+    color: #fff;
+    border: none !important;
+    border-radius: var(--sc-radius-sm) !important;
+    padding: 0 18px !important;
     font-weight: 600;
-    font-size: 0.9rem;
-    height: 48px !important;
+    font-size: 0.85rem;
+    height: 44px !important;
     cursor: pointer;
-    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 214, 143, 0.25);
+    transition: background .15s ease, box-shadow .15s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
 }
 
-.ml-analyzer-widget #exportCsvButton:hover {
-    background: #eff6ff !important;
-    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1);
+.ml-analyzer-widget #exportCsvButton:hover:not(:disabled) {
+    background: var(--sc-green-dark) !important;
+    box-shadow: 0 4px 12px rgba(0, 214, 143, 0.3);
+}
+
+.ml-analyzer-widget #exportCsvButton:disabled {
+    background: var(--sc-border) !important;
+    color: var(--sc-text-muted);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* === Status badges (corrige bug de escopo do analyzer.css) === */
+.ml-analyzer-widget .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.ml-analyzer-widget .status-badge.success {
+    background: var(--sc-green-light);
+    color: var(--sc-green-dark);
+    border: 1px solid #a7f3d0;
+}
+
+.ml-analyzer-widget .status-badge.error {
+    background: var(--sc-red-light);
+    color: var(--sc-red-dark);
+    border: 1px solid #fecaca;
+}
+
+.ml-analyzer-widget .status-badge.neutral {
+    background: var(--sc-yellow-light);
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.ml-analyzer-widget .status-badge.muted {
+    background: var(--sc-row-alt);
+    color: var(--sc-text-secondary);
+    border: 1px solid var(--sc-border);
+}
+
+.ml-analyzer-widget .status-badge.info {
+    background: var(--sc-blue-light);
+    color: var(--sc-blue);
+    border: 1px solid #bfdbfe;
+}
+
+/* === Cards de anúncio === */
+.ml-analyzer-widget .ana-card {
+    background: var(--sc-card) !important;
+    border: 1px solid var(--sc-border) !important;
+    border-radius: var(--sc-radius) !important;
+    box-shadow: var(--sc-shadow-sm) !important;
+    padding: 14px !important;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.ml-analyzer-widget .ana-card:hover {
+    border-color: #cbd5e1 !important;
+    box-shadow: var(--sc-shadow-md) !important;
+}
+
+/* Card com problema crítico — borda esquerda vermelha */
+.ml-analyzer-widget .ana-card.has-problem {
+    border-left: 3px solid var(--sc-red) !important;
+}
+
+.ml-analyzer-widget .ana-card.has-problem::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255, 59, 92, 0.04) 0%, transparent 60%);
+    pointer-events: none;
+}
+
+/* Cards: tipografia interna */
+.ml-analyzer-widget .ana-card .sc-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--sc-text);
+    text-decoration: none;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.35;
+}
+
+.ml-analyzer-widget .ana-card .sc-title:hover {
+    color: var(--sc-blue);
+    text-decoration: underline;
+}
+
+.ml-analyzer-widget .ana-card .sc-price {
+    font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--sc-green-dark);
+    font-size: 0.95rem;
+    margin-top: 2px;
+}
+
+.ml-analyzer-widget .ana-card .sc-id {
+    font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+    color: var(--sc-text-muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    margin-top: 2px;
+}
+
+.ml-analyzer-widget .ana-card .sc-thumb {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: var(--sc-radius-sm);
+    background: var(--sc-row-alt);
+    border: 1px solid var(--sc-border);
+    flex-shrink: 0;
+}
+
+.ml-analyzer-widget .ana-card .sc-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--sc-border);
+}
+
+.ml-analyzer-widget .ana-card .sc-empty-tags {
+    font-size: 0.72rem;
+    color: var(--sc-text-muted);
+    font-style: italic;
+}
+
+.ml-analyzer-widget .ana-card .sc-tip {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: var(--sc-red-light);
+    border: 1px solid #fecaca;
+    border-radius: var(--sc-radius-sm);
+    font-size: 0.75rem;
+    color: var(--sc-red-dark);
+    line-height: 1.4;
+}
+
+.ml-analyzer-widget .ana-card .sc-tip + .sc-tip {
+    margin-top: 6px;
+}
+
+.ml-analyzer-widget .ana-card .sc-tip b {
+    color: var(--sc-red-dark);
+}
+
+/* === Progress bar (durante scan) === */
+.ml-analyzer-widget #scanProgress {
+    background: var(--sc-card);
+    border: 1px solid var(--sc-border);
+    border-radius: var(--sc-radius);
+    padding: 14px 16px;
+    box-shadow: var(--sc-shadow-sm);
+    margin: 12px 0;
+}
+
+.ml-analyzer-widget #scanProgress .sc-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+
+.ml-analyzer-widget #scanProgress #scanStatusText {
+    color: var(--sc-text-secondary);
+    font-weight: 500;
+}
+
+.ml-analyzer-widget #scanProgress #scanCountText {
+    font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+    color: var(--sc-text-muted);
+    font-size: 0.78rem;
+}
+
+.ml-analyzer-widget .sc-progress-bar-track {
+    height: 6px;
+    background: var(--sc-row-alt);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+}
+
+.ml-analyzer-widget #scanProgressBar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--sc-blue) 0%, var(--sc-green) 100%) !important;
+    border-radius: 999px;
+    transition: width .3s ease;
+    box-shadow: 0 0 8px rgba(0, 102, 255, 0.3);
+}
+
+/* Sobreescreve o track antigo (.char-counter-bar do analyzer) */
+.ml-analyzer-widget .char-counter-bar {
+    height: 6px;
+    background: var(--sc-row-alt);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Shimmer overlay enquanto < 100% */
+.ml-analyzer-widget #scanProgressBar:not([style*="100%"])::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: sc-shimmer 1.6s linear infinite;
+}
+
+@keyframes sc-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* === Legenda de cores === */
+.ml-analyzer-widget #tagLegend {
+    background: var(--sc-card);
+    border: 1px solid var(--sc-border);
+    border-radius: var(--sc-radius-sm);
+    padding: 10px 14px;
+    box-shadow: var(--sc-shadow-sm);
+    font-size: 0.8rem;
+    color: var(--sc-text-secondary);
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.ml-analyzer-widget #tagLegend .legend-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--sc-text-muted);
+}
+
+.ml-analyzer-widget #tagLegend .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ml-analyzer-widget #tagLegend .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.ml-analyzer-widget #tagLegend .legend-dot.problem {
+    background: var(--sc-red-light);
+    border: 1px solid #fecaca;
+}
+
+.ml-analyzer-widget #tagLegend .legend-dot.neutral {
+    background: var(--sc-row-alt);
+    border: 1px solid var(--sc-border);
+}
+
+.ml-analyzer-widget #tagLegend .legend-dot.positive {
+    background: var(--sc-green-light);
+    border: 1px solid #a7f3d0;
+}
+
+/* === Paginação === */
+.ml-analyzer-widget #scannerPagination {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--sc-card);
+    border: 1px solid var(--sc-border);
+    border-radius: var(--sc-radius-sm);
+    box-shadow: var(--sc-shadow-sm);
+}
+
+.ml-analyzer-widget #scannerPagination button {
+    padding: 8px 14px !important;
+    border-radius: var(--sc-radius-sm) !important;
+    border: 1px solid var(--sc-border) !important;
+    background: var(--sc-card) !important;
+    color: var(--sc-blue);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.82rem;
+    transition: background .12s ease, border-color .12s ease;
+}
+
+.ml-analyzer-widget #scannerPagination button:hover:not(:disabled) {
+    background: var(--sc-blue-light) !important;
+    border-color: var(--sc-blue) !important;
+}
+
+.ml-analyzer-widget #scannerPagination button:disabled {
+    background: var(--sc-row-alt) !important;
+    color: var(--sc-text-muted) !important;
+    border-color: var(--sc-border) !important;
+    cursor: not-allowed;
+}
+
+.ml-analyzer-widget #scannerPagination .sc-page-info {
+    font-size: 0.82rem;
+    color: var(--sc-text-secondary);
+    font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+}
+
+/* === Animação de entrada dos cards === */
+@keyframes slideUpFade {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* === Mensagem "Varredura Completa" === */
+.ml-analyzer-widget .sc-status-headline {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sc-green-dark);
+    margin: 16px 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ml-analyzer-widget .sc-status-headline::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sc-green);
+    box-shadow: 0 0 6px var(--sc-green);
+    display: inline-block;
 }

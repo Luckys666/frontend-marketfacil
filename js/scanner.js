@@ -55,30 +55,53 @@ if (typeof window.MF_renderError !== 'function') {
 
 // --- Configuração & Constantes ---
 const SCANNER_API_BASE = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
+
 const SCANNER_TAGS_NEGATIVAS = new Set([
     "poor_quality_picture", "poor_quality_thumbnail",
     "incomplete_technical_specs", "moderation_penalty"
 ]);
 
+const SCANNER_TAGS_POSITIVAS = new Set([
+    "good_quality_picture", "good_quality_thumbnail",
+    "brand_verified", "extended_warranty_eligible",
+    "cart_eligible", "immediate_payment",
+    "free_shipping", "shipping_discount_item",
+    "catalog_boost", "loyalty_discount_eligible",
+    "meliplus_item", "supermarket_eligible"
+]);
+
 // Mapa centralizado de tradução de tags (usado no dropdown, cards e CSV)
 const TAG_TRANSLATIONS = {
+    // Negativas
     "poor_quality_picture": "Foto de Baixa Qualidade",
     "poor_quality_thumbnail": "Miniatura Ruim",
     "incomplete_technical_specs": "Ficha Técnica Incompleta",
     "moderation_penalty": "Penalidade (Infração)",
-    "brand_verified": "Marca Verificada",
-    "extended_warranty_eligible": "Elegível Garantia Est.",
+    // Positivas
     "good_quality_picture": "Foto Boa",
     "good_quality_thumbnail": "Miniatura Boa",
+    "brand_verified": "Marca Verificada",
+    "extended_warranty_eligible": "Elegível Garantia Est.",
     "immediate_payment": "Pgto Imediato",
     "cart_eligible": "Carrinho",
     "free_shipping": "Frete Grátis",
+    "shipping_discount_item": "Desconto no Frete",
+    "catalog_boost": "Impulso no Catálogo",
+    "loyalty_discount_eligible": "Mercado Pontos",
+    "meliplus_item": "Meli+",
+    "supermarket_eligible": "Supermercado",
+    // Informativas
+    "user_product_listing": "Vinculado a Catálogo",
+    "variations_migration_uptin": "Variação Migrada",
     "catalog_product_candidate": "Candidato a Catálogo",
-    "dragged_bids_and_visits": "Este anúncio já foi finalizado e recriado",
-    "shipping_discount_item": "Desconto no Frete"
+    "catalog_listing": "Anúncio de Catálogo",
+    "dragged_bids_and_visits": "Anúncio Recriado",
+    "picture_crop_fix": "Foto Auto-Ajustada",
+    "deal_of_the_day": "Oferta do Dia",
+    "best_seller_candidate": "Candidato a Mais Vendido"
 };
 
-// Dicas de como resolver cada problema
+// Dicas de como resolver cada problema (apenas críticas)
 const TAG_TIPS = {
     "poor_quality_picture": "Suas fotos foram reprovadas pelo robô do Mercado Livre. Troque por imagens com boa iluminação, fundo branco e alta resolução (mín. 1200x1200px).",
     "poor_quality_thumbnail": "A miniatura principal não passou na análise automática do ML. Use uma foto nítida, centralizada e sem textos sobrepostos.",
@@ -87,7 +110,21 @@ const TAG_TIPS = {
 };
 
 function translateTag(tag) {
-    return TAG_TRANSLATIONS[tag] || tag;
+    if (TAG_TRANSLATIONS[tag]) return TAG_TRANSLATIONS[tag];
+    // Fallback: humaniza tag desconhecida (snake_case → "Snake Case")
+    return tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function tagBadgeClass(tag) {
+    if (SCANNER_TAGS_NEGATIVAS.has(tag)) return 'error';
+    if (SCANNER_TAGS_POSITIVAS.has(tag)) return 'success';
+    return 'muted';
+}
+
+function escapeAttr(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // --- Funções de API (Autocontidas) ---
@@ -400,48 +437,46 @@ function renderScannerGrid(items) {
         }
         if (!safeItem.title && safeItem.result) safeItem = safeItem.result;
 
+        const tags = Array.isArray(safeItem.tags) ? safeItem.tags : [];
+        const hasProblem = tags.some(t => SCANNER_TAGS_NEGATIVAS.has(t));
+
         const div = document.createElement('div');
-        div.className = 'ana-card';
-        div.style.cssText = 'opacity: 1; animation: slideUpFade 0.5s ease forwards; display:flex; flex-direction:column; gap:10px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        div.className = 'ana-card' + (hasProblem ? ' has-problem' : '');
+        div.style.cssText = 'animation: slideUpFade 0.4s ease forwards; display:flex; flex-direction:column; gap:8px;';
 
         const thumb = safeItem.thumbnail || 'https://http2.mlstatic.com/D_NQ_NP_906934-MLA47913349685_102021-O.webp';
         const price = safeItem.price ? `R$ ${safeItem.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
 
         let tagsHtml = '';
         let tipsHtml = '';
-        if (safeItem.tags) {
-            safeItem.tags.forEach(t => {
-                const isBad = SCANNER_TAGS_NEGATIVAS.has(t);
-                const color = isBad ? 'error' : 'muted';
-                const tip = TAG_TIPS[t] || '';
-                const titleAttr = tip ? ` title="${tip}"` : '';
-                const cursor = tip ? ' cursor:help;' : '';
-                tagsHtml += `<span class="status-badge ${color}" style="font-size:0.7rem;${cursor}"${titleAttr}>${translateTag(t)}</span>`;
-                if (isBad && tip) {
-                    tipsHtml += `<div style="font-size:0.72rem; color:#ef4444; margin-top:4px; line-height:1.3;">💡 <b>${translateTag(t)}:</b> ${tip}</div>`;
-                }
-            });
-        }
+        tags.forEach(t => {
+            const cls = tagBadgeClass(t);
+            const tip = TAG_TIPS[t] || '';
+            const titleAttr = tip ? ` title="${escapeAttr(tip)}"` : '';
+            const cursor = tip ? ' style="cursor:help;"' : '';
+            tagsHtml += `<span class="status-badge ${cls}"${cursor}${titleAttr}>${translateTag(t)}</span>`;
+            if (cls === 'error' && tip) {
+                tipsHtml += `<div class="sc-tip">💡 <b>${translateTag(t)}:</b> ${tip}</div>`;
+            }
+        });
 
         const title = safeItem.title || 'Sem título';
         const id = safeItem.id || 'N/A';
         const permalink = safeItem.permalink || '#';
 
         div.innerHTML = `
-            <div style="display:flex; gap:12px;">
-                <img src="${thumb}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; background:#f8fafc; border:1px solid #eee;">
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+                <img class="sc-thumb" src="${thumb}" alt="">
                 <div style="flex:1; min-width:0;">
-                    <a href="${permalink}" target="_blank" class="text-value" style="font-size:0.9rem; margin-bottom:4px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-decoration:none; color:#1e293b; font-weight:600;" title="${title}">${title}</a>
-                    <div style="color:#10b981; font-weight:700; font-size:0.95rem;">${price}</div>
-                    <div style="color:#64748b; font-size:0.75rem;">${id}</div>
+                    <a href="${permalink}" target="_blank" class="sc-title" title="${escapeAttr(title)}">${title}</a>
+                    <div class="sc-price">${price}</div>
+                    <div class="sc-id">${id}</div>
                 </div>
             </div>
-            <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e2e8f0;">
-                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                    ${tagsHtml || '<span style="font-size:0.7rem; color:#cbd5e1; font-style:italic; padding:2px 0;">Nenhuma tag relevante.</span>'}
-                </div>
-                ${tipsHtml ? `<div style="margin-top:6px; padding:8px; background:#fef2f2; border-radius:6px; border: 1px solid #fecaca;">${tipsHtml}</div>` : ''}
+            <div class="sc-tags-row">
+                ${tagsHtml || '<span class="sc-empty-tags">Nenhuma tag relevante.</span>'}
             </div>
+            ${tipsHtml || ''}
         `;
         fragment.appendChild(div);
     });
@@ -469,17 +504,9 @@ function renderPagination(page, totalPages, totalItems) {
     const endItem = Math.min(page * pageSize, totalItems);
 
     paginationDiv.innerHTML = `
-        <button onclick="changeScannerPage(-1)" ${page <= 1 ? 'disabled' : ''}
-            style="padding: 6px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: ${page <= 1 ? '#f1f5f9' : '#fff'}; color: ${page <= 1 ? '#94a3b8' : '#3b82f6'}; cursor: ${page <= 1 ? 'not-allowed' : 'pointer'}; font-weight: 600; font-size: 0.85rem;">
-            ← Anterior
-        </button>
-        <span style="font-size: 0.85rem; color: #475569; font-weight: 500;">
-            ${startItem}–${endItem} de ${totalItems} &nbsp;|&nbsp; Página ${page}/${totalPages}
-        </span>
-        <button onclick="changeScannerPage(1)" ${page >= totalPages ? 'disabled' : ''}
-            style="padding: 6px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: ${page >= totalPages ? '#f1f5f9' : '#fff'}; color: ${page >= totalPages ? '#94a3b8' : '#3b82f6'}; cursor: ${page >= totalPages ? 'not-allowed' : 'pointer'}; font-weight: 600; font-size: 0.85rem;">
-            Próxima →
-        </button>
+        <button onclick="changeScannerPage(-1)" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+        <span class="sc-page-info">${startItem}–${endItem} de ${totalItems}&nbsp;·&nbsp;Página ${page}/${totalPages}</span>
+        <button onclick="changeScannerPage(1)" ${page >= totalPages ? 'disabled' : ''}>Próxima →</button>
     `;
 }
 
@@ -502,6 +529,31 @@ function changeScannerPage(delta) {
 window.startAccountScan = startAccountScan;
 window.handleScannerFilterChange = handleScannerFilterChange;
 window.changeScannerPage = changeScannerPage;
+
+// Limpa inline styles do HTML antigo do Bubble que conflitam com o CSS Light Trading
+function scannerCleanupInlineStyles() {
+    const exportBtn = document.getElementById('exportCsvButton');
+    if (exportBtn) {
+        // Remove background/color/border inline (inclusive !important) deixando o CSS dominar
+        ['background', 'background-color', 'color', 'border', 'border-color', 'border-style', 'border-width', 'height']
+            .forEach(p => exportBtn.style.removeProperty(p));
+    }
+    const scanBtn = document.getElementById('scanButton');
+    if (scanBtn) {
+        ['height'].forEach(p => scanBtn.style.removeProperty(p));
+    }
+    const tagFilter = document.getElementById('tagFilter');
+    if (tagFilter) {
+        ['padding', 'border', 'border-color', 'border-style', 'border-width', 'border-radius']
+            .forEach(p => tagFilter.style.removeProperty(p));
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scannerCleanupInlineStyles);
+} else {
+    scannerCleanupInlineStyles();
+}
 
 // Guard contra cliques múltiplos no export
 let _csvExporting = false;
