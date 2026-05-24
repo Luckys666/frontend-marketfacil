@@ -103,7 +103,7 @@ const TAG_TRANSLATIONS = {
 
 // Dicas de como resolver cada problema (apenas críticas)
 const TAG_TIPS = {
-    "poor_quality_picture": "Suas fotos foram reprovadas pelo robô do Mercado Livre. Troque por imagens com boa iluminação, fundo branco e alta resolução (mín. 1200x1200px).",
+    "poor_quality_picture": "Suas fotos foram reprovadas pelo robô do Mercado Livre. Troque por imagens com boa iluminação e alta resolução (1200x1200 ou 1200x1540, depende da categoria), sem texto ou marca d'água sobreposta.",
     "poor_quality_thumbnail": "A miniatura principal não passou na análise automática do ML. Use uma foto nítida, centralizada e sem textos sobrepostos.",
     "incomplete_technical_specs": "Preencha a Ficha Técnica completa no anúncio. Quanto mais atributos preenchidos, melhor o posicionamento nas buscas.",
     "moderation_penalty": "Este anúncio recebeu uma penalidade por infração às regras do Mercado Livre. Revise o conteúdo e corrija o problema indicado."

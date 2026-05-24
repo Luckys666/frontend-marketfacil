@@ -63,21 +63,21 @@
         },
 
         /**
-         * Normalize ID (MLB or MLBU)
+         * Normalize item ID — aceita qualquer prefixo ML (MLB/MCO/MLA/MLM/MLC/MLU)
+         * e suas variantes de catálogo de usuário (MLBU, MCOU, etc).
          */
         normalizeMlbId: function (input) {
             if (!input || typeof input !== 'string') return null;
 
-            // 1. Priority: Extract 'wid' from URL (Bypass for MLBU links)
-            // Example: .../p/MLBU123?wid=MLB999
-            const widMatch = input.match(/[?&]wid=(MLB-?\d+)/i);
+            // 1. Prioridade: wid= na URL (bypass pra links de catálogo user)
+            // Ex: .../p/MLBU123?wid=MLB999
+            const widMatch = input.match(/[?&]wid=((?:MLB|MCO|MLA|MLM|MLC|MLU)-?\d+)/i);
             if (widMatch) {
                 return widMatch[1].replace('-', '').toUpperCase();
             }
 
-            // 2. Standard: Extract MLB/MLBU from string or path
-            // Matches MLB-123, MLB123, MLBU-123, MLBU123
-            const regex = /(MLBU?-?\d+)/i;
+            // 2. Padrão: extrai prefixo de site + U opcional + dígitos
+            const regex = /((?:MLB|MCO|MLA|MLM|MLC|MLU)U?-?\d+)/i;
             const match = input.match(regex);
             if (match) {
                 return match[1].replace('-', '').toUpperCase();
