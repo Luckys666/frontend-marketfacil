@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Marketfacil — Share Cards estilo Corretora/Trading</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;700&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a14;
+    font-family: 'DM Sans', sans-serif;
+    padding: 40px;
+    color: #fff;
+  }
+  h1 { font-size: 2rem; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; margin-bottom: 32px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 540px);
+    gap: 40px;
+    justify-content: center;
+  }
+  .card-wrapper { display: flex; flex-direction: column; gap: 12px; }
+  .card-label {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    font-weight: 600;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .card-label .num {
+    background: #00d68f;
+    color: #000;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+  .share-card {
+    width: 540px;
+    height: 540px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* ============================================
+     1. ROBINHOOD (pure black + big green PnL)
+  ============================================ */
+  .t1 {
+    background: #000;
+    padding: 36px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .t1 .t1-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .t1 .t1-brand {
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: -0.01em;
+  }
+  .t1 .t1-brand span { color: #00d68f; }
+  .t1 .t1-date { font-size: 0.7rem; color: #666; font-family: 'DM Mono', monospace; }
+  .t1 .t1-ticker {
+    font-size: 0.78rem;
+    font-family: 'DM Mono', monospace;
+    color: #999;
+    margin-bottom: 4px;
+  }
+  .t1 .t1-name { font-size: 0.9rem; color: #ccc; margin-bottom: 30px; }
+  .t1 .t1-big {
+    font-family: 'DM Mono', monospace;
+    font-size: 5.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #00d68f;
+    letter-spacing: -0.02em;
+  }
+  .t1 .t1-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #00d68f;
+    font-family: 'DM Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .t1 .t1-delta::before { content: '▲'; font-size: 0.9rem; }
+  .t1 .t1-chart {
+    height: 80px;
+    margin: 24px 0;
+    position: relative;
+  }
+  .t1 .t1-chart svg { width: 100%; height: 100%; }
+  .t1 .t1-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid #222;
+  }
+  .t1 .t1-row div .lb { font-size: 0.62rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+  .t1 .t1-row div .vl { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.95rem; color: #fff; margin-top: 2px; }
+
+  /* ============================================
+     2. TRADINGVIEW (chart-background)
+  ============================================ */
+  .t2 {
+    background: #131722;
+    padding: 0;
+    color: #d1d4dc;
+    display: flex;
+    flex-direction: column;
+  }
+  .t2 .t2-top {
+    background: #1e222d;
+    padding: 14px 24px;
+    border-bottom: 1px solid #2a2e39;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .t2 .t2-brand {
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .t2 .t2-ticker-badge {
+    background: #2962ff;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .t2 .t2-body {
+    flex: 1;
+    padding: 24px 28px;
+    background:
+      linear-gradient(180deg, transparent 60%, rgba(38,166,154,0.08) 100%),
+      #131722;
+    position: relative;
+  }
+  .t2 .t2-body::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  .t2 .t2-body > * { position: relative; z-index: 1; }
+  .t2 .t2-symbol {
+    font-size: 0.78rem;
+    color: #787b86;
+    margin-bottom: 4px;
+    font-family: 'DM Mono', monospace;
+  }
+  .t2 .t2-price {
+    font-family: 'DM Mono', monospace;
+    font-size: 3.8rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    letter-spacing: -0.02em;
+  }
+  .t2 .t2-change {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #26a69a;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+  .t2 .t2-chart {
+    margin: 20px 0 16px;
+    height: 110px;
+  }
+  .t2 .t2-chart svg { width: 100%; height: 100%; }
+  .t2 .t2-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #2a2e39;
+  }
+  .t2 .t2-stat .lb { font-size: 0.58rem; color: #787b86; text-transform: uppercase; letter-spacing: 1px; }
+  .t2 .t2-stat .vl { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.9rem; color: #d1d4dc; margin-top: 2px; }
+
+  /* ============================================
+     3. BINANCE (gold PnL card)
+  ============================================ */
+  .t3 {
+    background: #0b0e11;
+    padding: 0;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .t3 .t3-top {
+    padding: 20px 28px 16px;
+    background: #0b0e11;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #1e2329;
+  }
+  .t3 .t3-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .t3 .t3-logo-ic {
+    width: 28px; height: 28px;
+    background: #f0b90b;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: #000;
+  }
+  .t3 .t3-logo-name { font-weight: 700; }
+  .t3 .t3-date { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: #848e9c; }
+  .t3 .t3-body {
+    padding: 30px 28px;
+    background:
+      radial-gradient(ellipse at top, rgba(240,185,11,0.08) 0%, transparent 60%),
+      #0b0e11;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .t3 .t3-pnl-label {
+    color: #848e9c;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .t3 .t3-pnl {
+    font-family: 'DM Mono', monospace;
+    font-size: 5rem;
+    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(180deg, #f0b90b 0%, #d99e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+  .t3 .t3-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(2,192,118,0.15);
+    border: 1px solid rgba(2,192,118,0.4);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #02c076;
+    margin-top: 14px;
+    width: fit-content;
+  }
+  .t3 .t3-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 50px;
+    margin: 24px 0;
+  }
+  .t3 .t3-bar {
+    flex: 1;
+    background: #02c076;
+    border-radius: 1px;
+    min-height: 4px;
+  }
+  .t3 .t3-bar.red { background: #f6465d; }
+  .t3 .t3-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid #1e2329;
+  }
+  .t3 .t3-stat .lb { font-size: 0.6rem; color: #848e9c; text-transform: uppercase; letter-spacing: 1px; }
+  .t3 .t3-stat .vl { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.9rem; color: #eaecef; margin-top: 2px; }
+  .t3 .t3-tier-badge {
+    background: #f0b90b;
+    color: #0b0e11;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    display: inline-block;
+    margin-bottom: 6px;
+  }
+
+  /* ============================================
+     4. BLOOMBERG TERMINAL (orange/black)
+  ============================================ */
+  .t4 {
+    background: #000;
+    padding: 24px 28px;
+    color: #f97316;
+    font-family: 'IBM Plex Mono', 'DM Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+  .t4::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: #f97316;
+  }
+  .t4 .t4-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid #f97316;
+    padding-bottom: 6px;
+  }
+  .t4 .t4-h-title { font-weight: 700; font-size: 0.85rem; letter-spacing: 1px; }
+  .t4 .t4-h-date { color: #ea580c; font-size: 0.7rem; }
+  .t4 .t4-section-title {
+    font-size: 0.6rem;
+    color: #ea580c;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .t4 .t4-line { display: flex; justify-content: space-between; padding: 2px 0; color: #fb923c; }
+  .t4 .t4-line .val { color: #fff; font-weight: 700; }
+  .t4 .t4-line .val.pos { color: #22c55e; }
+  .t4 .t4-line .val.neg { color: #ef4444; }
+  .t4 .t4-big-section {
+    margin-top: 8px;
+    padding: 12px;
+    background: rgba(249,115,22,0.08);
+    border-left: 3px solid #f97316;
+  }
+  .t4 .t4-big-label { font-size: 0.58rem; color: #ea580c; text-transform: uppercase; letter-spacing: 2px; }
+  .t4 .t4-big-value {
+    font-size: 3.8rem;
+    color: #22c55e;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin-top: 4px;
+  }
+  .t4 .t4-footer {
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid #ea580c;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    color: #ea580c;
+  }
+  .t4 .blink::after { content: '█'; animation: blink 1s step-end infinite; color: #f97316; margin-left: 4px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ============================================
+     5. XP INVESTIMENTOS (black + gold serif)
+  ============================================ */
+  .t5 {
+    background: #000;
+    padding: 0;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .t5::before {
+    content: '';
+    position: absolute; inset: 24px;
+    border: 1px solid #d4af37;
+    pointer-events: none;
+  }
+  .t5 .t5-wrap {
+    padding: 48px 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    flex: 1;
+    position: relative;
+  }
+  .t5 .t5-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .t5 .t5-brand-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    color: #d4af37;
+  }
+  .t5 .t5-brand-sub { font-size: 0.68rem; color: #888; letter-spacing: 2px; text-transform: uppercase; }
+  .t5 .t5-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #d4af37, transparent);
+    margin: 4px 0;
+  }
+  .t5 .t5-label { font-size: 0.6rem; color: #888; letter-spacing: 3px; text-transform: uppercase; }
+  .t5 .t5-big {
+    font-family: 'Playfair Display', serif;
+    font-size: 6rem;
+    font-weight: 900;
+    color: #d4af37;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+  }
+  .t5 .t5-big-sub { font-size: 0.82rem; color: #d4af37; font-style: italic; }
+  .t5 .t5-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px 24px;
+    margin-top: auto;
+  }
+  .t5 .t5-stat .lb { font-size: 0.58rem; color: #888; letter-spacing: 2px; text-transform: uppercase; }
+  .t5 .t5-stat .vl { font-family: 'Playfair Display', serif; font-size: 1.4rem; font-weight: 700; color: #fff; margin-top: 2px; }
+
+  /* ============================================
+     6. NUBANK INVEST (roxo minimal)
+  ============================================ */
+  .t6 {
+    background: linear-gradient(155deg, #8a05be 0%, #6710a0 100%);
+    padding: 44px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .t6 .t6-brand {
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0.85;
+    letter-spacing: 0.5px;
+    margin-bottom: 36px;
+  }
+  .t6 .t6-label {
+    font-size: 0.88rem;
+    opacity: 0.85;
+    margin-bottom: 8px;
+  }
+  .t6 .t6-big {
+    font-size: 5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .t6 .t6-big-x { font-size: 3rem; font-weight: 500; opacity: 0.9; }
+  .t6 .t6-period {
+    font-size: 0.78rem;
+    opacity: 0.75;
+    margin-top: 10px;
+  }
+  .t6 .t6-card {
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-top: auto;
+  }
+  .t6 .t6-card-title { font-size: 0.72rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .t6 .t6-card-rows { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .t6 .t6-card-row .lb { font-size: 0.68rem; opacity: 0.75; }
+  .t6 .t6-card-row .vl { font-size: 1.1rem; font-weight: 600; margin-top: 2px; }
+
+  /* ============================================
+     7. STOCK TICKER (dark tape)
+  ============================================ */
+  .t7 {
+    background: #0a0a0a;
+    padding: 0;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .t7 .t7-tape {
+    background: #111;
+    border-bottom: 1px solid #1f1f1f;
+    padding: 8px 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: #666;
+  }
+  .t7 .t7-tape span { display: inline-block; margin-right: 30px; }
+  .t7 .t7-tape .pos { color: #00d68f; }
+  .t7 .t7-tape .neg { color: #f6465d; }
+  .t7 .t7-body {
+    padding: 30px 32px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .t7 .t7-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .t7 .t7-logo {
+    width: 30px; height: 30px;
+    background: #00d68f;
+    color: #000;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900;
+  }
+  .t7 .t7-name { font-weight: 700; font-size: 0.95rem; }
+  .t7 .t7-tag {
+    background: #1a1a1a;
+    color: #00d68f;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    margin-left: auto;
+  }
+  .t7 .t7-symbol {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .t7 .t7-big {
+    font-family: 'DM Mono', monospace;
+    font-size: 4.8rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    letter-spacing: -0.02em;
+  }
+  .t7 .t7-change {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .t7 .t7-arrow {
+    background: #00d68f;
+    color: #000;
+    padding: 2px 8px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 700;
+    font-size: 0.72rem;
+    border-radius: 3px;
+  }
+  .t7 .t7-change-val {
+    font-family: 'DM Mono', monospace;
+    font-weight: 700;
+    color: #00d68f;
+    font-size: 0.95rem;
+  }
+  .t7 .t7-candles {
+    display: flex;
+    gap: 4px;
+    align-items: flex-end;
+    margin: 24px 0;
+    height: 60px;
+  }
+  .t7 .t7-candle {
+    flex: 1;
+    background: #00d68f;
+    position: relative;
+    min-height: 10px;
+  }
+  .t7 .t7-candle.r { background: #f6465d; }
+  .t7 .t7-candle::before, .t7 .t7-candle::after {
+    content: '';
+    position: absolute;
+    left: 50%; transform: translateX(-50%);
+    width: 1px;
+    background: inherit;
+  }
+  .t7 .t7-candle::before { top: -6px; height: 6px; }
+  .t7 .t7-candle::after { bottom: -4px; height: 4px; }
+  .t7 .t7-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid #1f1f1f;
+  }
+  .t7 .t7-met .lb { font-size: 0.56rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+  .t7 .t7-met .vl { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.85rem; color: #fff; margin-top: 2px; }
+
+  /* ============================================
+     8. RICO / CLEAR (clean white trading card)
+  ============================================ */
+  .t8 {
+    background: #fff;
+    padding: 0;
+    color: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+  }
+  .t8 .t8-top {
+    padding: 28px 32px 18px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .t8 .t8-brand { font-weight: 800; font-size: 1.05rem; }
+  .t8 .t8-tier {
+    background: #000;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  .t8 .t8-body {
+    padding: 28px 32px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .t8 .t8-symbol { font-size: 0.72rem; color: #888; font-family: 'DM Mono', monospace; letter-spacing: 1px; }
+  .t8 .t8-big {
+    font-family: 'DM Mono', monospace;
+    font-size: 5.2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #0a0a0a;
+    letter-spacing: -0.02em;
+  }
+  .t8 .t8-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #dcfce7;
+    color: #166534;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    width: fit-content;
+  }
+  .t8 .t8-chart {
+    height: 100px;
+    margin: 8px 0;
+  }
+  .t8 .t8-chart svg { width: 100%; height: 100%; }
+  .t8 .t8-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .t8 .t8-stat .lb { font-size: 0.58rem; color: #888; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .t8 .t8-stat .vl { font-family: 'DM Mono', monospace; font-weight: 700; font-size: 0.95rem; color: #0a0a0a; margin-top: 2px; }
+
+</style>
+</head>
+<body>
+<h1>Marketfacil — share cards estilo Corretora / Trading</h1>
+<p class="subtitle">8 modelos inspirados em Robinhood, TradingView, Binance, Bloomberg, XP, Nubank, stock ticker, Rico · ROAS 12,51x · PL/24h +320%</p>
+
+<div class="grid">
+
+<!-- T1 ROBINHOOD -->
+<div class="card-wrapper">
+<div class="card-label"><span>1. Robinhood (pure black)</span><span class="num">01</span></div>
+<div class="share-card t1">
+  <div class="t1-top">
+    <div class="t1-brand">marketfacil<span>·</span></div>
+    <div class="t1-date">12/04 · 30d</div>
+  </div>
+  <div>
+    <div class="t1-ticker">$ROAS · BLEGAT</div>
+    <div class="t1-name">Marketfacil Ads Index</div>
+  </div>
+  <div>
+    <div class="t1-big">12,51x</div>
+    <div class="t1-delta">+320,15% · 30D</div>
+  </div>
+  <div class="t1-chart">
+    <svg viewBox="0 0 500 80" preserveAspectRatio="none">
+      <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#00d68f" stop-opacity="0.4"/><stop offset="1" stop-color="#00d68f" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,60 L30,58 L60,55 L90,52 L120,48 L150,50 L180,42 L210,38 L240,30 L270,32 L300,25 L330,18 L360,22 L390,14 L420,10 L450,6 L480,4 L500,2 L500,80 L0,80 Z" fill="url(#g1)"/>
+      <path d="M0,60 L30,58 L60,55 L90,52 L120,48 L150,50 L180,42 L210,38 L240,30 L270,32 L300,25 L330,18 L360,22 L390,14 L420,10 L450,6 L480,4 L500,2" fill="none" stroke="#00d68f" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="t1-row">
+    <div><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div><div class="lb">PL TOTAL</div><div class="vl">R$ 15.288</div></div>
+  </div>
+</div>
+</div>
+
+<!-- T2 TRADINGVIEW -->
+<div class="card-wrapper">
+<div class="card-label"><span>2. TradingView (chart-background)</span><span class="num">02</span></div>
+<div class="share-card t2">
+  <div class="t2-top">
+    <div class="t2-brand">Marketfacil · Ads Analytics</div>
+    <div class="t2-ticker-badge">PLATINUM</div>
+  </div>
+  <div class="t2-body">
+    <div class="t2-symbol">BLEGAT:MLB · 30D · ROAS_INDEX</div>
+    <div class="t2-price">12,51</div>
+    <div class="t2-change">
+      <span>+9,69x (+320,15%)</span>
+      <span style="color:#787b86">·</span>
+      <span style="color:#787b86">30 days</span>
+    </div>
+    <div class="t2-chart">
+      <svg viewBox="0 0 500 110" preserveAspectRatio="none">
+        <defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26a69a" stop-opacity="0.3"/><stop offset="1" stop-color="#26a69a" stop-opacity="0"/></linearGradient></defs>
+        <path d="M0,90 L25,88 L50,82 L75,85 L100,75 L125,70 L150,78 L175,60 L200,55 L225,62 L250,48 L275,40 L300,45 L325,30 L350,35 L375,25 L400,18 L425,22 L450,12 L475,8 L500,5 L500,110 L0,110 Z" fill="url(#g2)"/>
+        <path d="M0,90 L25,88 L50,82 L75,85 L100,75 L125,70 L150,78 L175,60 L200,55 L225,62 L250,48 L275,40 L300,45 L325,30 L350,35 L375,25 L400,18 L425,22 L450,12 L475,8 L500,5" fill="none" stroke="#26a69a" stroke-width="2"/>
+      </svg>
+    </div>
+    <div class="t2-stats">
+      <div class="t2-stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="t2-stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="t2-stat"><div class="lb">VOL</div><div class="vl">R$ 1,3k</div></div>
+      <div class="t2-stat"><div class="lb">REV</div><div class="vl">R$ 16,6k</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- T3 BINANCE -->
+<div class="card-wrapper">
+<div class="card-label"><span>3. Binance (PnL card gold)</span><span class="num">03</span></div>
+<div class="share-card t3">
+  <div class="t3-top">
+    <div class="t3-logo">
+      <div class="t3-logo-ic">M</div>
+      <div class="t3-logo-name">MARKETFACIL</div>
+    </div>
+    <div class="t3-date">30D · 2026-04-12</div>
+  </div>
+  <div class="t3-body">
+    <div class="t3-tier-badge">👑 PLATINUM · LOJA OFICIAL</div>
+    <div class="t3-pnl-label">Total ROAS (30d)</div>
+    <div class="t3-pnl">12,51x</div>
+    <div class="t3-delta">▲ +320,15% · +9,69x</div>
+    <div class="t3-bars">
+      <div class="t3-bar" style="height:30%"></div>
+      <div class="t3-bar" style="height:45%"></div>
+      <div class="t3-bar red" style="height:25%"></div>
+      <div class="t3-bar" style="height:55%"></div>
+      <div class="t3-bar" style="height:60%"></div>
+      <div class="t3-bar" style="height:40%"></div>
+      <div class="t3-bar" style="height:70%"></div>
+      <div class="t3-bar" style="height:55%"></div>
+      <div class="t3-bar" style="height:80%"></div>
+      <div class="t3-bar" style="height:65%"></div>
+      <div class="t3-bar" style="height:90%"></div>
+      <div class="t3-bar" style="height:75%"></div>
+      <div class="t3-bar" style="height:85%"></div>
+      <div class="t3-bar" style="height:95%"></div>
+      <div class="t3-bar" style="height:100%"></div>
+    </div>
+    <div class="t3-stats">
+      <div class="t3-stat"><div class="lb">TACOS</div><div class="vl">1,90%</div></div>
+      <div class="t3-stat"><div class="lb">ACOS</div><div class="vl">8,00%</div></div>
+      <div class="t3-stat"><div class="lb">VOLUME</div><div class="vl">R$ 16,6k</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- T4 BLOOMBERG -->
+<div class="card-wrapper">
+<div class="card-label"><span>4. Bloomberg Terminal</span><span class="num">04</span></div>
+<div class="share-card t4">
+  <div class="t4-header">
+    <div class="t4-h-title">MARKETFACIL &lt;GO&gt;</div>
+    <div class="t4-h-date">12/04/26 · 18:35 BRT</div>
+  </div>
+  <div>
+    <div class="t4-section-title">&gt; SELLER</div>
+    <div class="t4-line"><span>ID</span><span class="val">BLEGAT</span></div>
+    <div class="t4-line"><span>STATUS</span><span class="val" style="color:#facc15">PLATINUM</span></div>
+    <div class="t4-line"><span>TYPE</span><span class="val" style="color:#22c55e">OFFICIAL STORE</span></div>
+  </div>
+  <div>
+    <div class="t4-section-title">&gt; METRICS</div>
+    <div class="t4-line"><span>TACOS</span><span class="val pos">1.90%</span></div>
+    <div class="t4-line"><span>ACOS</span><span class="val">8.00%</span></div>
+    <div class="t4-line"><span>SPEND</span><span class="val">R$ 1,328.16</span></div>
+    <div class="t4-line"><span>REVENUE</span><span class="val pos">R$ 16,616.93</span></div>
+    <div class="t4-line"><span>CHG</span><span class="val pos">+320.15%</span></div>
+  </div>
+  <div class="t4-big-section">
+    <div class="t4-big-label">ROAS · LAST 30D</div>
+    <div class="t4-big-value">12.51x</div>
+  </div>
+  <div class="t4-footer">
+    <span>MKTFCL · MLB:EQUITY</span>
+    <span class="blink">LIVE</span>
+  </div>
+</div>
+</div>
+
+<!-- T5 XP INVESTIMENTOS -->
+<div class="card-wrapper">
+<div class="card-label"><span>5. XP Investimentos (gold serif)</span><span class="num">05</span></div>
+<div class="share-card t5">
+  <div class="t5-wrap">
+    <div class="t5-brand">
+      <div class="t5-brand-name">Marketfacil</div>
+    </div>
+    <div class="t5-brand-sub">PLANEJADOR DE ADS · MERCADO LIVRE</div>
+    <div class="t5-divider"></div>
+    <div style="margin-top:20px">
+      <div class="t5-label">RETORNO SOBRE INVESTIMENTO · 30D</div>
+      <div class="t5-big">12,51×</div>
+      <div class="t5-big-sub">+320,15% no período</div>
+    </div>
+    <div class="t5-stats">
+      <div class="t5-stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="t5-stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="t5-stat"><div class="lb">INVESTIDO</div><div class="vl">R$ 1.328</div></div>
+      <div class="t5-stat"><div class="lb">RECEITA</div><div class="vl">R$ 16.616</div></div>
+    </div>
+    <div class="t5-divider"></div>
+    <div style="display:flex;justify-content:space-between;font-size:0.62rem;color:#888;letter-spacing:2px;text-transform:uppercase;">
+      <span>Platinum · Loja Oficial</span>
+      <span>BLEGAT</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- T6 NUBANK INVEST -->
+<div class="card-wrapper">
+<div class="card-label"><span>6. Nubank Invest (purple minimal)</span><span class="num">06</span></div>
+<div class="share-card t6">
+  <div class="t6-brand">Marketfacil · Planejador de Ads</div>
+  <div class="t6-label">seu ROAS nos últimos 30 dias</div>
+  <div class="t6-big">12,51<span class="t6-big-x">×</span></div>
+  <div class="t6-period">+320,15% no período · Platinum · Loja Oficial</div>
+  <div class="t6-card">
+    <div class="t6-card-title">resumo</div>
+    <div class="t6-card-rows">
+      <div class="t6-card-row"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="t6-card-row"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="t6-card-row"><div class="lb">investido</div><div class="vl">R$ 1.328</div></div>
+      <div class="t6-card-row"><div class="lb">faturamento</div><div class="vl">R$ 16.616</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- T7 STOCK TICKER -->
+<div class="card-wrapper">
+<div class="card-label"><span>7. Stock Ticker (candles)</span><span class="num">07</span></div>
+<div class="share-card t7">
+  <div class="t7-tape">
+    <span>MLB <span class="pos">▲12,51x</span></span>
+    <span>TCS <span class="pos">▼1,9%</span></span>
+    <span>ACS <span class="pos">▼8,0%</span></span>
+    <span>REV <span class="pos">▲16,6k</span></span>
+    <span>SPN <span class="neg">▲1,3k</span></span>
+    <span>MLB <span class="pos">▲12,51x</span></span>
+  </div>
+  <div class="t7-body">
+    <div class="t7-brand">
+      <div class="t7-logo">M</div>
+      <div class="t7-name">MARKETFACIL</div>
+      <div class="t7-tag">PLATINUM · OFICIAL</div>
+    </div>
+    <div class="t7-symbol">BLEGAT:MLB · PRODUCT ADS · 30D</div>
+    <div class="t7-big">12,51x</div>
+    <div class="t7-change">
+      <div class="t7-arrow">▲ +9,69</div>
+      <div class="t7-change-val">+320,15% (30d)</div>
+    </div>
+    <div class="t7-candles">
+      <div class="t7-candle" style="height:35%"></div>
+      <div class="t7-candle r" style="height:40%"></div>
+      <div class="t7-candle" style="height:45%"></div>
+      <div class="t7-candle" style="height:55%"></div>
+      <div class="t7-candle r" style="height:50%"></div>
+      <div class="t7-candle" style="height:60%"></div>
+      <div class="t7-candle" style="height:65%"></div>
+      <div class="t7-candle" style="height:58%"></div>
+      <div class="t7-candle" style="height:70%"></div>
+      <div class="t7-candle" style="height:72%"></div>
+      <div class="t7-candle r" style="height:68%"></div>
+      <div class="t7-candle" style="height:78%"></div>
+      <div class="t7-candle" style="height:82%"></div>
+      <div class="t7-candle" style="height:88%"></div>
+      <div class="t7-candle" style="height:92%"></div>
+      <div class="t7-candle" style="height:98%"></div>
+      <div class="t7-candle" style="height:100%"></div>
+    </div>
+    <div class="t7-metrics">
+      <div class="t7-met"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="t7-met"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="t7-met"><div class="lb">VOL</div><div class="vl">R$ 16,6k</div></div>
+      <div class="t7-met"><div class="lb">SPEND</div><div class="vl">R$ 1,3k</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- T8 RICO/CLEAR -->
+<div class="card-wrapper">
+<div class="card-label"><span>8. Rico / Clear (clean white)</span><span class="num">08</span></div>
+<div class="share-card t8">
+  <div class="t8-top">
+    <div class="t8-brand">marketfacil</div>
+    <div class="t8-tier">PLATINUM · OFICIAL</div>
+  </div>
+  <div class="t8-body">
+    <div class="t8-symbol">BLEGAT:MLB · PRODUCT ADS · 30D</div>
+    <div class="t8-big">12,51x</div>
+    <div class="t8-delta">▲ +320,15% · +9,69x</div>
+    <div class="t8-chart">
+      <svg viewBox="0 0 500 100" preserveAspectRatio="none">
+        <defs><linearGradient id="g8" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16a34a" stop-opacity="0.25"/><stop offset="1" stop-color="#16a34a" stop-opacity="0"/></linearGradient></defs>
+        <path d="M0,80 L25,78 L50,75 L75,78 L100,68 L125,62 L150,70 L175,58 L200,50 L225,55 L250,42 L275,36 L300,42 L325,28 L350,32 L375,22 L400,16 L425,20 L450,10 L475,6 L500,4 L500,100 L0,100 Z" fill="url(#g8)"/>
+        <path d="M0,80 L25,78 L50,75 L75,78 L100,68 L125,62 L150,70 L175,58 L200,50 L225,55 L250,42 L275,36 L300,42 L325,28 L350,32 L375,22 L400,16 L425,20 L450,10 L475,6 L500,4" fill="none" stroke="#16a34a" stroke-width="2.5"/>
+      </svg>
+    </div>
+    <div class="t8-stats">
+      <div class="t8-stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="t8-stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="t8-stat"><div class="lb">Investido</div><div class="vl">R$ 1,3k</div></div>
+      <div class="t8-stat"><div class="lb">Receita</div><div class="vl">R$ 16,6k</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+</body>
+</html>

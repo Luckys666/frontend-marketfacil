@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Marketfacil — 10 Modelos de Share Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a14;
+    font-family: 'DM Sans', sans-serif;
+    padding: 40px;
+    color: #fff;
+  }
+  h1 { font-size: 2rem; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; margin-bottom: 32px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 540px);
+    gap: 40px;
+    justify-content: center;
+  }
+  .card-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card-label {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    font-weight: 600;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-label .num {
+    background: #0066ff;
+    color: #fff;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+  .share-card {
+    width: 540px;
+    height: 540px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    font-family: 'DM Sans', sans-serif;
+  }
+  .share-card * { font-family: inherit; }
+
+  /* ====== Shared classes ====== */
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-logo {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 22px;
+  }
+  .brand-name { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 0.68rem; opacity: 0.7; }
+
+  .roas-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 5.5rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .metrics-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .metric {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .metric-label { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.6; }
+  .metric-val { font-family: 'DM Mono', monospace; font-size: 1.3rem; font-weight: 800; margin-top: 2px; }
+
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.65rem;
+    opacity: 0.65;
+  }
+
+  /* ============================================
+     MODEL 1: Minimalist Navy
+  ============================================ */
+  .m1 {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .m1::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, #0066ff, #10b981);
+  }
+  .m1 .brand-logo { background: #0066ff; color: #fff; }
+  .m1 .tier-tag {
+    display: inline-flex; gap: 6px; align-items: center;
+    background: rgba(167,139,250,0.15);
+    color: #c4b5fd;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(167,139,250,0.3);
+    width: fit-content;
+  }
+  .m1 .roas-section { margin-top: auto; }
+  .m1 .roas-num { color: #10b981; }
+  .m1 .roas-label { color: #64748b; font-size: 0.8rem; margin-top: 4px; }
+
+  /* ============================================
+     MODEL 2: Editorial Platinum
+  ============================================ */
+  .m2 {
+    background: #05050d;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .m2 .m2-header {
+    background: linear-gradient(135deg, #0a0520, #1a0a3a);
+    padding: 30px 40px 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .m2 .m2-header .brand { margin-bottom: 20px; }
+  .m2 .brand-logo { background: #fff; color: #0a0520; }
+  .m2 .tier-wrap { display: flex; justify-content: space-between; align-items: center; }
+  .m2 .tier-left-label { font-size: 0.6rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; }
+  .m2 .tier-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: #e9d5ff;
+    letter-spacing: 0.5px;
+  }
+  .m2 .m2-body {
+    flex: 1;
+    padding: 32px 40px;
+    background: radial-gradient(circle at 50% 40%, #1a0f3a 0%, #05050d 100%);
+    display: flex;
+    flex-direction: column;
+  }
+  .m2 .title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 900;
+    font-style: italic;
+    margin-bottom: 4px;
+  }
+  .m2 .period { font-size: 0.72rem; opacity: 0.6; margin-bottom: 28px; }
+  .m2 .roas-num { color: #d4a8ff; font-family: 'Playfair Display', serif; font-style: italic; font-weight: 900; }
+  .m2 .roas-label { font-size: 0.72rem; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; opacity: 0.5; }
+  .m2 .metrics-row { margin-top: 20px; }
+  .m2 .m2-footer { padding: 16px 40px; background: #0a0520; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; font-size: 0.62rem; }
+
+  /* ============================================
+     MODEL 3: Neon Tech
+  ============================================ */
+  .m3 {
+    background: #000;
+    padding: 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .m3::before {
+    content: '';
+    position: absolute; inset: 16px;
+    border: 1px solid rgba(0,255,255,0.3);
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  .m3::after {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(255,0,200,0.15), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(0,255,255,0.12), transparent 40%);
+    pointer-events: none;
+  }
+  .m3 > * { position: relative; z-index: 1; }
+  .m3 .brand-logo { background: #0ff; color: #000; box-shadow: 0 0 20px rgba(0,255,255,0.6); }
+  .m3 .brand-name { color: #0ff; text-shadow: 0 0 8px rgba(0,255,255,0.5); }
+  .m3 .tier-tag {
+    background: linear-gradient(90deg, #ff00ff, #00ffff);
+    color: #000;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 900;
+    letter-spacing: 2px;
+    width: fit-content;
+  }
+  .m3 .roas-num { color: #00ffaa; text-shadow: 0 0 30px rgba(0,255,170,0.8); font-family: 'DM Mono'; }
+  .m3 .roas-label { color: #0ff; font-size: 0.72rem; letter-spacing: 2px; text-transform: uppercase; }
+  .m3 .metric { background: rgba(0,255,255,0.05); border-color: rgba(0,255,255,0.25); }
+  .m3 .metric-val { color: #0ff; }
+
+  /* ============================================
+     MODEL 4: Midnight Royal (Dark + Gold)
+  ============================================ */
+  .m4 {
+    background: linear-gradient(155deg, #0a0618 0%, #1a0838 50%, #2a0f4e 100%);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .m4::before {
+    content: '';
+    position: absolute; inset: 14px;
+    border: 1.5px solid rgba(255,215,0,0.5);
+    border-radius: 14px;
+  }
+  .m4::after {
+    content: '';
+    position: absolute; inset: 22px;
+    border: 1px solid rgba(255,215,0,0.2);
+    border-radius: 10px;
+  }
+  .m4 > * { position: relative; z-index: 1; }
+  .m4 .brand-logo { background: #ffd700; color: #0a0618; }
+  .m4 .tier-tag {
+    color: #ffd700;
+    font-size: 0.68rem;
+    letter-spacing: 3px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .m4 .tier-tag::before, .m4 .tier-tag::after { content: ''; width: 30px; height: 1px; background: #ffd700; }
+  .m4 .roas-num { color: #ffd700; text-shadow: 0 4px 30px rgba(255,215,0,0.4); }
+  .m4 .roas-label { color: rgba(255,255,255,0.5); font-size: 0.72rem; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* ============================================
+     MODEL 5: Glassmorphism
+  ============================================ */
+  .m5 {
+    background:
+      radial-gradient(circle at 30% 20%, #6366f1 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, #ec4899 0%, transparent 50%),
+      linear-gradient(135deg, #1e1b4b 0%, #0f0a2e 100%);
+    padding: 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .m5 .glass-card {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 20px 24px;
+  }
+  .m5 .brand-logo { background: rgba(255,255,255,0.2); color: #fff; backdrop-filter: blur(8px); }
+  .m5 .tier-tag {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    width: fit-content;
+    backdrop-filter: blur(8px);
+  }
+  .m5 .roas-section.glass-card { margin-top: auto; }
+  .m5 .roas-num { color: #fff; text-shadow: 0 0 40px rgba(255,255,255,0.4); }
+  .m5 .metric { background: rgba(255,255,255,0.08); backdrop-filter: blur(8px); }
+
+  /* ============================================
+     MODEL 6: Ticket/Stub
+  ============================================ */
+  .m6 {
+    background: #fff;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    color: #0f172a;
+  }
+  .m6 .m6-top {
+    background: linear-gradient(135deg, #1e40af, #0066ff);
+    padding: 28px 36px 40px;
+    color: #fff;
+    position: relative;
+  }
+  .m6 .m6-top::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: -12px;
+    height: 24px;
+    background-image: radial-gradient(circle at 12px 12px, transparent 8px, #1e40af 9px);
+    background-size: 24px 24px;
+    background-position: 0 -12px;
+  }
+  .m6 .m6-top::before {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 12px;
+    background: linear-gradient(90deg, #fff 50%, transparent 50%);
+    background-size: 16px 12px;
+    mask: radial-gradient(circle at 8px 12px, transparent 6px, #000 7px);
+    -webkit-mask: radial-gradient(circle at 8px 12px, transparent 6px, #000 7px);
+  }
+  .m6 .brand-logo { background: #fff; color: #0066ff; }
+  .m6 .brand-name { color: #fff; }
+  .m6 .tier-tag {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    width: fit-content;
+    margin-top: 16px;
+  }
+  .m6 .m6-body {
+    padding: 36px 36px 24px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+  .m6 .title { font-size: 1.1rem; font-weight: 700; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 2px; }
+  .m6 .roas-section { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .m6 .roas-num { color: #10b981; font-size: 6rem; }
+  .m6 .roas-label { color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 2px; }
+  .m6 .metric { background: #f1f5f9; border-color: #e2e8f0; color: #0f172a; }
+  .m6 .metric-label { color: #64748b; opacity: 1; }
+  .m6 .footer-row { color: #64748b; padding: 0 36px 24px; }
+
+  /* ============================================
+     MODEL 7: Obsidian Chrome (clean platinum)
+  ============================================ */
+  .m7 {
+    background:
+      radial-gradient(ellipse at top, #1a1a2e 0%, transparent 60%),
+      radial-gradient(ellipse at bottom, #0a0a18 0%, #000 100%);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .m7::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  }
+  .m7::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  }
+  .m7 .brand-logo {
+    background: linear-gradient(135deg, #fff, #94a3b8);
+    color: #000;
+    box-shadow: 0 4px 20px rgba(255,255,255,0.2), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .m7 .tier-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 3px;
+    width: fit-content;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .m7 .tier-chip::before { content: '◆'; color: #e5e7eb; }
+  .m7 .roas-num {
+    background: linear-gradient(180deg, #fff 0%, #94a3b8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .m7 .metric {
+    background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .m7 .metric-val {
+    background: linear-gradient(180deg, #fff, #cbd5e1);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ============================================
+     MODEL 8: Retro Arcade
+  ============================================ */
+  .m8 {
+    background: #0d0221;
+    padding: 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    font-family: 'DM Mono', monospace;
+  }
+  .m8::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,0,128,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,0,128,0.03) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+  .m8 > * { position: relative; z-index: 1; }
+  .m8 .brand { align-items: flex-start; }
+  .m8 .brand-logo {
+    background: #ff0080;
+    color: #fff;
+    border-radius: 4px;
+    box-shadow: 4px 4px 0 #00f0ff;
+    font-family: 'DM Mono', monospace;
+  }
+  .m8 .brand-name { color: #ff0080; text-shadow: 3px 3px 0 #00f0ff; font-family: 'DM Mono', monospace; font-weight: 800; }
+  .m8 .tier-tag {
+    background: transparent;
+    border: 2px solid #ff0080;
+    color: #ff0080;
+    padding: 6px 14px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    width: fit-content;
+    box-shadow: 3px 3px 0 #00f0ff;
+  }
+  .m8 .roas-num { color: #00f0ff; text-shadow: 4px 4px 0 #ff0080; }
+  .m8 .roas-label { color: #ff0080; font-size: 0.7rem; letter-spacing: 2px; text-transform: uppercase; }
+  .m8 .metric { background: transparent; border: 2px solid #ff0080; box-shadow: 3px 3px 0 rgba(0,240,255,0.4); }
+  .m8 .metric-val { color: #00f0ff; }
+  .m8 .metric-label { color: #ff0080; }
+
+  /* ============================================
+     MODEL 9: Minimalist White (inverted)
+  ============================================ */
+  .m9 {
+    background: #f8fafc;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    color: #0f172a;
+  }
+  .m9 .brand-logo { background: #0f172a; color: #fff; }
+  .m9 .brand-name { color: #0f172a; }
+  .m9 .brand-sub { color: #64748b; }
+  .m9 .tier-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .m9 .tier-line .dot { width: 8px; height: 8px; border-radius: 50%; background: #8b5cf6; }
+  .m9 .tier-line .tier-name { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #8b5cf6; }
+  .m9 .m9-divider { height: 1px; background: #e2e8f0; }
+  .m9 .roas-section { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .m9 .roas-num { color: #0f172a; }
+  .m9 .roas-label { color: #64748b; font-size: 0.78rem; margin-top: 4px; }
+  .m9 .metric { background: #fff; border-color: #e2e8f0; color: #0f172a; }
+  .m9 .metric-label { color: #64748b; opacity: 1; }
+  .m9 .metric-val { color: #0f172a; }
+  .m9 .footer-row { color: #64748b; }
+
+  /* ============================================
+     MODEL 11: Magazine Cover
+  ============================================ */
+  .m11 {
+    background: #fff;
+    padding: 0;
+    color: #0f172a;
+    display: flex;
+    flex-direction: column;
+  }
+  .m11 .m11-top {
+    background: #0f172a;
+    color: #fff;
+    padding: 14px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .m11 .m11-body {
+    padding: 30px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .m11 .m11-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 3.5rem;
+    font-weight: 900;
+    line-height: 0.95;
+    color: #0f172a;
+    letter-spacing: -0.03em;
+  }
+  .m11 .m11-roas {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-top: 3px solid #0f172a;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 20px 0 16px;
+  }
+  .m11 .m11-roas-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 6rem;
+    font-weight: 900;
+    line-height: 0.9;
+    color: #0f172a;
+  }
+  .m11 .m11-roas-sub {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #64748b;
+  }
+  .m11 .m11-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .m11 .m11-metric {
+    border-left: 2px solid #0f172a;
+    padding-left: 10px;
+  }
+  .m11 .m11-metric .lb { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 1px; color: #64748b; }
+  .m11 .m11-metric .vl { font-family: 'DM Mono', monospace; font-weight: 800; font-size: 0.95rem; color: #0f172a; margin-top: 2px; }
+  .m11 .m11-footer {
+    padding: 14px 30px;
+    background: #f1f5f9;
+    font-size: 0.62rem;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ============================================
+     MODEL 12: Terminal
+  ============================================ */
+  .m12 {
+    background: #0d1117;
+    padding: 0;
+    font-family: 'DM Mono', monospace;
+    color: #58a6ff;
+    display: flex;
+    flex-direction: column;
+  }
+  .m12 .m12-titlebar {
+    background: #161b22;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #30363d;
+  }
+  .m12 .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .m12 .m12-path {
+    margin-left: auto;
+    font-size: 0.68rem;
+    color: #8b949e;
+  }
+  .m12 .m12-body {
+    padding: 26px 30px;
+    flex: 1;
+    font-size: 0.78rem;
+    line-height: 1.7;
+  }
+  .m12 .cmd { color: #7ee787; }
+  .m12 .arg { color: #d2a8ff; }
+  .m12 .comment { color: #8b949e; }
+  .m12 .output { color: #c9d1d9; margin: 6px 0 10px 0; }
+  .m12 .big { font-size: 4rem; font-weight: 700; color: #7ee787; text-shadow: 0 0 20px rgba(126,231,135,0.4); line-height: 1.1; }
+  .m12 .hl { color: #ffa657; }
+  .m12 .ok { color: #7ee787; }
+  .m12 .cursor::after {
+    content: '█';
+    color: #58a6ff;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ============================================
+     MODEL 13: Brutalism
+  ============================================ */
+  .m13 {
+    background: #f4f4f0;
+    padding: 32px;
+    color: #000;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    font-family: 'DM Sans';
+  }
+  .m13 .m13-brand {
+    font-weight: 900;
+    font-size: 2.4rem;
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    border-bottom: 5px solid #000;
+    padding-bottom: 10px;
+  }
+  .m13 .m13-sub { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 3px; }
+  .m13 .m13-tier {
+    background: #000;
+    color: #f4f4f0;
+    padding: 8px 14px;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    width: fit-content;
+    box-shadow: 6px 6px 0 #ff3b5c;
+  }
+  .m13 .m13-roas {
+    font-size: 8rem;
+    font-weight: 900;
+    line-height: 0.85;
+    letter-spacing: -0.05em;
+    color: #000;
+  }
+  .m13 .m13-roas-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    font-weight: 900;
+    border-top: 3px solid #000;
+    padding-top: 8px;
+    margin-top: -8px;
+  }
+  .m13 .m13-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 3px solid #000; }
+  .m13 .m13-metric { padding: 10px 14px; border-right: 3px solid #000; }
+  .m13 .m13-metric:nth-child(2n) { border-right: none; }
+  .m13 .m13-metric:nth-child(1), .m13 .m13-metric:nth-child(2) { border-bottom: 3px solid #000; }
+  .m13 .m13-metric .lb { font-size: 0.56rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .m13 .m13-metric .vl { font-weight: 900; font-size: 1.1rem; font-family: 'DM Mono'; }
+
+  /* ============================================
+     MODEL 14: Watercolor
+  ============================================ */
+  .m14 {
+    background:
+      radial-gradient(ellipse at 20% 30%, rgba(254,202,202,0.9) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(191,219,254,0.8) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, rgba(254,240,138,0.7) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 90%, rgba(196,181,253,0.7) 0%, transparent 50%),
+      #fefcf8;
+    padding: 44px;
+    color: #1e293b;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    font-family: 'Playfair Display', serif;
+  }
+  .m14 .m14-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .m14 .m14-logo {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(255,255,255,0.6);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.8);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: #0f172a;
+  }
+  .m14 .m14-title { font-size: 1.4rem; font-weight: 900; color: #1e293b; }
+  .m14 .m14-sub { font-size: 0.72rem; font-family: 'DM Sans'; color: #64748b; }
+  .m14 .m14-tier {
+    display: inline-flex;
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.8);
+    padding: 8px 18px;
+    border-radius: 30px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #7c3aed;
+    width: fit-content;
+    font-family: 'DM Sans';
+    letter-spacing: 1px;
+  }
+  .m14 .m14-big {
+    font-size: 6.5rem;
+    font-weight: 900;
+    font-style: italic;
+    line-height: 0.95;
+    color: #1e293b;
+    margin-top: auto;
+  }
+  .m14 .m14-lb {
+    font-family: 'DM Sans';
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: #64748b;
+    margin-top: -6px;
+  }
+  .m14 .m14-row { display: flex; gap: 24px; font-family: 'DM Sans'; }
+  .m14 .m14-metric .lb { font-size: 0.6rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+  .m14 .m14-metric .vl { font-family: 'DM Mono'; font-weight: 800; font-size: 1.1rem; color: #1e293b; }
+
+  /* ============================================
+     MODEL 15: Tactical / Stencil
+  ============================================ */
+  .m15 {
+    background:
+      repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.02) 20px, rgba(255,255,255,0.02) 22px),
+      linear-gradient(135deg, #1a2e1a 0%, #0d1a0d 100%);
+    padding: 32px;
+    color: #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    font-family: 'DM Mono', monospace;
+  }
+  .m15::before {
+    content: '';
+    position: absolute; inset: 14px;
+    border: 2px dashed rgba(163,230,53,0.4);
+  }
+  .m15 > * { position: relative; z-index: 1; }
+  .m15 .m15-brand {
+    font-weight: 800;
+    font-size: 1.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #a3e635;
+  }
+  .m15 .m15-sub { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 3px; color: #84cc16; }
+  .m15 .m15-classified {
+    background: rgba(163,230,53,0.1);
+    border: 1px solid #a3e635;
+    padding: 8px 14px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 0.62rem;
+    color: #a3e635;
+    width: fit-content;
+    font-weight: 800;
+  }
+  .m15 .m15-big { font-size: 5rem; font-weight: 800; color: #a3e635; letter-spacing: -0.02em; }
+  .m15 .m15-lb { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 3px; color: #84cc16; }
+  .m15 .m15-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 0.7rem; }
+  .m15 .m15-stat { border: 1px solid rgba(163,230,53,0.3); padding: 8px 10px; }
+  .m15 .m15-stat .lb { font-size: 0.54rem; color: #84cc16; text-transform: uppercase; letter-spacing: 1px; }
+  .m15 .m15-stat .vl { color: #a3e635; font-weight: 800; margin-top: 2px; }
+
+  /* ============================================
+     MODEL 16: Receipt
+  ============================================ */
+  .m16 {
+    background: #f4f1e8;
+    padding: 0;
+    color: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    font-family: 'DM Mono', monospace;
+  }
+  .m16::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: -6px;
+    height: 14px;
+    background-image:
+      linear-gradient(45deg, #f4f1e8 50%, transparent 50%),
+      linear-gradient(-45deg, #f4f1e8 50%, transparent 50%);
+    background-size: 18px 14px;
+    background-position: 0 0, 0 0;
+    background-repeat: repeat-x;
+  }
+  .m16 .m16-wrap {
+    padding: 40px 42px 60px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .m16 .m16-head {
+    text-align: center;
+    font-weight: 800;
+    font-size: 1.3rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    padding-bottom: 10px;
+    border-bottom: 2px dashed #1a1a1a;
+  }
+  .m16 .m16-sub { font-size: 0.68rem; text-align: center; color: #666; margin-top: -6px; letter-spacing: 1px; }
+  .m16 .m16-line { display: flex; justify-content: space-between; font-size: 0.82rem; padding: 4px 0; }
+  .m16 .m16-line .dots { flex: 1; border-bottom: 1px dotted #666; margin: 0 6px; transform: translateY(-4px); }
+  .m16 .m16-total {
+    border-top: 2px dashed #1a1a1a;
+    border-bottom: 2px double #1a1a1a;
+    margin-top: 4px;
+    padding: 10px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .m16 .m16-total .lb { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; }
+  .m16 .m16-total .vl { font-size: 2.8rem; font-weight: 800; }
+  .m16 .m16-foot { text-align: center; font-size: 0.62rem; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: auto; }
+
+  /* ============================================
+     MODEL 17: Sports Jersey
+  ============================================ */
+  .m17 {
+    background: linear-gradient(180deg, #0066ff 0%, #003d99 100%);
+    padding: 36px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    font-family: 'DM Sans';
+  }
+  .m17::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(135deg, transparent, transparent 60px, rgba(255,255,255,0.03) 60px, rgba(255,255,255,0.03) 120px);
+  }
+  .m17 > * { position: relative; z-index: 1; }
+  .m17 .m17-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .m17 .m17-brand { font-size: 1.4rem; font-weight: 900; letter-spacing: -0.01em; }
+  .m17 .m17-sub { font-size: 0.68rem; opacity: 0.75; text-transform: uppercase; letter-spacing: 2px; }
+  .m17 .m17-number {
+    font-family: 'DM Mono', monospace;
+    font-size: 9rem;
+    font-weight: 900;
+    line-height: 0.8;
+    letter-spacing: -0.05em;
+    color: #fff;
+    text-shadow: 5px 5px 0 rgba(0,0,0,0.3);
+    margin: 10px 0 0;
+  }
+  .m17 .m17-lb {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-weight: 800;
+  }
+  .m17 .m17-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .m17 .m17-badge {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .m17 .m17-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
+  .m17 .m17-m { background: rgba(255,255,255,0.1); padding: 10px 14px; border-radius: 8px; }
+  .m17 .m17-m .lb { font-size: 0.58rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
+  .m17 .m17-m .vl { font-family: 'DM Mono'; font-weight: 800; font-size: 1.2rem; }
+
+  /* ============================================
+     MODEL 18: Blueprint
+  ============================================ */
+  .m18 {
+    background:
+      linear-gradient(rgba(59,130,246,0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.1) 1px, transparent 1px),
+      #0b1e3f;
+    background-size: 24px 24px;
+    padding: 36px;
+    color: #bfdbfe;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    font-family: 'DM Mono', monospace;
+  }
+  .m18::before {
+    content: '';
+    position: absolute; inset: 18px;
+    border: 1px solid rgba(191,219,254,0.3);
+  }
+  .m18 > * { position: relative; z-index: 1; }
+  .m18 .m18-brand { font-size: 1.4rem; font-weight: 800; color: #eff6ff; text-transform: uppercase; letter-spacing: 2px; }
+  .m18 .m18-sub { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 2px; color: #93c5fd; }
+  .m18 .m18-label { display: flex; gap: 10px; align-items: center; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 2px; color: #93c5fd; }
+  .m18 .m18-label .line { flex: 1; height: 1px; background: #3b82f6; }
+  .m18 .m18-big { font-size: 6rem; font-weight: 800; color: #eff6ff; line-height: 1; letter-spacing: -0.02em; }
+  .m18 .m18-spec { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .m18 .m18-spec-item { border: 1px solid rgba(191,219,254,0.3); padding: 8px 12px; }
+  .m18 .m18-spec-item .lb { font-size: 0.54rem; text-transform: uppercase; letter-spacing: 2px; color: #93c5fd; }
+  .m18 .m18-spec-item .vl { color: #eff6ff; font-weight: 800; font-size: 1rem; margin-top: 2px; }
+
+  /* ============================================
+     MODEL 19: Gradient Mesh
+  ============================================ */
+  .m19 {
+    background:
+      radial-gradient(at 0% 0%, #ff006e 0%, transparent 50%),
+      radial-gradient(at 100% 0%, #8338ec 0%, transparent 50%),
+      radial-gradient(at 50% 100%, #3a86ff 0%, transparent 60%),
+      radial-gradient(at 100% 100%, #06ffa5 0%, transparent 50%),
+      #0a0a1a;
+    padding: 40px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    font-family: 'DM Sans';
+  }
+  .m19 .m19-brand {
+    display: flex; gap: 12px; align-items: center;
+  }
+  .m19 .m19-logo {
+    width: 44px; height: 44px; border-radius: 14px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900;
+  }
+  .m19 .m19-name { font-size: 1.4rem; font-weight: 800; }
+  .m19 .m19-sub { font-size: 0.68rem; opacity: 0.75; }
+  .m19 .m19-tier {
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(12px);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    width: fit-content;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .m19 .m19-big {
+    font-size: 6.5rem;
+    font-weight: 900;
+    line-height: 0.95;
+    margin-top: auto;
+  }
+  .m19 .m19-lb { font-size: 0.78rem; opacity: 0.75; text-transform: uppercase; letter-spacing: 2px; }
+  .m19 .m19-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .m19 .m19-m {
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 10px 14px;
+    border-radius: 10px;
+  }
+  .m19 .m19-m .lb { font-size: 0.6rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
+  .m19 .m19-m .vl { font-family: 'DM Mono'; font-weight: 800; font-size: 1.2rem; }
+
+  /* ============================================
+     MODEL 20: Pokemon Card (holographic premium)
+  ============================================ */
+  .m20 {
+    background: #1a1a2e;
+    padding: 10px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    font-family: 'DM Sans';
+  }
+  .m20 .m20-inner {
+    flex: 1;
+    background:
+      linear-gradient(135deg,
+        #ff006e 0%,
+        #ffbe0b 15%,
+        #8338ec 30%,
+        #3a86ff 45%,
+        #06ffa5 60%,
+        #ffbe0b 75%,
+        #ff006e 90%,
+        #8338ec 100%);
+    padding: 3px;
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m20 .m20-content {
+    background: linear-gradient(160deg, #0a0a20 0%, #1a0f3a 60%, #0a0a20 100%);
+    border-radius: 11px;
+    padding: 30px 32px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m20 .m20-content::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08) 0%, transparent 30%),
+      radial-gradient(circle at 70% 80%, rgba(0,255,200,0.08) 0%, transparent 30%);
+  }
+  .m20 .m20-content > * { position: relative; z-index: 1; }
+  .m20 .m20-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .m20 .m20-brand {
+    font-size: 1.35rem;
+    font-weight: 900;
+    background: linear-gradient(90deg, #fff 0%, #e9d5ff 50%, #fff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .m20 .m20-sub { font-size: 0.65rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 2px; }
+  .m20 .m20-hp {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #fbbf24;
+    letter-spacing: 1px;
+  }
+  .m20 .m20-big {
+    font-family: 'DM Mono';
+    font-size: 6rem;
+    font-weight: 800;
+    line-height: 0.95;
+    background: linear-gradient(180deg, #fff 0%, #d4a8ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
+  }
+  .m20 .m20-lb { text-align: center; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 3px; opacity: 0.7; }
+  .m20 .m20-attacks { margin-top: auto; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; }
+  .m20 .m20-attack { display: flex; justify-content: space-between; font-size: 0.72rem; padding: 4px 0; }
+  .m20 .m20-attack .lb { opacity: 0.7; }
+  .m20 .m20-attack .vl { font-family: 'DM Mono'; font-weight: 800; }
+  .m20 .m20-footer { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 8px; font-size: 0.56rem; opacity: 0.5; text-align: center; letter-spacing: 1px; }
+
+  /* ============================================
+     MODEL 10: Aurora
+  ============================================ */
+  .m10 {
+    background:
+      radial-gradient(circle at 20% 0%, #00c9a7 0%, transparent 50%),
+      radial-gradient(circle at 80% 50%, #845ec2 0%, transparent 50%),
+      radial-gradient(circle at 40% 100%, #ff6b9d 0%, transparent 50%),
+      linear-gradient(180deg, #0a0a1a 0%, #1a0a2e 100%);
+    padding: 38px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .m10::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.4) 100%);
+    pointer-events: none;
+  }
+  .m10 > * { position: relative; z-index: 1; }
+  .m10 .brand-logo {
+    background: linear-gradient(135deg, #00c9a7, #845ec2);
+    color: #fff;
+    box-shadow: 0 0 30px rgba(132,94,194,0.4);
+  }
+  .m10 .tier-tag {
+    background: linear-gradient(90deg, #00c9a7, #845ec2, #ff6b9d);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    width: fit-content;
+  }
+  .m10 .roas-num {
+    background: linear-gradient(90deg, #00c9a7, #00ffd0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .m10 .roas-label { color: #cbd5e1; font-size: 0.72rem; letter-spacing: 2px; text-transform: uppercase; }
+  .m10 .metric {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(4px);
+  }
+</style>
+</head>
+<body>
+<h1>Marketfacil — 10 modelos de share card</h1>
+<p class="subtitle">Todos mostrando: ROAS 12,51x · TACOS 1,9% · ACOS 8,0% · Platinum + Loja Oficial</p>
+
+<div class="grid">
+
+<!-- MODEL 1 -->
+<div class="card-wrapper">
+<div class="card-label"><span>1. Minimalist Navy</span><span class="num">01</span></div>
+<div class="share-card m1">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="tier-tag">👑 PLATINUM · ✓ LOJA OFICIAL</div>
+  <div style="flex:1"></div>
+  <div class="roas-section">
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label">ROAS · Últimos 30 dias</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#10b981">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    <div class="metric"><div class="metric-label">Investimento</div><div class="metric-val" style="color:#3b82f6">R$ 1.328</div></div>
+    <div class="metric"><div class="metric-label">Faturamento</div><div class="metric-val" style="color:#10b981">R$ 16.616</div></div>
+  </div>
+  <div class="footer-row">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 2 -->
+<div class="card-wrapper">
+<div class="card-label"><span>2. Editorial Platinum (serif)</span><span class="num">02</span></div>
+<div class="share-card m2">
+  <div class="m2-header">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div>
+        <div class="brand-name" style="color:#fff">Marketfacil</div>
+        <div class="brand-sub">Planejador de Ads</div>
+      </div>
+    </div>
+    <div class="tier-wrap">
+      <span class="tier-left-label">Conta · Loja Oficial</span>
+      <span class="tier-name">Platinum</span>
+    </div>
+  </div>
+  <div class="m2-body">
+    <div class="title">Meu resultado</div>
+    <div class="period">Últimos 30 dias em Product Ads</div>
+    <div class="roas-num">12,51×</div>
+    <div class="roas-label">ROAS</div>
+    <div class="metrics-row">
+      <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#a78bfa">1,9%</div></div>
+      <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    </div>
+  </div>
+  <div class="m2-footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil · #Marketfacil</span>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 3 -->
+<div class="card-wrapper">
+<div class="card-label"><span>3. Neon Tech</span><span class="num">03</span></div>
+<div class="share-card m3">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">MARKETFACIL</div>
+      <div class="brand-sub" style="color:rgba(0,255,255,0.6)">::PLANEJADOR_DE_ADS::</div>
+    </div>
+  </div>
+  <div class="tier-tag">&gt;&gt; PLATINUM + OFICIAL</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="roas-num">12.51x</div>
+    <div class="roas-label">:: ROAS · 30D</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label" style="color:#0ff;opacity:1">TACOS</div><div class="metric-val">1.9%</div></div>
+    <div class="metric"><div class="metric-label" style="color:#0ff;opacity:1">ACOS</div><div class="metric-val">8.0%</div></div>
+    <div class="metric"><div class="metric-label" style="color:#0ff;opacity:1">SPEND</div><div class="metric-val">R$1.3k</div></div>
+    <div class="metric"><div class="metric-label" style="color:#0ff;opacity:1">REVENUE</div><div class="metric-val">R$16.6k</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 4 -->
+<div class="card-wrapper">
+<div class="card-label"><span>4. Midnight Royal (gold frame)</span><span class="num">04</span></div>
+<div class="share-card m4">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads</div>
+    </div>
+  </div>
+  <div class="tier-tag">PLATINUM · LOJA OFICIAL</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label">ROAS em Product Ads · 30 dias</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.2)"><div class="metric-label" style="color:#ffd700;opacity:1">TACOS</div><div class="metric-val" style="color:#fff">1,9%</div></div>
+    <div class="metric" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.2)"><div class="metric-label" style="color:#ffd700;opacity:1">ACOS</div><div class="metric-val" style="color:#fff">8,0%</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 5 -->
+<div class="card-wrapper">
+<div class="card-label"><span>5. Glassmorphism</span><span class="num">05</span></div>
+<div class="share-card m5">
+  <div class="brand glass-card" style="padding:12px 16px;border-radius:14px;gap:10px">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="tier-tag">👑 PLATINUM · ✓ LOJA OFICIAL</div>
+  <div style="flex:1"></div>
+  <div class="glass-card roas-section">
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label" style="color:rgba(255,255,255,0.6);font-size:0.72rem;letter-spacing:2px;text-transform:uppercase;margin-top:4px">ROAS · 30 dias</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#34d399">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    <div class="metric"><div class="metric-label">Investimento</div><div class="metric-val">R$ 1.328</div></div>
+    <div class="metric"><div class="metric-label">Faturamento</div><div class="metric-val">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 6 -->
+<div class="card-wrapper">
+<div class="card-label"><span>6. Ticket / Stub</span><span class="num">06</span></div>
+<div class="share-card m6">
+  <div class="m6-top">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div>
+        <div class="brand-name">Marketfacil</div>
+        <div class="brand-sub" style="color:rgba(255,255,255,0.75)">Planejador de Ads</div>
+      </div>
+    </div>
+    <div class="tier-tag">👑 PLATINUM · LOJA OFICIAL</div>
+  </div>
+  <div class="m6-body">
+    <div class="title">Meu resultado · 30 dias</div>
+    <div class="roas-section">
+      <div class="roas-num">12,51x</div>
+      <div class="roas-label">ROAS em Product Ads</div>
+    </div>
+    <div class="metrics-row">
+      <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#10b981">1,9%</div></div>
+      <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    </div>
+  </div>
+  <div class="footer-row">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 7 -->
+<div class="card-wrapper">
+<div class="card-label"><span>7. Obsidian Chrome (limpo)</span><span class="num">07</span></div>
+<div class="share-card m7">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="tier-chip">PLATINUM · LOJA OFICIAL</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label" style="color:rgba(255,255,255,0.4);font-size:0.72rem;letter-spacing:3px;text-transform:uppercase;margin-top:4px">ROAS · ÚLTIMOS 30 DIAS</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    <div class="metric"><div class="metric-label">Investimento</div><div class="metric-val">R$ 1.328</div></div>
+    <div class="metric"><div class="metric-label">Faturamento</div><div class="metric-val">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 8 -->
+<div class="card-wrapper">
+<div class="card-label"><span>8. Retro Arcade</span><span class="num">08</span></div>
+<div class="share-card m8">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">MARKETFACIL</div>
+      <div class="brand-sub" style="color:#00f0ff">PLANEJADOR DE ADS</div>
+    </div>
+  </div>
+  <div class="tier-tag">&gt; PLATINUM + OFICIAL &lt;</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label">ROAS · 30D</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 9 -->
+<div class="card-wrapper">
+<div class="card-label"><span>9. Minimalist White (inverso)</span><span class="num">09</span></div>
+<div class="share-card m9">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="tier-line">
+    <span class="dot"></span>
+    <span class="tier-name">Platinum · Loja Oficial</span>
+  </div>
+  <div class="m9-divider"></div>
+  <div class="roas-section">
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label">ROAS · Últimos 30 dias</div>
+  </div>
+  <div class="m9-divider"></div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#10b981">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    <div class="metric"><div class="metric-label">Investimento</div><div class="metric-val">R$ 1.328</div></div>
+    <div class="metric"><div class="metric-label">Faturamento</div><div class="metric-val" style="color:#10b981">R$ 16.616</div></div>
+  </div>
+  <div class="footer-row">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 10 -->
+<div class="card-wrapper">
+<div class="card-label"><span>10. Aurora (gradient suave)</span><span class="num">10</span></div>
+<div class="share-card m10">
+  <div class="brand">
+    <div class="brand-logo">M</div>
+    <div>
+      <div class="brand-name">Marketfacil</div>
+      <div class="brand-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="tier-tag">PLATINUM · LOJA OFICIAL</div>
+  <div style="flex:1"></div>
+  <div>
+    <div class="roas-num">12,51x</div>
+    <div class="roas-label">ROAS · 30 dias</div>
+  </div>
+  <div class="metrics-row">
+    <div class="metric"><div class="metric-label">TACOS</div><div class="metric-val" style="color:#00ffd0">1,9%</div></div>
+    <div class="metric"><div class="metric-label">ACOS</div><div class="metric-val">8,0%</div></div>
+    <div class="metric"><div class="metric-label">Investimento</div><div class="metric-val">R$ 1.328</div></div>
+    <div class="metric"><div class="metric-label">Faturamento</div><div class="metric-val">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 11: Magazine Cover -->
+<div class="card-wrapper">
+<div class="card-label"><span>11. Magazine Cover</span><span class="num">11</span></div>
+<div class="share-card m11">
+  <div class="m11-top"><span>Marketfacil · Planejador de Ads</span><span>Edição · Abr/26</span></div>
+  <div class="m11-body">
+    <div class="m11-title">Performance<br>em alta.</div>
+    <div class="m11-roas">
+      <div class="m11-roas-num">12,51×</div>
+      <div>
+        <div class="m11-roas-sub">ROAS</div>
+        <div style="font-size:0.6rem;color:#64748b;margin-top:2px">ÚLTIMOS 30 DIAS</div>
+      </div>
+    </div>
+    <div class="m11-metrics">
+      <div class="m11-metric"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+      <div class="m11-metric"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+      <div class="m11-metric"><div class="lb">Invest.</div><div class="vl">R$ 1,3k</div></div>
+      <div class="m11-metric"><div class="lb">Fat.</div><div class="vl">R$ 16,6k</div></div>
+    </div>
+  </div>
+  <div class="m11-footer"><span>Platinum · Loja Oficial</span><span>@market.facil</span></div>
+</div>
+</div>
+
+<!-- MODEL 12: Terminal -->
+<div class="card-wrapper">
+<div class="card-label"><span>12. Terminal / Code</span><span class="num">12</span></div>
+<div class="share-card m12">
+  <div class="m12-titlebar">
+    <div class="dot" style="background:#ff5f56"></div>
+    <div class="dot" style="background:#ffbd2e"></div>
+    <div class="dot" style="background:#27c93f"></div>
+    <div class="m12-path">~/marketfacil/ads-report</div>
+  </div>
+  <div class="m12-body">
+    <div><span class="comment"># Marketfacil · Planejador de Ads</span></div>
+    <div><span class="cmd">$</span> <span class="arg">ads-report</span> --seller=BLEGAT --period=30d</div>
+    <div class="output"><span class="comment">▸</span> Fetching data for Mercado Líder <span class="hl">PLATINUM</span>...</div>
+    <div class="output"><span class="comment">▸</span> Loja Oficial <span class="ok">verified ✓</span></div>
+    <div><span class="cmd">$</span> <span class="arg">cat</span> /results/roas.txt</div>
+    <div class="big">12.51x</div>
+    <div style="font-size:0.68rem;opacity:0.8;margin-top:-4px">ROAS_VALUE · last_30_days</div>
+    <div class="output" style="margin-top:10px">TACOS  <span class="ok">= 1.9%</span></div>
+    <div class="output">ACOS   = 8.0%</div>
+    <div class="output">SPEND  = R$ 1,328.16</div>
+    <div class="output">REV    <span class="ok">= R$ 16,616.93</span></div>
+    <div><span class="cmd">$</span> <span class="cursor"></span></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 13: Brutalism -->
+<div class="card-wrapper">
+<div class="card-label"><span>13. Brutalism</span><span class="num">13</span></div>
+<div class="share-card m13">
+  <div>
+    <div class="m13-brand">MARKETFACIL/</div>
+    <div class="m13-sub">Planejador de Ads · Mercado Livre</div>
+  </div>
+  <div class="m13-tier">◼ PLATINUM · LOJA OFICIAL</div>
+  <div>
+    <div class="m13-roas">12,51×</div>
+    <div class="m13-roas-label">ROAS · 30 DIAS</div>
+  </div>
+  <div class="m13-metrics">
+    <div class="m13-metric"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="m13-metric"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="m13-metric"><div class="lb">INVESTIDO</div><div class="vl">R$ 1.328</div></div>
+    <div class="m13-metric"><div class="lb">RECEITA</div><div class="vl">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 14: Watercolor -->
+<div class="card-wrapper">
+<div class="card-label"><span>14. Watercolor / Pastel</span><span class="num">14</span></div>
+<div class="share-card m14">
+  <div class="m14-brand">
+    <div class="m14-logo">M</div>
+    <div>
+      <div class="m14-title">Marketfacil</div>
+      <div class="m14-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="m14-tier">👑 Platinum · Loja Oficial</div>
+  <div class="m14-big">12,51×</div>
+  <div class="m14-lb">ROAS · últimos 30 dias</div>
+  <div style="flex:1"></div>
+  <div class="m14-row">
+    <div class="m14-metric"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="m14-metric"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="m14-metric"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="m14-metric"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 15: Tactical -->
+<div class="card-wrapper">
+<div class="card-label"><span>15. Tactical / Military</span><span class="num">15</span></div>
+<div class="share-card m15">
+  <div>
+    <div class="m15-brand">// MARKETFACIL</div>
+    <div class="m15-sub">PLANEJADOR DE ADS · MLB</div>
+  </div>
+  <div class="m15-classified">[ PLATINUM · LOJA OFICIAL ]</div>
+  <div>
+    <div class="m15-big">12.51x</div>
+    <div class="m15-lb">TARGET: ROAS / PERIOD: 30D</div>
+  </div>
+  <div style="flex:1"></div>
+  <div class="m15-stats">
+    <div class="m15-stat"><div class="lb">TACOS</div><div class="vl">1.9%</div></div>
+    <div class="m15-stat"><div class="lb">ACOS</div><div class="vl">8.0%</div></div>
+    <div class="m15-stat"><div class="lb">COST</div><div class="vl">1.3k</div></div>
+    <div class="m15-stat"><div class="lb">REV</div><div class="vl">16.6k</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 16: Receipt -->
+<div class="card-wrapper">
+<div class="card-label"><span>16. Receipt / Nota Fiscal</span><span class="num">16</span></div>
+<div class="share-card m16">
+  <div class="m16-wrap">
+    <div class="m16-head">MARKETFACIL</div>
+    <div class="m16-sub">PLANEJADOR DE ADS · MERCADO LIVRE</div>
+    <div class="m16-line"><span>Seller</span><span class="dots"></span><span>BLEGAT</span></div>
+    <div class="m16-line"><span>Status</span><span class="dots"></span><span>PLATINUM</span></div>
+    <div class="m16-line"><span>Tipo</span><span class="dots"></span><span>LOJA OFICIAL ✓</span></div>
+    <div class="m16-line"><span>Período</span><span class="dots"></span><span>30 dias</span></div>
+    <div class="m16-line"><span>TACOS</span><span class="dots"></span><span>1,9%</span></div>
+    <div class="m16-line"><span>ACOS</span><span class="dots"></span><span>8,0%</span></div>
+    <div class="m16-line"><span>Investido</span><span class="dots"></span><span>R$ 1.328,16</span></div>
+    <div class="m16-line"><span>Faturamento</span><span class="dots"></span><span>R$ 16.616,93</span></div>
+    <div class="m16-total">
+      <span class="lb">ROAS</span>
+      <span class="vl">12,51×</span>
+    </div>
+    <div class="m16-foot">* * * OBRIGADO * * *<br>app.marketfacil.com.br · @market.facil</div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 17: Sports Jersey -->
+<div class="card-wrapper">
+<div class="card-label"><span>17. Sports Jersey</span><span class="num">17</span></div>
+<div class="share-card m17">
+  <div class="m17-top">
+    <div>
+      <div class="m17-brand">MARKETFACIL</div>
+      <div class="m17-sub">Planejador de Ads</div>
+    </div>
+    <div class="m17-badges">
+      <div class="m17-badge">PLATINUM</div>
+      <div class="m17-badge">OFICIAL</div>
+    </div>
+  </div>
+  <div>
+    <div class="m17-number">12,51</div>
+    <div class="m17-lb">ROAS · 30 DIAS</div>
+  </div>
+  <div class="m17-metrics">
+    <div class="m17-m"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="m17-m"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="m17-m"><div class="lb">INVESTIDO</div><div class="vl">R$ 1.328</div></div>
+    <div class="m17-m"><div class="lb">FATURAMENTO</div><div class="vl">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 18: Blueprint -->
+<div class="card-wrapper">
+<div class="card-label"><span>18. Blueprint</span><span class="num">18</span></div>
+<div class="share-card m18">
+  <div>
+    <div class="m18-brand">MARKETFACIL</div>
+    <div class="m18-sub">PROJETO · PLANEJADOR DE ADS · MLB-2026</div>
+  </div>
+  <div class="m18-label"><div class="line"></div>PLATINUM · LOJA OFICIAL<div class="line"></div></div>
+  <div>
+    <div class="m18-big">12,51×</div>
+    <div style="font-size:0.62rem;color:#93c5fd;text-transform:uppercase;letter-spacing:3px;margin-top:-4px">ROAS · MEDIDO EM 30D</div>
+  </div>
+  <div style="flex:1"></div>
+  <div class="m18-spec">
+    <div class="m18-spec-item"><div class="lb">[01] TACOS</div><div class="vl">1,9%</div></div>
+    <div class="m18-spec-item"><div class="lb">[02] ACOS</div><div class="vl">8,0%</div></div>
+    <div class="m18-spec-item"><div class="lb">[03] COST</div><div class="vl">R$ 1.328</div></div>
+    <div class="m18-spec-item"><div class="lb">[04] REV</div><div class="vl">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 19: Gradient Mesh -->
+<div class="card-wrapper">
+<div class="card-label"><span>19. Gradient Mesh</span><span class="num">19</span></div>
+<div class="share-card m19">
+  <div class="m19-brand">
+    <div class="m19-logo">M</div>
+    <div>
+      <div class="m19-name">Marketfacil</div>
+      <div class="m19-sub">Planejador de Ads · Mercado Livre</div>
+    </div>
+  </div>
+  <div class="m19-tier">👑 PLATINUM · ✓ LOJA OFICIAL</div>
+  <div>
+    <div class="m19-big">12,51×</div>
+    <div class="m19-lb">ROAS · Últimos 30 dias</div>
+  </div>
+  <div class="m19-metrics">
+    <div class="m19-m"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="m19-m"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="m19-m"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="m19-m"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+</div>
+</div>
+
+<!-- MODEL 20: Pokemon Card Holographic -->
+<div class="card-wrapper">
+<div class="card-label"><span>20. Pokemon Card (holo premium)</span><span class="num">20</span></div>
+<div class="share-card m20">
+  <div class="m20-inner">
+    <div class="m20-content">
+      <div class="m20-header">
+        <div>
+          <div class="m20-brand">MARKETFACIL</div>
+          <div class="m20-sub">Planejador de Ads</div>
+        </div>
+        <div class="m20-hp">LV. PLATINUM</div>
+      </div>
+      <div class="m20-big">12,51×</div>
+      <div class="m20-lb">ROAS · 30 DIAS</div>
+      <div style="flex:1"></div>
+      <div class="m20-attacks">
+        <div class="m20-attack"><span class="lb">▸ TACOS</span><span class="vl">1,9%</span></div>
+        <div class="m20-attack"><span class="lb">▸ ACOS</span><span class="vl">8,0%</span></div>
+        <div class="m20-attack"><span class="lb">▸ INVESTIDO</span><span class="vl">R$ 1.328</span></div>
+        <div class="m20-attack"><span class="lb">▸ FATURAMENTO</span><span class="vl">R$ 16.616</span></div>
+      </div>
+      <div class="m20-footer">✓ LOJA OFICIAL · app.marketfacil.com.br · @market.facil</div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+</body>
+</html>

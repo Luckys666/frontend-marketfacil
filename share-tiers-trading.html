@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Marketfacil — 5 Tiers Trading Style</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a14;
+    font-family: 'DM Sans', sans-serif;
+    padding: 40px;
+    color: #fff;
+  }
+  h1 { font-size: 2rem; margin-bottom: 8px; }
+  .subtitle { color: #94a3b8; margin-bottom: 32px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 540px);
+    gap: 40px;
+    justify-content: center;
+  }
+  .card-wrapper { display: flex; flex-direction: column; gap: 12px; }
+  .card-label {
+    font-size: 0.95rem;
+    color: #cbd5e1;
+    font-weight: 600;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-label .tier-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+
+  /* ================================================
+     BASE (Robinhood-inspired clean dark)
+  ================================================ */
+  .sc {
+    width: 540px;
+    height: 540px;
+    border-radius: 18px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    color: #fff;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .sc .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .sc .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sc .logo {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .sc .name {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .sc .name-accent { font-size: 0.95rem; }
+  .sc .period {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    opacity: 0.55;
+  }
+  .sc .tier-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    width: fit-content;
+  }
+  .sc .label-small {
+    font-size: 0.7rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 4px;
+  }
+  .sc .sub {
+    font-size: 0.78rem;
+    opacity: 0.7;
+    margin-bottom: 28px;
+  }
+  .sc .big {
+    font-family: 'DM Mono', monospace;
+    font-size: 6rem;
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+  }
+  .sc .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-top: 10px;
+  }
+  .sc .delta::before { content: '▲'; font-size: 0.85rem; }
+  .sc .chart {
+    height: 72px;
+    margin: 22px 0 20px;
+  }
+  .sc .chart svg { width: 100%; height: 100%; }
+  .sc .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-top: auto;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .sc .stat .lb {
+    font-size: 0.58rem;
+    opacity: 0.5;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .sc .stat .vl {
+    font-family: 'DM Mono', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-top: 3px;
+  }
+  .sc .footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    opacity: 0.4;
+    margin-top: 14px;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+
+  /* ================================================
+     TIER: DEFAULT (no medal) · navy blue
+  ================================================ */
+  .sc-default {
+    background: radial-gradient(ellipse at top right, #0f1e3d 0%, #05080f 70%);
+  }
+  .sc-default::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #0066ff, #10b981);
+  }
+  .sc-default .logo { background: #0066ff; color: #fff; }
+  .sc-default .name { color: #fff; }
+  .sc-default .name-accent { color: #0066ff; }
+  .sc-default .tier-chip { background: rgba(0,102,255,0.12); color: #60a5fa; border: 1px solid rgba(0,102,255,0.3); }
+  .sc-default .big { color: #10b981; }
+  .sc-default .delta { color: #10b981; }
+  .sc-default .stat .vl { color: #fff; }
+
+  /* ================================================
+     TIER: SILVER · graphite cool
+  ================================================ */
+  .sc-silver {
+    background: radial-gradient(ellipse at top right, #2a2e3a 0%, #0a0c12 70%);
+  }
+  .sc-silver::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #64748b, #e5e7eb, #64748b);
+  }
+  .sc-silver .logo {
+    background: linear-gradient(135deg, #e5e7eb, #94a3b8);
+    color: #0a0c12;
+    box-shadow: 0 0 20px rgba(229,231,235,0.3);
+  }
+  .sc-silver .name { color: #f1f5f9; }
+  .sc-silver .name-accent { color: #cbd5e1; }
+  .sc-silver .tier-chip { background: rgba(226,232,240,0.1); color: #e2e8f0; border: 1px solid rgba(226,232,240,0.3); }
+  .sc-silver .big { color: #10b981; }
+  .sc-silver .delta { color: #10b981; }
+  .sc-silver .stat .vl { color: #e2e8f0; }
+
+  /* ================================================
+     TIER: GOLD · warm amber
+  ================================================ */
+  .sc-gold {
+    background: radial-gradient(ellipse at top right, #3a2a05 0%, #0d0803 70%);
+  }
+  .sc-gold::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #854d0e, #facc15, #fbbf24, #854d0e);
+  }
+  .sc-gold .logo {
+    background: linear-gradient(135deg, #fbbf24, #d97706);
+    color: #0d0803;
+    box-shadow: 0 0 25px rgba(251,191,36,0.4);
+  }
+  .sc-gold .name { color: #fef3c7; }
+  .sc-gold .name-accent { color: #fbbf24; }
+  .sc-gold .tier-chip { background: rgba(251,191,36,0.12); color: #fde68a; border: 1px solid rgba(251,191,36,0.4); }
+  .sc-gold .big { color: #10b981; }
+  .sc-gold .delta { color: #10b981; }
+  .sc-gold .stat .vl { color: #fef3c7; }
+
+  /* ================================================
+     TIER: PLATINUM · deep violet + chrome
+  ================================================ */
+  .sc-platinum {
+    background:
+      radial-gradient(ellipse at top right, #3a1a78 0%, transparent 50%),
+      radial-gradient(ellipse at bottom left, #4a1d96 0%, transparent 50%),
+      #08021a;
+  }
+  .sc-platinum::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #7c3aed, #c4b5fd, #ffffff, #c4b5fd, #7c3aed);
+  }
+  .sc-platinum .logo {
+    background: linear-gradient(135deg, #ffffff, #c4b5fd);
+    color: #08021a;
+    box-shadow: 0 0 30px rgba(196,181,253,0.5);
+  }
+  .sc-platinum .name {
+    background: linear-gradient(90deg, #fff, #e9d5ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .sc-platinum .name-accent { color: #c4b5fd; }
+  .sc-platinum .tier-chip {
+    background: rgba(196,181,253,0.12);
+    color: #e9d5ff;
+    border: 1px solid rgba(196,181,253,0.4);
+    box-shadow: 0 0 12px rgba(196,181,253,0.25);
+  }
+  .sc-platinum .big { color: #10b981; }
+  .sc-platinum .delta { color: #10b981; }
+  .sc-platinum .stat .vl { color: #f3e8ff; }
+
+  /* ================================================
+     TIER: PLATINUM + LOJA OFICIAL
+     · verification blue mark + "VERIFIED" badge
+  ================================================ */
+  .sc-platinum-oficial {
+    background:
+      radial-gradient(ellipse at top right, #3a1a78 0%, transparent 50%),
+      radial-gradient(ellipse at bottom left, #1e3a8a 0%, transparent 50%),
+      #08021a;
+  }
+  .sc-platinum-oficial::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #7c3aed, #3b82f6, #ffffff, #3b82f6, #7c3aed);
+  }
+  .sc-platinum-oficial .logo {
+    background: linear-gradient(135deg, #ffffff, #c4b5fd);
+    color: #08021a;
+    box-shadow: 0 0 30px rgba(196,181,253,0.5);
+  }
+  .sc-platinum-oficial .name {
+    background: linear-gradient(90deg, #fff, #e9d5ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .sc-platinum-oficial .verified-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+    margin-left: 6px;
+    box-shadow: 0 0 12px rgba(59,130,246,0.6);
+  }
+  .sc-platinum-oficial .tier-wrap { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .sc-platinum-oficial .tier-chip {
+    background: rgba(196,181,253,0.12);
+    color: #e9d5ff;
+    border: 1px solid rgba(196,181,253,0.4);
+  }
+  .sc-platinum-oficial .oficial-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    background: rgba(59,130,246,0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(59,130,246,0.5);
+    box-shadow: 0 0 14px rgba(59,130,246,0.35);
+  }
+  .sc-platinum-oficial .big { color: #10b981; }
+  .sc-platinum-oficial .delta { color: #10b981; }
+  .sc-platinum-oficial .stat .vl { color: #f3e8ff; }
+</style>
+</head>
+<body>
+<h1>Marketfacil — 5 tiers · estilo trading</h1>
+<p class="subtitle">Todos com ROAS 12,51x · TACOS 1,9% · ACOS 8,0% · Último 30 dias · Mesma estrutura, só muda o tratamento do tier</p>
+
+<div class="grid">
+
+<!-- TIER 1: DEFAULT -->
+<div class="card-wrapper">
+<div class="card-label"><span class="tier-dot" style="background:#0066ff"></span>01 · Default (sem medalha)</div>
+<div class="sc sc-default">
+  <div class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="name">marketfacil<span class="name-accent"> ·</span></div>
+    </div>
+    <div class="period">12/04/26 · 30D</div>
+  </div>
+  <div class="tier-chip">Vendedor Mercado Livre</div>
+  <div class="label-small">ROAS · Últimos 30 dias</div>
+  <div class="big">12,51x</div>
+  <div class="delta">+320,15% (+9,69x)</div>
+  <div class="chart">
+    <svg viewBox="0 0 500 72" preserveAspectRatio="none">
+      <defs><linearGradient id="gd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity="0.35"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2 L500,72 L0,72 Z" fill="url(#gd)"/>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2" fill="none" stroke="#10b981" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="stat"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="stat"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+  <div class="footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- TIER 2: SILVER -->
+<div class="card-wrapper">
+<div class="card-label"><span class="tier-dot" style="background:#e5e7eb"></span>02 · Mercado Líder Silver</div>
+<div class="sc sc-silver">
+  <div class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="name">marketfacil<span class="name-accent"> ·</span></div>
+    </div>
+    <div class="period">12/04/26 · 30D</div>
+  </div>
+  <div class="tier-chip">◆ Mercado Líder · Silver</div>
+  <div class="label-small">ROAS · Últimos 30 dias</div>
+  <div class="big">12,51x</div>
+  <div class="delta">+320,15% (+9,69x)</div>
+  <div class="chart">
+    <svg viewBox="0 0 500 72" preserveAspectRatio="none">
+      <defs><linearGradient id="gs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity="0.35"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2 L500,72 L0,72 Z" fill="url(#gs)"/>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2" fill="none" stroke="#10b981" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="stat"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="stat"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+  <div class="footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- TIER 3: GOLD -->
+<div class="card-wrapper">
+<div class="card-label"><span class="tier-dot" style="background:#fbbf24"></span>03 · Mercado Líder Gold</div>
+<div class="sc sc-gold">
+  <div class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="name">marketfacil<span class="name-accent"> ·</span></div>
+    </div>
+    <div class="period">12/04/26 · 30D</div>
+  </div>
+  <div class="tier-chip">★ Mercado Líder · Gold</div>
+  <div class="label-small">ROAS · Últimos 30 dias</div>
+  <div class="big">12,51x</div>
+  <div class="delta">+320,15% (+9,69x)</div>
+  <div class="chart">
+    <svg viewBox="0 0 500 72" preserveAspectRatio="none">
+      <defs><linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity="0.35"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2 L500,72 L0,72 Z" fill="url(#gg)"/>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2" fill="none" stroke="#10b981" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="stat"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="stat"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+  <div class="footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- TIER 4: PLATINUM -->
+<div class="card-wrapper">
+<div class="card-label"><span class="tier-dot" style="background:#c4b5fd"></span>04 · Mercado Líder Platinum</div>
+<div class="sc sc-platinum">
+  <div class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="name">marketfacil<span class="name-accent"> ·</span></div>
+    </div>
+    <div class="period">12/04/26 · 30D</div>
+  </div>
+  <div class="tier-chip">♦ Mercado Líder · Platinum</div>
+  <div class="label-small">ROAS · Últimos 30 dias</div>
+  <div class="big">12,51x</div>
+  <div class="delta">+320,15% (+9,69x)</div>
+  <div class="chart">
+    <svg viewBox="0 0 500 72" preserveAspectRatio="none">
+      <defs><linearGradient id="gp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity="0.35"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2 L500,72 L0,72 Z" fill="url(#gp)"/>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2" fill="none" stroke="#10b981" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="stat"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="stat"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+  <div class="footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+<!-- TIER 5: PLATINUM + LOJA OFICIAL -->
+<div class="card-wrapper">
+<div class="card-label"><span class="tier-dot" style="background:#3b82f6"></span>05 · Platinum + Loja Oficial</div>
+<div class="sc sc-platinum-oficial">
+  <div class="top">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="name">marketfacil<span class="verified-check">✓</span></div>
+    </div>
+    <div class="period">12/04/26 · 30D</div>
+  </div>
+  <div class="tier-wrap">
+    <div class="tier-chip">♦ Mercado Líder · Platinum</div>
+    <div class="oficial-chip">✓ Loja Oficial</div>
+  </div>
+  <div class="label-small" style="margin-top:8px">ROAS · Últimos 30 dias</div>
+  <div class="big">12,51x</div>
+  <div class="delta">+320,15% (+9,69x)</div>
+  <div class="chart">
+    <svg viewBox="0 0 500 72" preserveAspectRatio="none">
+      <defs><linearGradient id="go" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity="0.35"/><stop offset="1" stop-color="#10b981" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2 L500,72 L0,72 Z" fill="url(#go)"/>
+      <path d="M0,55 L30,52 L60,50 L90,48 L120,44 L150,46 L180,38 L210,34 L240,28 L270,30 L300,22 L330,16 L360,20 L390,12 L420,8 L450,5 L480,3 L500,2" fill="none" stroke="#10b981" stroke-width="2.5"/>
+    </svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="lb">TACOS</div><div class="vl">1,9%</div></div>
+    <div class="stat"><div class="lb">ACOS</div><div class="vl">8,0%</div></div>
+    <div class="stat"><div class="lb">Gasto</div><div class="vl">R$ 1.328</div></div>
+    <div class="stat"><div class="lb">Faturamento</div><div class="vl">R$ 16.616</div></div>
+  </div>
+  <div class="footer">
+    <span>app.marketfacil.com.br</span>
+    <span>@market.facil</span>
+  </div>
+</div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!--
+  BUBBLE.IO COMPONENT: DASHBOARD MARKETFÁCIL
+  Repository: Luckys666/frontend-marketfacil
+  Página alvo: dashboard
+  Element: bTLuq (HTML Element)
+
+  COMO USAR:
+  1. Cole este bloco dentro do HTML element bTLuq.
+  2. Antes do widget, configure o token e seller_id em um workflow Bubble:
+     - Run JavaScript:
+         window.MFD_TOKEN = 'Current User token Mercado Livre';
+         window.MFD_SELLER_ID = 'Current User seller_id ML';
+         if (window.MFD_init) {
+           window.MFD_init({ token: window.MFD_TOKEN, sellerId: window.MFD_SELLER_ID, container: 'mfd-root' });
+         }
+  3. Para versão de produção, prefira o build inline em build/dashboard-bubble.html
+     (CSS+JS embarcado, sem dependência de CDN externa pro código fonte).
+-->
+
+<!-- Estilo (Light Trading · Proposta U) -->
+<link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@main/css/dashboard.css">
+
+<!-- Lib externa: Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<!-- Lógica do dashboard -->
+<script src="https://cdn.jsdelivr.net/gh/Luckys666/frontend-marketfacil@main/js/dashboard.js"></script>
+
+<!-- Container principal -->
+<div id="mfd-root">
+    <div class="mfd-wrapper">
+        <div class="mfd-loading">
+            <div class="mfd-orbital">
+                <div class="mfd-orbital-ring"></div>
+                <div class="mfd-orbital-ring"></div>
+                <div class="mfd-orbital-dot"></div>
+            </div>
+            <p class="mfd-loading-msg">Inicializando seu painel...</p>
+            <div class="mfd-loading-bar"><div class="mfd-loading-bar-fill"></div></div>
+        </div>
+    </div>
+</div>
+
+<!--
+  Hook opcional: se quiser que o dashboard navegue por path próprio do
+  Bubble em vez de slug fixo, defina este map ANTES de chamar MFD_init:
+
+  window.MFD_TOOL_PATHS = {
+    analyzer: '/analise-anuncio',
+    planner:  '/planejador-ads',
+    catalog:  '/concorrencia-catalogo',
+    finder:   '/buscador-catalogos',
+    keyword:  '/agente-palavras',
+    inpi:     '/busca-inpi',
+    image:    '/gerar-imagem'
+  };
+
+  Ou implemente um handler totalmente custom:
+
+  window.MFD_onToolClick = function(tool, ctx) {
+    // Roda Bubble workflow customizado: Bubble.publish_state ...
+  };
+-->
