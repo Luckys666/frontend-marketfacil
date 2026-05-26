@@ -14,6 +14,13 @@ let globalTitleMaxChars = 60; // 60 para anúncio comum, 200 para catálogo
 // --- Cache de resultados (evita re-scraping do mesmo produto) ---
 const resultCache = new Map();
 
+// XSS defense: escapa chars HTML antes de inserir em innerHTML
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // --- Fetch com retry automático ---
 async function fetchWithRetry(url, options = {}, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -672,7 +679,7 @@ window.__kwGenerateTitles = async function() {
     });
 
   } catch (err) {
-    listEl.innerHTML = `<p style="color:var(--red-dark);font-size:0.85rem;">Erro: ${err.message}</p>`;
+    listEl.innerHTML = `<p style="color:var(--red-dark);font-size:0.85rem;">Erro: ${escapeHtml(err.message)}</p>`;
   } finally {
     btn.querySelector('.kw-btn-generate-text').style.display = 'inline';
     btn.querySelector('.kw-btn-generate-loading').style.display = 'none';

@@ -1847,7 +1847,7 @@ window.MF_openFamilyBatchEditor = async function (upId) {
         });
         if (!res.ok) {
             const e = await res.json().catch(() => ({}));
-            body.innerHTML = `<div class="mfd-fb-error">Não foi possível carregar a família. ${e.error || `Erro ${res.status}`}</div>`;
+            body.innerHTML = `<div class="mfd-fb-error">Não foi possível carregar a família. ${escapeHtml(e.error || `Erro ${res.status}`)}</div>`;
             return;
         }
         const data = await res.json();
@@ -1855,7 +1855,7 @@ window.MF_openFamilyBatchEditor = async function (upId) {
         window.__mfFamilyOverview = data;
         MF_renderFamilyOverview(data, body);
     } catch (e) {
-        body.innerHTML = `<div class="mfd-fb-error">Falha de rede: ${e.message}</div>`;
+        body.innerHTML = `<div class="mfd-fb-error">Falha de rede: ${escapeHtml(e.message)}</div>`;
     }
 };
 
@@ -3373,7 +3373,7 @@ function appendError(message, containerId = 'resultsContainer') {
     if (Array.from(cont.querySelectorAll('.error-message')).some(el => el.textContent.includes(message))) return;
     const p = document.createElement('p');
     p.className = 'error-message';
-    p.innerHTML = `❌ ${message}`;
+    p.innerHTML = `❌ ${escapeHtml(message)}`;
     cont.appendChild(p);
 }
 
@@ -4259,9 +4259,9 @@ window.iniciarAnaliseIA = async function (itemId, variationId) {
         });
         if (!r.ok) throw new Error('Falha na requisição');
         const data = await r.json();
-        resEl.innerHTML = `<div style="background:var(--blue-light); padding: 12px; border-radius: var(--radius-sm); border-left: 3px solid var(--blue);"><p class="text-small">${data.analysis || 'Análise concluída com sucesso!'}</p></div>`;
+        resEl.innerHTML = `<div style="background:var(--blue-light); padding: 12px; border-radius: var(--radius-sm); border-left: 3px solid var(--blue);"><p class="text-small">${escapeHtml(data.analysis || 'Análise concluída com sucesso!')}</p></div>`;
     } catch (e) {
-        resEl.innerHTML = `<p class="text-small error-message" style="margin:0;">O Analisador de IA ficará disponível em breve. (${e.message})</p>`;
+        resEl.innerHTML = `<p class="text-small error-message" style="margin:0;">O Analisador de IA ficará disponível em breve. (${escapeHtml(e.message)})</p>`;
     }
 }
 
