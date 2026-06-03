@@ -173,6 +173,18 @@ async function fetchUserIdForScraping() {
   throw new Error('User ID não encontrado.');
 }
 
+// A2 cutover: em 401 do proxy, invalida globalUserId, re-minta via get-user-id e retry 1×.
+// Retorna a Response (ou a 1ª 401 se o re-mint falhou). Caller decide UX.
+async function withMintRetry(buildRequestFn) {
+  let resp = await buildRequestFn(globalUserId);
+  if (resp.status !== 401) return resp;
+  globalUserId = null;
+  try { globalUserId = await fetchUserIdForScraping(); }
+  catch (_) { return resp; }
+  if (!globalUserId) return resp;
+  return await buildRequestFn(globalUserId);
+}
+
 async function fetchCatalogs(query, offset = 0) {
   const params = { q: query, status: 'active', offset: offset, limit: pageSize };
   const cacheKey = 'catalogs_' + query + '_' + offset;
@@ -206,7 +218,8 @@ async function fetchItemDetails(itemId) {
   const cacheKey = 'item_' + nId;
   if (itemDetailsCache.has(cacheKey)) return itemDetailsCache.get(cacheKey);
   try {
-    const r = await fetch(PROXY_BASE_URL + '/ml-scraper?url=' + nId, { headers: { 'x-user-id': globalUserId } });
+    // withMintRetry: em 401 (token expirado), re-minta e retry 1×; senão passa direto
+    const r = await withMintRetry((uid) => fetch(PROXY_BASE_URL + '/ml-scraper?url=' + nId, { headers: { 'x-user-id': uid } }));
     const t = await r.text();
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const s = JSON.parse(t);

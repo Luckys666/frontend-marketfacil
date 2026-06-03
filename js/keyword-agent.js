@@ -142,6 +142,30 @@ async function fetchUserIdForScraping() {
   }
 }
 
+// A2 cutover: invalida globalUserId, refaz mint e retry 1×. Recebe (buildRequestFn) que produz
+// a Promise<Response>; chamado com o globalUserId atual a cada execução (1ª e retry).
+// Retorna a Response final. Se mesmo após retry vier 401, devolve a 2ª Response pra caller
+// tratar UX (ler body.message). Não loopa — exatamente 1 retry.
+async function withMintRetry(buildRequestFn) {
+  let resp = await buildRequestFn(globalUserId);
+  if (resp.status !== 401) return resp;
+  // 401 → token expirou ou foi adulterado; descarta cache e re-minta
+  globalUserId = '';
+  const fresh = await fetchUserIdForScraping();
+  if (!fresh) return resp; // mint falhou → devolve a 401 original (caller mostra erro)
+  globalUserId = fresh;
+  return await buildRequestFn(globalUserId);
+}
+
+// Lê { message } amigável do body 401 do proxy; fallback p/ mensagem genérica de recarregar
+async function read401Message(resp) {
+  try {
+    const body = await resp.clone().json();
+    if (body && typeof body.message === 'string' && body.message.trim()) return body.message;
+  } catch (_) { /* body não-JSON */ }
+  return 'Sessão expirada. Recarregue a página e tente novamente.';
+}
+
 // --- UI Helpers ---
 function showError(msg) {
   const el = document.getElementById('kw-error');
@@ -198,7 +222,7 @@ function getLoadingHtml(msg, sub) {
     <div class="kw-loading-steps">
       <span class="kw-step active">Conexão</span>
       <span class="kw-step-dot">→</span>
-      <span class="kw-step">Scraping</span>
+      <span class="kw-step">Buscando dados</span>
       <span class="kw-step-dot">→</span>
       <span class="kw-step">IA Keywords</span>
       <span class="kw-step-dot">→</span>
@@ -508,25 +532,40 @@ async function handleAnalyzeKeywords() {
       productData = resultCache.get(cacheKey);
       updateProgress(40);
     } else {
-      const scraperResp = await fetchWithRetry(`${SCRAPER_ENDPOINT}?url=${encodeURIComponent(scraperUrl)}`, {
-        headers: { 'x-user-id': globalUserId }
-      }, 3);
-      if (!scraperResp.ok) {
-        const err = await scraperResp.json().catch(() => ({}));
-        showLoading(false);
-        if (scraperResp.status === 403) { showError('Acesso restrito. Verifique seu plano.'); return; }
-        if (scraperResp.status === 429) { showError('Muitas requisições. Aguarde alguns minutos e tente novamente.'); return; }
-        showError(err.error || `Erro ${scraperResp.status}. Tente novamente.`);
-        return;
+      // O ML às vezes serve uma página "casco" (renderizada em JS) sem os dados do produto. O backend
+      // já tenta a URL canônica /p/, mas isso é intermitente. Então retentamos o SCRAPER (nunca o GPT)
+      // quando vier 200 sem título. Só cacheia em caso de sucesso (não cacheia o casco vazio).
+      const MAX_SCRAPE_TRIES = 3;
+      let pd = null;
+      let last401 = null; // se a última falha foi 401, usar mensagem específica de sessão
+      for (let tryN = 1; tryN <= MAX_SCRAPE_TRIES; tryN++) {
+        if (tryN > 1) { updateLoadingStep(`O Mercado Livre está instável agora — tentando de novo (${tryN}/${MAX_SCRAPE_TRIES}), aguarde alguns segundos...`); updateProgress(15 + tryN * 8); }
+        // maxRetries=1 aqui: este loop é a autoridade de retry do scrape (evita multiplicar custo)
+        // withMintRetry: em 401, refresca globalUserId e re-tenta 1× (transparente ao loop)
+        const scraperResp = await withMintRetry((uid) => fetchWithRetry(`${SCRAPER_ENDPOINT}?url=${encodeURIComponent(scraperUrl)}`, {
+          headers: { 'x-user-id': uid }
+        }, 1));
+        if (scraperResp.status === 401) {
+          last401 = scraperResp;
+          break; // mint+retry já falharam — não adianta loopar
+        }
+        if (scraperResp.status === 403) { showLoading(false); showError('Acesso restrito. Verifique seu plano.'); return; }
+        if (scraperResp.status === 429) { showLoading(false); showError('Muitas requisições. Aguarde alguns minutos e tente novamente.'); return; }
+        if (scraperResp.ok) {
+          pd = await scraperResp.json().catch(() => null);
+          if (pd && pd.title) { resultCache.set(cacheKey, pd); break; } // sucesso → cacheia e sai
+          // 200 sem título (casco intermitente) → cai pro retry abaixo (sem cachear)
+        }
+        if (tryN < MAX_SCRAPE_TRIES) await new Promise(r => setTimeout(r, 1000 * tryN));
       }
-      productData = await scraperResp.json();
-      resultCache.set(cacheKey, productData);
+      if (last401) { showLoading(false); showError(await read401Message(last401)); return; }
+      productData = pd || {};
       updateProgress(40);
     }
 
     globalProductData = productData;
 
-    if (!productData.title) { showLoading(false); showError('Não foi possível extrair os dados. Verifique o link.'); return; }
+    if (!productData.title) { showLoading(false); showError('A página do anúncio está instável no Mercado Livre agora. Aguarde alguns instantes e clique em Analisar de novo.'); return; }
 
     // Set title max chars based on product type
     globalTitleMaxChars = productData.is_catalog ? 200 : 60;
@@ -548,16 +587,17 @@ async function handleAnalyzeKeywords() {
     if (productData.description) texto += '. ' + productData.description;
     updateProgress(50);
 
-    const gptResp = await fetch(GPT_KEYWORDS_ENDPOINT, {
+    const gptResp = await withMintRetry((uid) => fetch(GPT_KEYWORDS_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${globalUserId}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${uid}` },
       body: JSON.stringify({ texto })
-    });
+    }));
     if (!gptResp.ok) {
-      const err = await gptResp.json().catch(() => ({}));
       showLoading(false);
+      if (gptResp.status === 401) { showError(await read401Message(gptResp)); return; }
       if (gptResp.status === 403) { showError('Acesso restrito. Verifique seu plano.'); return; }
       if (gptResp.status === 429) { showError('Limite de análises GPT atingido. Aguarde alguns minutos.'); return; }
+      const err = await gptResp.json().catch(() => ({}));
       showError(err.error || `Erro ${gptResp.status}. Tente novamente.`);
       return;
     }
@@ -630,9 +670,9 @@ window.__kwGenerateTitles = async function() {
       if (t.dataset.phrase) allTerms.push(t.dataset.phrase);
     });
 
-    const resp = await fetch(GPT_TITLES_ENDPOINT, {
+    const resp = await withMintRetry((uid) => fetch(GPT_TITLES_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${globalUserId}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${uid}` },
       body: JSON.stringify({
         produto_principal: globalProductData.title,
         termos_chave: allTerms,
@@ -641,8 +681,9 @@ window.__kwGenerateTitles = async function() {
         palavras_ja_indexadas: [...globalIndexedWords].join(', '),
         palavras_novas: [...newWordsSet].join(', ')
       })
-    });
+    }));
 
+    if (resp.status === 401) { throw new Error(await read401Message(resp)); }
     if (!resp.ok) throw new Error('Erro ao gerar títulos');
     const data = await resp.json();
 
