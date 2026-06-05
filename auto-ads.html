@@ -157,12 +157,12 @@
     BANDS: { B1:{label:'Econômico',color:'#16a34a'}, B2:{label:'Equilibrado',color:'#0066ff'},
              B3:{label:'Acelerado',color:'#f59e0b'}, B4:{label:'Máximo',color:'#ef4444'},
              NA:{label:'Nunca ativar',color:'#64748b'} },
-    BAND_NAMES: ['[MARKETFACIL AUTO] Econômico','[MARKETFACIL AUTO] Equilibrado','[MARKETFACIL AUTO] Acelerado','[MARKETFACIL AUTO] Máximo','[MARKETFACIL AUTO] Nunca ativar'],
     BAND_NAME_BY_KEY: { B1:'[MARKETFACIL AUTO] Econômico', B2:'[MARKETFACIL AUTO] Equilibrado', B3:'[MARKETFACIL AUTO] Acelerado', B4:'[MARKETFACIL AUTO] Máximo', NA:'[MARKETFACIL AUTO] Nunca ativar' },
     BAND_TARGETS: { B1:{acos:3,roas:'33,33'}, B2:{acos:6,roas:'16,67'}, B3:{acos:9,roas:'11,11'}, B4:{acos:12,roas:'8,33'}, NA:{} },
     STATUS: { active:['Ativo','aa-b-active'], paused:['Pausado','aa-b-paused'], idle:['Sem campanha','aa-b-idle'], hold:['Em espera','aa-b-hold'] },
     ads: [], sel: {}, offset: 0, total: 0, allMode: false, _prevMoves: null, _verifying: false
   };
+  AA.BAND_NAMES = Object.keys(AA.BAND_NAME_BY_KEY).map(function(k){ return AA.BAND_NAME_BY_KEY[k]; }); // deriva (evita dessincronizar)
   var DEMO = /[?&]demo=1/.test(location.search);
 
   var $ = function(id){ return document.getElementById(id); };
@@ -285,7 +285,7 @@
   // Persistencia da SELECAO (rascunho de intencao) em localStorage por advertiser. O estado REAL
   // (anuncio acompanhado = anuncio numa faixa) e o proprio ML (in_automation/automation_band do backend).
   AA.selKey = function(){ return 'mf_aa_sel_' + (AA.advertiserId || 'x'); };
-  AA.saveSel = function(){ try{ localStorage.setItem(AA.selKey(), JSON.stringify({ all: AA.allMode, ids: Object.keys(AA.sel) })); }catch(e){} };
+  AA.saveSel = function(){ if(!AA.advertiserId) return; try{ localStorage.setItem(AA.selKey(), JSON.stringify({ all: AA.allMode, ids: Object.keys(AA.sel) })); }catch(e){} };
   AA.loadSel = function(){ try{ var d = JSON.parse(localStorage.getItem(AA.selKey()) || 'null'); if(d){ AA.allMode = !!d.all; (d.ids||[]).forEach(function(id){ AA.sel[id] = 1; }); } }catch(e){} };
 
   // ---------- 2+3) plano ----------
@@ -320,7 +320,6 @@
 
   AA.render = function(d){
     var s = d.summary || {};
-    AA._lastPlan = d;
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou
     var plan = d.plan || {};
     var movesNow = Object.keys(plan).reduce(function(t,k){ return t + ((plan[k]||[]).length); }, 0);
@@ -338,7 +337,6 @@
     html += '</div></div>';
     html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation();
     out(html);
-    var bm = $('aa-bm'); if(bm){ try{ bm.setAttribute('href', AA.bookmarklet()); }catch(e){} }
   };
 
   AA.planCards = function(d){
@@ -363,17 +361,8 @@
     });
     var s = d.summary || {};
     if (s.toNeverActivate) html += '<div class="aa-hint" style="margin-top:10px;">'+s.toNeverActivate+' anúncio(s) foram movidos pra faixa que não recebe investimento (gasto sem retorno).</div>';
-    html += '</div>';   // fecha o card "Plano pronto"
-    // card de aplicação de uma vez (atalho/bookmarklet que executa na sessão do ML)
-    html += '<div class="aa-card"><h2>⚡ Aplicar de uma vez</h2>'
-      + '<p class="aa-sub" style="margin:0 0 10px;">Em vez de fazer faixa por faixa, aplique tudo com o atalho Marketfácil no painel do Mercado Livre.</p>'
-      + '<button class="aa-btn aa-btn-primary" onclick="window.aaApplyAuto()">Copiar plano e abrir o Mercado Livre</button>'
-      + '<div class="aa-hint" id="aa-apply-hint" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:10px;"></div>'
-      + '<details class="aa-dev" style="margin-top:12px;"><summary>Ativar o atalho (só na 1ª vez)</summary>'
-      + '<p class="aa-hint" style="margin-top:8px;">Arraste o botão abaixo pra sua barra de favoritos. Depois, no painel do Mercado Livre, clique nele pra aplicar o plano que você copiou.</p>'
-      + '<a class="aa-btn aa-btn-ghost aa-btn-sm" id="aa-bm" href="#" style="text-decoration:none;display:inline-block;margin-top:6px;">⚡ Aplicar Marketfácil</a>'
-      + '</details></div>';
-    return html;
+    html += '<div class="aa-row" style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já adicionei no ML — Verificar</button></div>';
+    return html + '</div>';   // fecha o card "Plano pronto"
   };
 
   AA.guidedCreation = function(){
@@ -395,34 +384,6 @@
   };
   AA.fallbackCopy = function(txt){ try{ var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }catch(e){} };
   window.aaOpenMl = function(cid){ window.open(cid ? (AA.ML_PANEL+'/'+encodeURIComponent(cid)+'/ads') : AA.ML_PANEL, '_blank', 'noopener'); };
-
-  // ---------- executor (bookmarklet) — roda na SESSAO do mercadolivre.com.br ----------
-  // O app nao pode chamar o ML direto (CORS); o atalho roda no painel do ML, le o csrf da sessao e
-  // executa a troca (editAdGroup). O plano vem do clipboard (copiado pelo app em aaApplyAuto).
-  AA.execFn = async function(){
-    var m = document.querySelector('meta[name="csrf-token"]');
-    if(!m){ alert('Abra o painel de Publicidade do Mercado Livre e clique no atalho de novo.'); return; }
-    var raw; try{ raw = await navigator.clipboard.readText(); }catch(e){ raw = prompt('Cole o plano do Marketfacil:') || ''; }
-    var d; try{ d = JSON.parse(raw); }catch(e){ alert('Marketfacil: gere o plano no app e clique "Copiar plano" primeiro.'); return; }
-    var P=d.a, S=String(d.s), SITE=d.site||'MLB', PLAN=d.p||{};
-    var H={'content-type':'application/json','x-csrf-token':m.content,'x-advertiser-id':String(P),'x-caller-id':S,'x-operator-id':S,'x-root-id':S,'x-operator-type':'user','x-ajax-site-id':SITE,'x-force-pads-version':'4','x-requested-with':'XMLHttpRequest'};
-    var cids=Object.keys(PLAN), ok=0, er=0;
-    for(var i=0;i<cids.length;i++){ var c=cids[i];
-      try{ var r=await fetch('https://pa.mercadolivre.com.br/pa/api/admin-growth-campaigns/graphql',{method:'POST',credentials:'include',headers:H,body:JSON.stringify({operationName:'editAdGroup',query:'',variables:{assignGroupToCampaignInput:{advertiserId:P,siteId:SITE,campaignId:Number(c),adGroups:(PLAN[c]||[]).map(String)}}})}); var j=await r.json(); if(j&&j.data&&j.data.ads&&j.data.ads.assignGroupToCampaign&&j.data.ads.assignGroupToCampaign.success){ ok+=(PLAN[c]||[]).length; } else { er++; } }catch(e){ er++; }
-    }
-    alert('Marketfacil: '+ok+' anuncio(s) organizado(s)'+(er?(' — '+er+' faixa(s) com erro'):'')+'. Volte ao app e clique Verificar.');
-  };
-  AA.bookmarklet = function(){ return 'javascript:(' + AA.execFn.toString() + ')()'; };
-
-  // copia o plano (advertiser + seller + plano opaco) pro clipboard e abre o painel do ML
-  window.aaApplyAuto = function(){
-    var d = AA._lastPlan;
-    if(!d || !d.plan || !Object.keys(d.plan).length){ return; }
-    var payload = JSON.stringify({ a: d.advertiser_id, s: d.seller_id, site: d.site_id||'MLB', p: d.plan });
-    window.aaCopyText(payload);
-    window.open(AA.ML_PANEL, '_blank', 'noopener');
-    var hint = $('aa-apply-hint'); if(hint){ hint.textContent = '✓ Plano copiado! No Mercado Livre (aba que abriu), clique no atalho "Aplicar Marketfácil". Depois volte e clique Verificar.'; hint.style.display='block'; }
-  };
 
   // ---------- demo ----------
   AA.demoAds = function(off){
