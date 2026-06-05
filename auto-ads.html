@@ -233,6 +233,7 @@
   window.aaToggleAllMode = function(){
     AA.allMode = $('aa-allmode').checked;
     $('aa-selzone').classList.toggle('aa-dim', AA.allMode);
+    AA.saveSel();
   };
 
   window.aaLoadAds = async function(more){
@@ -248,9 +249,12 @@
         data = await r.json();
         if (!r.ok) throw new Error((data && data.error) || ('HTTP '+r.status));
       }
+      if (data.advertiser_id) AA.advertiserId = data.advertiser_id;
+      if (!more) AA.loadSel();   // restaura o rascunho da selecao deste advertiser
       AA.total = (data.paging && data.paging.total) || (AA.ads.length + (data.ads||[]).length);
       AA.ads = AA.ads.concat(data.ads || []);
       AA.offset = AA.ads.length;
+      if (!more){ var amc=$('aa-allmode'); if(amc) amc.checked = AA.allMode; var sz=$('aa-selzone'); if(sz) sz.classList.toggle('aa-dim', AA.allMode); }
       AA.renderList();
     } catch(e){ AA.listError('Não rolou carregar os anúncios. ('+esc(e.message)+')'); }
     finally { $('aa-load').disabled = false; }
@@ -275,9 +279,14 @@
     if (!$('aa-loadmore').classList.contains('aa-hidden')) $('aa-loadmore').textContent = 'Carregar mais ('+(AA.total-AA.ads.length)+' restantes)';
     AA.updateCount();
   };
-  window.aaToggleItem = function(id, on){ if(on) AA.sel[id]=1; else delete AA.sel[id]; AA.updateCount(); };
-  window.aaSelectPage = function(on){ AA.ads.forEach(function(a){ if(on) AA.sel[a.item_id]=1; else delete AA.sel[a.item_id]; }); AA.renderList(); };
+  window.aaToggleItem = function(id, on){ if(on) AA.sel[id]=1; else delete AA.sel[id]; AA.updateCount(); AA.saveSel(); };
+  window.aaSelectPage = function(on){ AA.ads.forEach(function(a){ if(on) AA.sel[a.item_id]=1; else delete AA.sel[a.item_id]; }); AA.renderList(); AA.saveSel(); };
   AA.updateCount = function(){ var n = Object.keys(AA.sel).length; $('aa-selcount').textContent = n+' selecionado'+(n===1?'':'s'); };
+  // Persistencia da SELECAO (rascunho de intencao) em localStorage por advertiser. O estado REAL
+  // (anuncio acompanhado = anuncio numa faixa) e o proprio ML (in_automation/automation_band do backend).
+  AA.selKey = function(){ return 'mf_aa_sel_' + (AA.advertiserId || 'x'); };
+  AA.saveSel = function(){ try{ localStorage.setItem(AA.selKey(), JSON.stringify({ all: AA.allMode, ids: Object.keys(AA.sel) })); }catch(e){} };
+  AA.loadSel = function(){ try{ var d = JSON.parse(localStorage.getItem(AA.selKey()) || 'null'); if(d){ AA.allMode = !!d.all; (d.ids||[]).forEach(function(id){ AA.sel[id] = 1; }); } }catch(e){} };
 
   // ---------- 2+3) plano ----------
   window.aaGeneratePlan = async function(){
@@ -311,6 +320,7 @@
 
   AA.render = function(d){
     var s = d.summary || {};
+    AA._lastPlan = d;
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou
     var plan = d.plan || {};
     var movesNow = Object.keys(plan).reduce(function(t,k){ return t + ((plan[k]||[]).length); }, 0);
@@ -328,6 +338,7 @@
     html += '</div></div>';
     html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation();
     out(html);
+    var bm = $('aa-bm'); if(bm){ try{ bm.setAttribute('href', AA.bookmarklet()); }catch(e){} }
   };
 
   AA.planCards = function(d){
@@ -352,7 +363,17 @@
     });
     var s = d.summary || {};
     if (s.toNeverActivate) html += '<div class="aa-hint" style="margin-top:10px;">'+s.toNeverActivate+' anúncio(s) foram movidos pra faixa que não recebe investimento (gasto sem retorno).</div>';
-    return html + '</div>';
+    html += '</div>';   // fecha o card "Plano pronto"
+    // card de aplicação de uma vez (atalho/bookmarklet que executa na sessão do ML)
+    html += '<div class="aa-card"><h2>⚡ Aplicar de uma vez</h2>'
+      + '<p class="aa-sub" style="margin:0 0 10px;">Em vez de fazer faixa por faixa, aplique tudo com o atalho Marketfácil no painel do Mercado Livre.</p>'
+      + '<button class="aa-btn aa-btn-primary" onclick="window.aaApplyAuto()">Copiar plano e abrir o Mercado Livre</button>'
+      + '<div class="aa-hint" id="aa-apply-hint" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:10px;"></div>'
+      + '<details class="aa-dev" style="margin-top:12px;"><summary>Ativar o atalho (só na 1ª vez)</summary>'
+      + '<p class="aa-hint" style="margin-top:8px;">Arraste o botão abaixo pra sua barra de favoritos. Depois, no painel do Mercado Livre, clique nele pra aplicar o plano que você copiou.</p>'
+      + '<a class="aa-btn aa-btn-ghost aa-btn-sm" id="aa-bm" href="#" style="text-decoration:none;display:inline-block;margin-top:6px;">⚡ Aplicar Marketfácil</a>'
+      + '</details></div>';
+    return html;
   };
 
   AA.guidedCreation = function(){
@@ -375,6 +396,34 @@
   AA.fallbackCopy = function(txt){ try{ var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }catch(e){} };
   window.aaOpenMl = function(cid){ window.open(cid ? (AA.ML_PANEL+'/'+encodeURIComponent(cid)+'/ads') : AA.ML_PANEL, '_blank', 'noopener'); };
 
+  // ---------- executor (bookmarklet) — roda na SESSAO do mercadolivre.com.br ----------
+  // O app nao pode chamar o ML direto (CORS); o atalho roda no painel do ML, le o csrf da sessao e
+  // executa a troca (editAdGroup). O plano vem do clipboard (copiado pelo app em aaApplyAuto).
+  AA.execFn = async function(){
+    var m = document.querySelector('meta[name="csrf-token"]');
+    if(!m){ alert('Abra o painel de Publicidade do Mercado Livre e clique no atalho de novo.'); return; }
+    var raw; try{ raw = await navigator.clipboard.readText(); }catch(e){ raw = prompt('Cole o plano do Marketfacil:') || ''; }
+    var d; try{ d = JSON.parse(raw); }catch(e){ alert('Marketfacil: gere o plano no app e clique "Copiar plano" primeiro.'); return; }
+    var P=d.a, S=String(d.s), SITE=d.site||'MLB', PLAN=d.p||{};
+    var H={'content-type':'application/json','x-csrf-token':m.content,'x-advertiser-id':String(P),'x-caller-id':S,'x-operator-id':S,'x-root-id':S,'x-operator-type':'user','x-ajax-site-id':SITE,'x-force-pads-version':'4','x-requested-with':'XMLHttpRequest'};
+    var cids=Object.keys(PLAN), ok=0, er=0;
+    for(var i=0;i<cids.length;i++){ var c=cids[i];
+      try{ var r=await fetch('https://pa.mercadolivre.com.br/pa/api/admin-growth-campaigns/graphql',{method:'POST',credentials:'include',headers:H,body:JSON.stringify({operationName:'editAdGroup',query:'',variables:{assignGroupToCampaignInput:{advertiserId:P,siteId:SITE,campaignId:Number(c),adGroups:(PLAN[c]||[]).map(String)}}})}); var j=await r.json(); if(j&&j.data&&j.data.ads&&j.data.ads.assignGroupToCampaign&&j.data.ads.assignGroupToCampaign.success){ ok+=(PLAN[c]||[]).length; } else { er++; } }catch(e){ er++; }
+    }
+    alert('Marketfacil: '+ok+' anuncio(s) organizado(s)'+(er?(' — '+er+' faixa(s) com erro'):'')+'. Volte ao app e clique Verificar.');
+  };
+  AA.bookmarklet = function(){ return 'javascript:(' + AA.execFn.toString() + ')()'; };
+
+  // copia o plano (advertiser + seller + plano opaco) pro clipboard e abre o painel do ML
+  window.aaApplyAuto = function(){
+    var d = AA._lastPlan;
+    if(!d || !d.plan || !Object.keys(d.plan).length){ return; }
+    var payload = JSON.stringify({ a: d.advertiser_id, s: d.seller_id, site: d.site_id||'MLB', p: d.plan });
+    window.aaCopyText(payload);
+    window.open(AA.ML_PANEL, '_blank', 'noopener');
+    var hint = $('aa-apply-hint'); if(hint){ hint.textContent = '✓ Plano copiado! No Mercado Livre (aba que abriu), clique no atalho "Aplicar Marketfácil". Depois volte e clique Verificar.'; hint.style.display='block'; }
+  };
+
   // ---------- demo ----------
   AA.demoAds = function(off){
     var base = [
@@ -389,7 +438,7 @@
   };
   AA.demoPlan = function(tacos, items){
     var n = items ? items.length : 9;
-    return { advertiser_id:0, site_id:'MLB', bands_setup_ok:true, selected_count: items?items.length:null,
+    return { advertiser_id:0, seller_id:0, site_id:'MLB', bands_setup_ok:true, selected_count: items?items.length:null,
       band_campaign_ids:{ B1:1001, B2:1002, B3:1003, B4:1004, NA:1005 }, ad_groups_evaluated:n,
       plan:{ '1001':['111','112'], '1003':['221'] }, summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, moves:3, toNeverActivate:1 } };
   };
