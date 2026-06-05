@@ -202,8 +202,11 @@
 
   AA.renderBands = function(d){
     var bands = d.bands || [], allOk = d.all_ok;
+    var bAlerts = (d.summary && d.summary.budget_alerts) || 0;
     var head = allOk
-      ? '<div class="aa-ok">✓ Suas 5 faixas estão configuradas certinho. Pode seguir.</div>'
+      ? (bAlerts > 0
+          ? '<div class="aa-ok" style="background:#fef3c7;border-color:#fde68a;color:#b45309;">Config das 5 faixas OK — mas '+bAlerts+' faixa(s) estão perdendo impressões por orçamento. Veja a sugestão abaixo. 👇</div>'
+          : '<div class="aa-ok">✓ Suas 5 faixas estão configuradas certinho. Pode seguir.</div>')
       : '<p class="aa-sub" style="margin:0 0 12px;">Crie ou ajuste estas campanhas no painel do Mercado Livre com <b>exatamente</b> o nome e o ROAS objetivo indicados. Depois o Marketfácil organiza seus anúncios nelas.</p>';
     var rows = bands.map(function(b){
       var band = AA.BANDS[b.key] || { color:'#64748b' };
@@ -220,7 +223,14 @@
         var msgs = (b.issues||[]).map(function(i){ return AA.ISSUE_MSG[i] || i; });
         sub += (sub ? ' — ' : '') + '⚠ ' + esc(msgs.join('; '));
       }
-      var actions = b.ok ? '' : ('<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>');
+      var bs = b.budget_suggestion, actions;
+      if (bs && bs.needs_more){
+        if (b.ok) rowcls = ' aa-row-warn';   // config certa, mas o orçamento está limitando -> destaca
+        sub += '<br>💸 Perde ~'+bs.lost_pct+'% das impressões por orçamento. Sugiro <b>R$ '+bs.suggested_budget+'/dia</b> (hoje R$ '+bs.budget+').';
+        actions = '<div class="aa-band-actions"><button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaCopyText(\''+bs.suggested_budget+'\',this)">copiar R$ '+bs.suggested_budget+'</button></div>';
+      } else {
+        actions = b.ok ? '' : ('<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>');
+      }
       return '<div class="aa-band'+rowcls+'"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
         + '<div><div class="aa-band-name">'+esc(b.label)+' '+badge+'</div><div class="aa-band-count">'+sub+'</div></div></div>'
         + actions + '</div>';
@@ -320,8 +330,8 @@
 
   AA.render = function(d){
     var s = d.summary || {};
-    // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou
-    var plan = d.plan || {};
+    // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou (conta MLBs)
+    var plan = d.plan_items || d.plan || {};
     var movesNow = Object.keys(plan).reduce(function(t,k){ return t + ((plan[k]||[]).length); }, 0);
     var banner = '';
     if (AA._verifying && AA._prevMoves != null && d.bands_setup_ok){
@@ -347,16 +357,18 @@
     if (!ids.length){ return html + '<div class="aa-ok">Tudo já está no lugar certo — nada pra reorganizar neste ciclo.</div></div>'; }
     html += '<p class="aa-sub" style="margin:0 0 6px;">Pra cada faixa abaixo:</p>'
       + '<ol class="aa-steps" style="margin:0 0 14px;">'
-      + '<li><b>Copiar IDs</b> dos anúncios da faixa.</li>'
+      + '<li><b>Copiar MLBs</b> dos anúncios da faixa.</li>'
       + '<li><b>Abrir no ML →</b> abre a tela de adicionar anúncios daquela campanha.</li>'
       + '<li>Cole no campo de busca, <b>marque todos</b> e clique <b>Adicionar</b>.</li>'
       + '<li>Volte aqui e clique <b>Verificar de novo</b> — o Marketfácil confirma o que entrou.</li></ol>';
+    var planItems = d.plan_items || {};
     ids.forEach(function(cid){
-      var key = inv[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' }, list = plan[cid] || [];
+      var key = inv[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
+      var mlbs = planItems[cid] || plan[cid] || [];   // MLBs (item_ids) — o painel do ML filtra por MLB
       html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-        + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+list.length+' anúncio(s)</div></div></div>'
+        + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
         + '<div class="aa-band-actions">'
-        + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+list.join(',')+'\',this)">Copiar IDs</button>'
+        + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+mlbs.join(',')+'\',this)">Copiar MLBs</button>'
         + '<button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
     });
     var s = d.summary || {};
@@ -401,16 +413,18 @@
     var n = items ? items.length : 9;
     return { advertiser_id:0, seller_id:0, site_id:'MLB', bands_setup_ok:true, selected_count: items?items.length:null,
       band_campaign_ids:{ B1:1001, B2:1002, B3:1003, B4:1004, NA:1005 }, ad_groups_evaluated:n,
-      plan:{ '1001':['111','112'], '1003':['221'] }, summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, moves:3, toNeverActivate:1 } };
+      plan:{ '1001':['111','112'], '1003':['221'] },
+      plan_items:{ '1001':['MLB1111111111','MLB2222222222'], '1003':['MLB3333333333'] },
+      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, moves:3, toNeverActivate:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[
-      { key:'B1', label:'Econômico',   exists:true,  ok:true,  status:'paused', roas_target:33.33, roas_target_expected:33.33, issues:[] },
+      { key:'B1', label:'Econômico',   exists:true,  ok:true,  status:'active', roas_target:33.33, roas_target_expected:33.33, issues:[], budget_suggestion:{ has_ads:true, lost_pct:35, budget:6, suggested_budget:10, needs_more:true } },
       { key:'B2', label:'Equilibrado', exists:true,  ok:false, status:'paused', roas_target:15,    roas_target_expected:16.67, issues:['roas_target'] },
       { key:'B3', label:'Acelerado',   exists:true,  ok:true,  status:'paused', roas_target:11.11, roas_target_expected:11.11, issues:[] },
       { key:'B4', label:'Máximo',      exists:true,  ok:true,  status:'paused', roas_target:8.33,  roas_target_expected:8.33,  issues:[] },
       { key:'NA', label:'Nunca ativar',exists:false, ok:false, issues:['missing'] }
-    ], summary:{ total_expected:5, ok_count:3, missing:1, misconfigured:1 } };
+    ], summary:{ total_expected:5, ok_count:3, missing:1, misconfigured:1, budget_alerts:1 } };
   };
 
   // init: ao abrir, verifica a configuração das faixas
