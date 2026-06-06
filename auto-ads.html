@@ -160,7 +160,7 @@
     BAND_NAME_BY_KEY: { B1:'[MARKETFACIL AUTO] Econômico', B2:'[MARKETFACIL AUTO] Equilibrado', B3:'[MARKETFACIL AUTO] Acelerado', B4:'[MARKETFACIL AUTO] Máximo', NA:'[MARKETFACIL AUTO] Nunca ativar' },
     BAND_TARGETS: { B1:{acos:3,roas:'33,33'}, B2:{acos:6,roas:'16,67'}, B3:{acos:9,roas:'11,11'}, B4:{acos:12,roas:'8,33'}, NA:{} },
     STATUS: { active:['Ativo','aa-b-active'], paused:['Pausado','aa-b-paused'], idle:['Sem campanha','aa-b-idle'], hold:['Em espera','aa-b-hold'] },
-    ads: [], sel: {}, offset: 0, total: 0, allMode: false, _prevMoves: null, _verifying: false
+    ads: [], sel: {}, offset: 0, total: 0, allMode: true, _prevMoves: null, _verifying: false
   };
   AA.BAND_NAMES = Object.keys(AA.BAND_NAME_BY_KEY).map(function(k){ return AA.BAND_NAME_BY_KEY[k]; }); // deriva (evita dessincronizar)
   var DEMO = /[?&]demo=1/.test(location.search);
@@ -345,6 +345,17 @@
     html += '<div class="aa-stat"><div class="v">'+ (s.target!=null? (s.target+'%') : '—') +'</div><div class="k">sua meta</div></div>';
     html += '<div class="aa-stat"><div class="v">'+ (d.ad_groups_evaluated!=null? d.ad_groups_evaluated : '—') +'</div><div class="k">anúncios no plano</div></div>';
     html += '</div></div>';
+    // macro: faturamento × investimento nos últimos 30d vs os 30d anteriores (sinal de eficiência, exibível)
+    if (s.revGrowthPct != null || s.costGrowthPct != null){
+      var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
+      var healthy = (s.revGrowthPct||0) >= (s.costGrowthPct||0);
+      var col = healthy ? 'var(--green)' : 'var(--amber)';
+      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>📈 Faturamento × investimento <span class="aa-label" style="font-weight:600;">(últimos 30 dias vs anteriores)</span></h2>'
+        + '<div class="aa-stat-grid">'
+        + '<div class="aa-stat"><div class="v" style="color:'+col+'">'+fg(s.revGrowthPct)+'</div><div class="k">faturamento por ads</div></div>'
+        + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
+        + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
+    }
     html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation();
     out(html);
   };
@@ -415,7 +426,8 @@
       band_campaign_ids:{ B1:1001, B2:1002, B3:1003, B4:1004, NA:1005 }, ad_groups_evaluated:n,
       plan:{ '1001':['111','112'], '1003':['221'] },
       plan_items:{ '1001':['MLB1111111111','MLB2222222222'], '1003':['MLB3333333333'] },
-      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, moves:3, toNeverActivate:1 } };
+      coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
+      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[
@@ -427,6 +439,10 @@
     ], summary:{ total_expected:5, ok_count:3, missing:1, misconfigured:1, budget_alerts:1 } };
   };
 
+  // onboarding: por padrão "Automatizar todos" vem marcado (no servidor o hold/sem estoque fica de fora).
+  // loadSel() depois restaura o rascunho do usuário recorrente quando ele carrega a lista.
+  AA.applyAllModeUI = function(){ var amc=$('aa-allmode'); if(amc) amc.checked = AA.allMode; var sz=$('aa-selzone'); if(sz) sz.classList.toggle('aa-dim', AA.allMode); };
+  try { AA.applyAllModeUI(); } catch(e){}
   // init: ao abrir, verifica a configuração das faixas
   try { window.aaCheckBands(); } catch(e){}
 })();

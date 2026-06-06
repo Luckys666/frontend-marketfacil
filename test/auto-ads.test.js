@@ -61,6 +61,7 @@ let pass = 0, fail = 0;
 const check = (label, cond) => { cond ? pass++ : fail++; console.log((cond ? 'ok  ' : 'FAIL') + ' - ' + label); };
 
 const AA = sandbox.AA;
+const defaultAllMode = AA ? AA.allMode : undefined;   // captura o default ANTES dos testes de persistencia mutarem
 check('script carrega/inicializa sem lancar', !loadErr && !!AA);
 if (!AA) { console.log('\n' + pass + ' passaram, ' + (fail || 1) + ' falharam'); process.exit(1); }
 
@@ -99,6 +100,15 @@ check('loadSel restaura allMode=true', AA.allMode === true);
 AA.advertiserId = 111; AA.sel = { A: 1 }; AA.allMode = false; AA.saveSel();
 AA.advertiserId = 222; AA.sel = {}; AA.allMode = false; AA.loadSel();
 check('selecao isolada por advertiser (222 nao ve a do 111)', !AA.sel.A);
+
+// v2: onboarding (allMode ligado por padrao) + macro 30x30 no plano
+check('allMode vem LIGADO por padrao (onboarding: automatizar todos)', defaultAllMode === true);
+check('AA.applyAllModeUI existe', typeof AA.applyAllModeUI === 'function');
+const dp = AA.demoPlan(3, null);
+check('demoPlan expoe costGrowthPct/revGrowthPct (macro 30x30)',
+  dp.summary && typeof dp.summary.revGrowthPct === 'number' && typeof dp.summary.costGrowthPct === 'number');
+let renderOk = true; try { AA.render(dp); } catch (e) { renderOk = false; }
+check('AA.render nao lanca com plano demo (inclui card macro 30x30)', renderOk);
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
