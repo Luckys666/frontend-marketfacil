@@ -74,9 +74,14 @@ function build() {
   // remove o <script> do HTML; o resto do body vira o conteudo do #aa-app
   const htmlContent = bodyContent.replace(/<script>[\s\S]*?<\/script>/i, '').trim();
 
+  // src="data:," dispara onerror SEM request de rede (src="x" gerava um 404 no host a cada render).
+  // No RE-render do element o boot ja rodou (__aaBootDone) -> chama AA.rehydrate() pra reidratar o
+  // DOM novo (sem isso o monitor ficava no skeleton eterno e o checkbox dessincronizava).
   const bootstrap =
-    '<img alt="" src="x" style="display:none;width:0;height:0" onerror="' +
-    "(function(img){var t=document.getElementById('aa-bootstrap');if(!t){return}if(window.__aaBootDone){img.remove();return}window.__aaBootDone=true;var s=document.createElement('script');s.textContent=t.textContent;document.head.appendChild(s);img.remove();})(this)" +
+    '<img alt="" src="data:," style="display:none;width:0;height:0" onerror="' +
+    "(function(img){var t=document.getElementById('aa-bootstrap');if(!t){return}" +
+    "if(window.__aaBootDone){try{window.AA&&window.AA.rehydrate&&window.AA.rehydrate()}catch(e){}img.remove();return}" +
+    "window.__aaBootDone=true;var s=document.createElement('script');s.textContent=t.textContent;document.head.appendChild(s);img.remove();})(this)" +
     '">';
 
   const result =

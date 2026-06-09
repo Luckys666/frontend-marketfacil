@@ -6,9 +6,12 @@
 <title>Ads Automatizado — Marketfácil</title>
 <!--
   PÁGINA do Ads Automatizado — testável standalone e preparada p/ a version-test do Bubble.
-  Padrão Bubble-ready: tudo em window.AA / window.aa*, guard de init, token via getAccessToken2 (fallback manual).
-  O plano vem OPACO do servidor (só IDs/destino). O cliente NÃO contém nenhuma regra/valor interno — só nomes amigáveis de faixa.
-  Fluxo: 1) escolher anúncios (ou automatizar todos)  2) meta de TACOS  3) gerar plano.
+  Padrão Bubble-ready: tudo em window.AA / window.aa*, guard de init (com rehydrate p/ re-render
+  do element), token via getAccessToken2 (fallback manual).
+  O plano vem OPACO do servidor (só IDs/destino). O cliente NÃO contém nenhuma regra/valor interno
+  — só nomes amigáveis de faixa e os ROAS/ACOS alvo (liberados pra exibição).
+  Fluxo: 1) escolher anúncios (ou automatizar todos)  2) meta de TACOS  3) gerar plano ->
+  copiar códigos -> colar na busca do painel ML (Enter) -> Adicionar -> Verificar.
   Preview sem token: ?demo=1
 -->
 <style>
@@ -25,19 +28,29 @@
   .aa-sub{color:var(--muted);font-size:.92rem;margin:0 0 20px;}
   .aa-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;}
   .aa-card h2{font-size:1rem;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
-  .aa-step{display:inline-flex;width:22px;height:22px;background:var(--blue);color:#fff;border-radius:50%;align-items:center;justify-content:center;font-size:.78rem;font-weight:800;}
+  .aa-card h2 svg{flex:none;color:var(--blue);}
+  .aa-step{display:inline-flex;width:22px;height:22px;background:var(--blue);color:#fff;border-radius:50%;align-items:center;justify-content:center;font-size:.78rem;font-weight:800;flex:none;}
+  .aa-step.aa-step-ok{background:var(--green);}
+  .aa-step.aa-step-warn{background:var(--amber);}
   .aa-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .aa-label{font-size:.85rem;color:var(--muted);font-weight:600;}
-  .aa-tacos-input{width:90px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:1.05rem;font-weight:700;font-family:inherit;text-align:center;}
+  .aa-tacos-input{width:90px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:1.05rem;font-weight:700;font-family:inherit;text-align:center;accent-color:var(--blue);}
   .aa-tacos-input:focus{outline:none;border-color:var(--blue);}
+  .aa-tacos-input.aa-invalid{border-color:var(--red);}
+  .aa-tacos-err{font-size:.8rem;color:var(--red);font-weight:600;}
   .aa-toggle{display:flex;align-items:center;gap:8px;font-size:.9rem;cursor:pointer;user-select:none;}
+  input[type=checkbox]{accent-color:var(--blue);}
   .aa-btn{padding:11px 18px;border:none;border-radius:8px;font-size:.92rem;font-weight:700;font-family:inherit;cursor:pointer;transition:.15s;}
+  .aa-btn:active{transform:scale(.97);}
+  .aa-btn:disabled{opacity:.55;cursor:not-allowed;transform:none;}
+  .aa-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
+  input[type=checkbox]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
   .aa-btn-primary{background:var(--blue);color:#fff;}
-  .aa-btn-primary:hover{background:var(--blue-d);}
-  .aa-btn-primary:disabled{background:#9db8e8;cursor:not-allowed;}
+  .aa-btn-primary:hover:not(:disabled){background:var(--blue-d);}
   .aa-btn-ghost{background:#eef2f8;color:var(--ink);}
-  .aa-btn-ghost:hover{background:#e2e8f3;}
+  .aa-btn-ghost:hover:not(:disabled){background:#e2e8f3;}
   .aa-btn-sm{padding:7px 12px;font-size:.8rem;}
+  .aa-copy-btn{min-width:118px;}
   .aa-hint{font-size:.8rem;color:var(--muted);margin-top:8px;}
   .aa-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
   .aa-stat{background:#f9fafb;border:1px solid var(--line);border-radius:10px;padding:14px;}
@@ -53,7 +66,7 @@
   .aa-item input{width:17px;height:17px;cursor:pointer;flex:none;}
   .aa-item-main{min-width:0;flex:1;}
   .aa-item-title{font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .aa-item-meta{font-size:.74rem;color:var(--muted);display:flex;gap:8px;align-items:center;margin-top:2px;}
+  .aa-item-meta{font-size:.74rem;color:var(--muted);display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap;}
   .aa-badge{font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.02em;}
   .aa-b-active{background:#dcfce7;color:#15803d;} .aa-b-paused{background:#f1f5f9;color:#475569;}
   .aa-b-idle{background:#dbeafe;color:#1d4ed8;} .aa-b-hold{background:#fef3c7;color:#b45309;}
@@ -61,24 +74,29 @@
   .aa-b-ok{background:#dcfce7;color:#15803d;} .aa-b-warn{background:#fef3c7;color:#b45309;} .aa-b-bad{background:#fee2e2;color:#b91c1c;}
   .aa-band.aa-row-warn{border-color:#fde68a;background:#fffbeb;} .aa-band.aa-row-bad{border-color:#fecaca;background:#fef2f2;}
   .aa-auto-pill{background:#eef2ff;color:#4338ca;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;}
-  .aa-band{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff;}
-  .aa-band-info{display:flex;align-items:center;gap:12px;min-width:0;}
+  .aa-band{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff;flex-wrap:wrap;}
+  .aa-band-info{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 260px;}
   .aa-dot{width:10px;height:10px;border-radius:50%;flex:none;}
   .aa-band-name{font-weight:700;font-size:.95rem;}
   .aa-band-count{font-size:.8rem;color:var(--muted);}
-  .aa-band-actions{display:flex;gap:8px;flex:none;}
+  .aa-band-actions{display:flex;gap:8px;flex:none;flex-wrap:wrap;}
   .aa-steps{counter-reset:s;list-style:none;padding:0;margin:0;}
   .aa-steps li{counter-increment:s;position:relative;padding:10px 0 10px 38px;border-bottom:1px dashed var(--line);font-size:.92rem;}
   .aa-steps li:last-child{border-bottom:none;}
   .aa-steps li::before{content:counter(s);position:absolute;left:0;top:8px;width:26px;height:26px;background:var(--blue);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;}
   .aa-names{margin:10px 0 0;padding:0;list-style:none;}
-  .aa-names li{display:flex;align-items:center;gap:8px;padding:6px 0;}
+  .aa-names li{display:flex;align-items:center;gap:8px;padding:6px 0;flex-wrap:wrap;}
   .aa-name-pill{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;background:#f1f5f9;border:1px solid var(--line);border-radius:6px;padding:4px 8px;}
   .aa-loading{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.9rem;padding:8px 0;}
   .aa-spin{width:18px;height:18px;border:2.5px solid #d6e0f5;border-top-color:var(--blue);border-radius:50%;animation:aaspin .8s linear infinite;}
   @keyframes aaspin{to{transform:rotate(360deg)}}
+  .aa-skel{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;background:#fff;display:flex;align-items:center;gap:12px;}
+  .aa-skel-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#eef1f6 25%,#f7f9fc 50%,#eef1f6 75%);background-size:200% 100%;animation:aashimmer 1.1s linear infinite;}
+  .aa-skel-dot{width:10px;height:10px;border-radius:50%;background:#e2e8f0;flex:none;}
+  @keyframes aashimmer{to{background-position:-200% 0}}
   .aa-err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:12px;font-size:.88rem;}
   .aa-ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:12px;font-size:.88rem;}
+  .aa-warn{background:#fffbeb;border:1px solid #fde68a;color:#b45309;border-radius:8px;padding:12px;font-size:.88rem;}
   .aa-dev{margin-top:18px;border:1px dashed #cbd5e1;border-radius:8px;padding:12px;background:#fbfcfe;}
   .aa-dev summary{cursor:pointer;font-size:.82rem;color:var(--muted);font-weight:600;}
   .aa-dev textarea{width:100%;margin-top:8px;min-height:54px;border:1px solid var(--line);border-radius:6px;padding:8px;font-family:ui-monospace,monospace;font-size:.78rem;}
@@ -93,8 +111,8 @@
 
   <!-- 0) Configuração das faixas (monitor) -->
   <div class="aa-card" id="aa-bands-card">
-    <h2><span class="aa-step">✓</span> Suas faixas de investimento</h2>
-    <div id="aa-bands"><div class="aa-loading"><div class="aa-spin"></div>Verificando a configuração das suas faixas…</div></div>
+    <h2><span class="aa-step" id="aa-bands-step">…</span> Suas faixas de investimento</h2>
+    <div id="aa-bands"></div>
   </div>
 
   <!-- 1) Seleção de anúncios -->
@@ -109,6 +127,7 @@
         <label class="aa-toggle"><input id="aa-selpage" type="checkbox" onchange="window.aaSelectPage(this.checked)"> Selecionar os visíveis</label>
         <span class="aa-selcount" id="aa-selcount">0 selecionados</span>
       </div>
+      <div id="aa-list-err"></div>
       <div id="aa-list"></div>
       <div class="aa-row" style="margin-top:10px;">
         <button id="aa-load" class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaLoadAds(false)">Carregar meus anúncios</button>
@@ -122,8 +141,9 @@
     <h2><span class="aa-step">2</span> Sua meta</h2>
     <div class="aa-row">
       <span class="aa-label">Meta de TACOS</span>
-      <input id="aa-tacos" class="aa-tacos-input" type="number" min="1" max="60" step="0.5" value="3" inputmode="decimal">
+      <input id="aa-tacos" class="aa-tacos-input" type="number" min="1" max="60" step="0.5" value="3" inputmode="decimal" oninput="window.aaTacosChanged()">
       <span class="aa-label">%</span>
+      <span class="aa-tacos-err aa-hidden" id="aa-tacos-err">use um valor entre 1 e 60</span>
     </div>
     <div class="aa-hint">De cada R$100 de faturamento, quanto pode ir pra anúncios. Quanto maior, mais o Marketfácil acelera as vendas.</div>
   </div>
@@ -138,7 +158,7 @@
   <div id="aa-out"></div>
 
   <details class="aa-dev" id="aa-dev">
-    <summary>🔧 Modo teste (sem login do app)</summary>
+    <summary>Modo teste (sem login do app)</summary>
     <p class="aa-hint" style="margin-top:8px;">Só pra testar fora do app. Cole um token de acesso do ML. Em produção isso fica oculto (o app fornece o token).</p>
     <textarea id="aa-token" placeholder="Bearer token (opcional, só teste)"></textarea>
   </details>
@@ -147,20 +167,28 @@
 <script>
 (function(){
   'use strict';
-  if (window.__aaInit) return;
+  // re-render do HTML element no Bubble: o bootstrap roda de novo — não re-inicializa, REIDRATA
+  // (sem isso o DOM novo ficava cru: spinner eterno no monitor + checkbox dessincronizado)
+  if (window.__aaInit) { try { if (window.AA && window.AA.rehydrate) window.AA.rehydrate(); } catch(e){} return; }
   window.__aaInit = true;
 
   var AA = window.AA = {
     PROXY: 'https://mlb-proxy-fdb71524fd60.herokuapp.com',
     TOKEN_WF: 'https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2',
-    ML_PANEL: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/sales/campaigns',
+    // Painel ML (validado 09/06/26): a tela "Adicionar anúncios" exige ?fe-rollout-version=v2 —
+    // sem o param o ML redireciona pro hub geral e o usuário se perde.
+    ML_ADD_ADS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/sales/campaigns/{cid}/ads?fe-rollout-version=v2',
+    ML_CAMPAIGNS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns',
+    ML_CAMPAIGN_DASH: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns/{cid}/dashboard',
     BANDS: { B1:{label:'Econômico',color:'#16a34a'}, B2:{label:'Equilibrado',color:'#0066ff'},
              B3:{label:'Acelerado',color:'#f59e0b'}, B4:{label:'Máximo',color:'#ef4444'},
              NA:{label:'Nunca ativar',color:'#64748b'} },
     BAND_NAME_BY_KEY: { B1:'[MARKETFACIL AUTO] Econômico', B2:'[MARKETFACIL AUTO] Equilibrado', B3:'[MARKETFACIL AUTO] Acelerado', B4:'[MARKETFACIL AUTO] Máximo', NA:'[MARKETFACIL AUTO] Nunca ativar' },
     BAND_TARGETS: { B1:{acos:3,roas:'33,33'}, B2:{acos:6,roas:'16,67'}, B3:{acos:9,roas:'11,11'}, B4:{acos:12,roas:'8,33'}, NA:{} },
-    STATUS: { active:['Ativo','aa-b-active'], paused:['Pausado','aa-b-paused'], idle:['Sem campanha','aa-b-idle'], hold:['Em espera','aa-b-hold'] },
-    ads: [], sel: {}, offset: 0, total: 0, allMode: true, _prevMoves: null, _verifying: false
+    STATUS: { active:['Ativo','aa-b-active'], paused:['Pausado','aa-b-paused'], idle:['Sem campanha','aa-b-idle'],
+              hold:['Em espera','aa-b-hold'], delegated:['Delegado','aa-b-paused'], revoked:['Revogado','aa-b-paused'] },
+    ads: [], sel: {}, offset: 0, total: 0, allMode: true,
+    _prevMoves: null, _verifying: false, _busy: false, _loading: false, _lastData: null
   };
   AA.BAND_NAMES = Object.keys(AA.BAND_NAME_BY_KEY).map(function(k){ return AA.BAND_NAME_BY_KEY[k]; }); // deriva (evita dessincronizar)
   var DEMO = /[?&]demo=1/.test(location.search);
@@ -168,7 +196,17 @@
   var $ = function(id){ return document.getElementById(id); };
   function out(html){ $('aa-out').innerHTML = html; }
   function loading(msg){ out('<div class="aa-card"><div class="aa-loading"><div class="aa-spin"></div>'+(msg||'Carregando…')+'</div></div>'); }
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  // escapa tb aspas simples: dados do backend entram em atributos onclick='...'
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function skel(n){ var h=''; for(var i=0;i<(n||3);i++){ h += '<div class="aa-skel"><span class="aa-skel-dot"></span><div style="flex:1"><div class="aa-skel-bar" style="width:'+(55+((i*17)%30))+'%"></div><div class="aa-skel-bar" style="width:30%;margin-top:8px"></div></div></div>'; } return h; }
+  // ícones SVG inline (Light Trading; emojis variavam por plataforma e destoavam)
+  var ICONS = {
+    chart:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg>',
+    trend:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-8"/><path d="M14 7h6v6"/></svg>',
+    check:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
+    tools:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-2.4 2.6-2.6z"/></svg>'
+  };
+  function icon(name){ return ICONS[name] || ''; }
 
   AA.getToken = async function(){
     var manual = ($('aa-token') && $('aa-token').value || '').trim();
@@ -180,22 +218,52 @@
     return null;
   };
 
+  // fetch padronizado: nunca lança, parse de JSON tolerante (HTML de 503 não vira "Unexpected token <")
+  AA.api = async function(path, opts){
+    var token = await AA.getToken();
+    if (!token) return { ok:false, status:0, data:null, authFail:true };
+    var o = opts || {}; o.headers = o.headers || {};
+    o.headers['Authorization'] = 'Bearer ' + token;
+    var r;
+    try { r = await fetch(AA.PROXY + path, o); }
+    catch(e){ return { ok:false, status:0, data:null, netFail:true }; }
+    var data = null;
+    try { var txt = await r.text(); data = txt ? JSON.parse(txt) : null; } catch(e){}
+    return { ok: r.ok, status: r.status, data: data };
+  };
+  // mensagem amigável (pt-BR, sem jargão) p/ qualquer falha de chamada
+  AA.errMsg = function(res){
+    if (!res) return 'Algo deu errado. Tente de novo em instantes.';
+    if (res.authFail || res.status === 401 || (res.data && res.data.code === 'ml_auth'))
+      return 'Sua conexão com o Mercado Livre precisa ser renovada. Recarregue a página do app e tente de novo.';
+    if (res.netFail) return 'Não consegui falar com o servidor agora. Confira sua internet e tente de novo.';
+    if (res.data && res.data.error) return res.data.error;   // o backend já responde em pt-BR amigável
+    return 'Algo deu errado (HTTP ' + res.status + '). Tente de novo em instantes.';
+  };
+
   // ---------- 0) monitor de configuração das faixas ----------
+  AA.setBandsStep = function(state){
+    var el = $('aa-bands-step'); if (!el) return;
+    el.classList.remove('aa-step-ok','aa-step-warn');
+    if (state === 'ok'){ el.classList.add('aa-step-ok'); el.textContent = '✓'; }
+    else if (state === 'warn'){ el.classList.add('aa-step-warn'); el.textContent = '!'; }
+    else el.textContent = '…';
+  };
   window.aaCheckBands = async function(){
     var el = $('aa-bands'); if(!el) return;
-    el.innerHTML = '<div class="aa-loading"><div class="aa-spin"></div>Verificando a configuração das suas faixas…</div>';
+    AA.setBandsStep('');
+    el.innerHTML = skel(3);
+    var fail = function(msg){ el.innerHTML = '<div class="aa-err">'+esc(msg)+' <button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCheckBands()">Tentar de novo</button></div>'; AA.setBandsStep('warn'); };
     try {
       var data;
       if (DEMO){ data = AA.demoBands(); }
       else {
-        var token = await AA.getToken();
-        if (!token){ el.innerHTML = '<div class="aa-err">Não consegui acessar sua conta. Recarregue o app e tente de novo.</div>'; return; }
-        var r = await fetch(AA.PROXY+'/api/auto-ads/bands-health', { headers:{ 'Authorization':'Bearer '+token } });
-        data = await r.json();
-        if (!r.ok) throw new Error((data && data.error) || ('HTTP '+r.status));
+        var res = await AA.api('/api/auto-ads/bands-health');
+        if (!res.ok) return fail(AA.errMsg(res));
+        data = res.data;
       }
       AA.renderBands(data);
-    } catch(e){ el.innerHTML = '<div class="aa-err">Não rolou verificar suas faixas agora. ('+esc(e.message)+') <button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCheckBands()">Tentar de novo</button></div>'; }
+    } catch(e){ fail('Não deu pra verificar suas faixas agora.'); }
   };
 
   AA.ISSUE_MSG = { roas_target:'ajuste o ROAS objetivo', strategy:'use a estratégia "Maximizar retorno (ROAS)"', na_should_be_paused:'precisa ficar pausada' };
@@ -203,11 +271,12 @@
   AA.renderBands = function(d){
     var bands = d.bands || [], allOk = d.all_ok;
     var bAlerts = (d.summary && d.summary.budget_alerts) || 0;
+    AA.setBandsStep(allOk && !bAlerts ? 'ok' : 'warn');
     var head = allOk
       ? (bAlerts > 0
-          ? '<div class="aa-ok" style="background:#fef3c7;border-color:#fde68a;color:#b45309;">Config das 5 faixas OK — mas '+bAlerts+' faixa(s) estão perdendo impressões por orçamento. Veja a sugestão abaixo. 👇</div>'
+          ? '<div class="aa-warn">Config das 5 faixas OK — mas '+bAlerts+' faixa(s) estão perdendo impressões por orçamento. Veja a sugestão abaixo.</div>'
           : '<div class="aa-ok">✓ Suas 5 faixas estão configuradas certinho. Pode seguir.</div>')
-      : '<p class="aa-sub" style="margin:0 0 12px;">Crie ou ajuste estas campanhas no painel do Mercado Livre com <b>exatamente</b> o nome e o ROAS objetivo indicados. Depois o Marketfácil organiza seus anúncios nelas.</p>';
+      : '<p class="aa-sub" style="margin:0 0 12px;">Crie ou ajuste estas campanhas no painel do Mercado Livre com <b>exatamente</b> o nome e o ROAS objetivo indicados. Depois volte e clique <b>Verificar de novo</b>.</p>';
     var rows = bands.map(function(b){
       var band = AA.BANDS[b.key] || { color:'#64748b' };
       var tgt = AA.BAND_TARGETS[b.key] || {};
@@ -226,10 +295,13 @@
       var bs = b.budget_suggestion, actions;
       if (bs && bs.needs_more){
         if (b.ok) rowcls = ' aa-row-warn';   // config certa, mas o orçamento está limitando -> destaca
-        sub += '<br>💸 Perde ~'+bs.lost_pct+'% das impressões por orçamento. Sugiro <b>R$ '+bs.suggested_budget+'/dia</b> (hoje R$ '+bs.budget+').';
-        actions = '<div class="aa-band-actions"><button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaCopyText(\''+bs.suggested_budget+'\',this)">copiar R$ '+bs.suggested_budget+'</button></div>';
+        sub += '<br>Perde ~'+bs.lost_pct+'% das impressões por orçamento. Sugiro <b>R$ '+bs.suggested_budget+'/dia</b> (hoje R$ '+bs.budget+').';
+        actions = '<div class="aa-band-actions">'
+          + '<button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar R$ '+bs.suggested_budget+'" onclick="window.aaCopyText(\''+bs.suggested_budget+'\',this)">copiar R$ '+bs.suggested_budget+'</button>'
+          + (b.campaign_id ? '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenCampaign(\''+esc(b.campaign_id)+'\')">Ver campanha →</button>' : '')
+          + '</div>';
       } else {
-        actions = b.ok ? '' : ('<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>');
+        actions = b.ok ? '' : ('<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar nome" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>');
       }
       return '<div class="aa-band'+rowcls+'"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
         + '<div><div class="aa-band-name">'+esc(b.label)+' '+badge+'</div><div class="aa-band-count">'+sub+'</div></div></div>'
@@ -243,21 +315,24 @@
   window.aaToggleAllMode = function(){
     AA.allMode = $('aa-allmode').checked;
     $('aa-selzone').classList.toggle('aa-dim', AA.allMode);
+    AA._prevMoves = null;   // mudou o input do plano -> a comparação do "Verificar" recomeça
     AA.saveSel();
   };
 
   window.aaLoadAds = async function(more){
-    if (!more){ AA.ads = []; AA.offset = 0; }
-    $('aa-load').textContent = 'Carregando…'; $('aa-load').disabled = true;
+    if (AA._loading) return;                 // clique duplo disparava fetches concorrentes (duplicava a lista)
+    AA._loading = true;
+    if (!more){ AA.ads = []; AA.offset = 0; $('aa-list').innerHTML = skel(4); $('aa-list-err').innerHTML = ''; }
+    var btn = more ? $('aa-loadmore') : $('aa-load');
+    var label = btn.textContent;
+    btn.textContent = 'Carregando…'; btn.disabled = true;
     try {
       var data;
       if (DEMO){ data = AA.demoAds(AA.offset); }
       else {
-        var token = await AA.getToken();
-        if (!token){ AA.listError('Não consegui acessar sua conta. Recarregue o app e tente de novo.'); return; }
-        var r = await fetch(AA.PROXY+'/api/auto-ads/ads?limit=50&offset='+AA.offset, { headers:{ 'Authorization':'Bearer '+token } });
-        data = await r.json();
-        if (!r.ok) throw new Error((data && data.error) || ('HTTP '+r.status));
+        var res = await AA.api('/api/auto-ads/ads?limit=50&offset='+AA.offset);
+        if (!res.ok){ AA.listError(AA.errMsg(res), more); return; }
+        data = res.data || {};
       }
       if (data.advertiser_id) AA.advertiserId = data.advertiser_id;
       if (!more) AA.loadSel();   // restaura o rascunho da selecao deste advertiser
@@ -266,16 +341,28 @@
       AA.offset = AA.ads.length;
       if (!more){ var amc=$('aa-allmode'); if(amc) amc.checked = AA.allMode; var sz=$('aa-selzone'); if(sz) sz.classList.toggle('aa-dim', AA.allMode); }
       AA.renderList();
-    } catch(e){ AA.listError('Não rolou carregar os anúncios. ('+esc(e.message)+')'); }
-    finally { $('aa-load').disabled = false; }
+    } catch(e){ AA.listError('Não deu pra carregar os anúncios agora. Tente de novo.', more); }
+    finally { AA._loading = false; btn.disabled = false; if (btn.textContent === 'Carregando…') btn.textContent = label; }
   };
-  AA.listError = function(msg){ $('aa-list').innerHTML = '<div class="aa-err" style="margin:8px 0;">'+esc(msg)+'</div>'; $('aa-load').textContent = 'Tentar de novo'; };
+  // erro no "carregar mais" NÃO apaga o que já está na tela — mostra o aviso acima da lista
+  AA.listError = function(msg, more){
+    if (more && AA.ads.length){ $('aa-list-err').innerHTML = '<div class="aa-err" style="margin:0 0 8px;">'+esc(msg)+'</div>'; return; }
+    $('aa-list').innerHTML = '<div class="aa-err" style="margin:8px 0;">'+esc(msg)+'</div>';
+    var b = $('aa-load'); b.classList.remove('aa-hidden'); b.textContent = 'Tentar de novo';
+  };
 
   AA.renderList = function(){
     $('aa-load').classList.add('aa-hidden');
+    $('aa-list-err').innerHTML = '';
     $('aa-selbar').classList.remove('aa-hidden');
+    if (!AA.ads.length){
+      $('aa-list').innerHTML = '<div class="aa-hint" style="border:1px dashed var(--line);border-radius:10px;padding:16px;margin:0;">Não achei anúncios de Product Ads na sua conta ainda. Crie anúncios no Mercado Livre e volte aqui.</div>';
+      $('aa-loadmore').classList.add('aa-hidden');
+      AA.updateCount();
+      return;
+    }
     var rows = AA.ads.map(function(a){
-      var st = AA.STATUS[a.status] || [a.status||'—','aa-b-paused'];
+      var st = AA.STATUS[a.status] || ['Outro','aa-b-paused'];
       var checked = AA.sel[a.item_id] ? 'checked' : '';
       var autoPill = a.in_automation ? '<span class="aa-auto-pill">já na automação'+(a.automation_band?(' · '+esc(a.automation_band)):'')+'</span>' : '';
       return '<label class="aa-item">'
@@ -289,8 +376,18 @@
     if (!$('aa-loadmore').classList.contains('aa-hidden')) $('aa-loadmore').textContent = 'Carregar mais ('+(AA.total-AA.ads.length)+' restantes)';
     AA.updateCount();
   };
-  window.aaToggleItem = function(id, on){ if(on) AA.sel[id]=1; else delete AA.sel[id]; AA.updateCount(); AA.saveSel(); };
-  window.aaSelectPage = function(on){ AA.ads.forEach(function(a){ if(on) AA.sel[a.item_id]=1; else delete AA.sel[a.item_id]; }); AA.renderList(); AA.saveSel(); };
+  window.aaToggleItem = function(id, on){ if(on) AA.sel[id]=1; else delete AA.sel[id]; AA._prevMoves = null; AA.updateCount(); AA.saveSel(); };
+  // "selecionar visíveis" pula os sem estoque (hold) — mesma regra do modo "todos" do servidor
+  window.aaSelectPage = function(on){
+    var skipped = 0;
+    AA.ads.forEach(function(a){
+      if (on){ if (a.eligible_default === false){ skipped++; return; } AA.sel[a.item_id]=1; }
+      else delete AA.sel[a.item_id];
+    });
+    AA._prevMoves = null;
+    AA.renderList(); AA.saveSel();
+    if (on && skipped) $('aa-list-err').innerHTML = '<div class="aa-hint" style="margin:0 0 8px;">'+skipped+' anúncio(s) sem estoque ficaram de fora (não dá pra anunciar sem estoque).</div>';
+  };
   AA.updateCount = function(){ var n = Object.keys(AA.sel).length; $('aa-selcount').textContent = n+' selecionado'+(n===1?'':'s'); };
   // Persistencia da SELECAO (rascunho de intencao) em localStorage por advertiser. O estado REAL
   // (anuncio acompanhado = anuncio numa faixa) e o proprio ML (in_automation/automation_band do backend).
@@ -298,67 +395,103 @@
   AA.saveSel = function(){ if(!AA.advertiserId) return; try{ localStorage.setItem(AA.selKey(), JSON.stringify({ all: AA.allMode, ids: Object.keys(AA.sel) })); }catch(e){} };
   AA.loadSel = function(){ try{ var d = JSON.parse(localStorage.getItem(AA.selKey()) || 'null'); if(d){ AA.allMode = !!d.all; (d.ids||[]).forEach(function(id){ AA.sel[id] = 1; }); } }catch(e){} };
 
-  // ---------- 2+3) plano ----------
+  // ---------- 2) meta (validação + persistência) ----------
+  window.aaTacosChanged = function(){
+    AA._prevMoves = null;                 // meta mudou -> comparação do "Verificar" recomeça
+    var v = AA.readTacos();
+    if (v != null) try{ localStorage.setItem('mf_aa_tacos', String(v)); }catch(e){}
+  };
+  // lê e valida a meta; marca o campo e retorna null se inválida (0/vazio/letra NÃO viram 3 em silêncio)
+  AA.readTacos = function(){
+    var el = $('aa-tacos'), err = $('aa-tacos-err');
+    var v = parseFloat(el.value);
+    var ok = isFinite(v) && v >= 1 && v <= 60;
+    el.classList.toggle('aa-invalid', !ok);
+    if (err) err.classList.toggle('aa-hidden', ok);
+    return ok ? v : null;
+  };
+  AA.restoreTacos = function(){ try{ var v = parseFloat(localStorage.getItem('mf_aa_tacos')); if (isFinite(v) && v >= 1 && v <= 60 && $('aa-tacos')) $('aa-tacos').value = v; }catch(e){} };
+
+  // ---------- 3) plano ----------
   window.aaGeneratePlan = async function(){
-    var tacos = parseFloat($('aa-tacos').value) || 3;
+    if (AA._busy) return;                  // já tem um plano sendo gerado (evita POSTs concorrentes)
+    var tacos = AA.readTacos();
+    if (tacos == null){ AA._verifying = false; $('aa-tacos').focus(); return; }
     var items = AA.allMode ? null : Object.keys(AA.sel);
     if (!AA.allMode && (!items || !items.length)){
+      AA._verifying = false;
       out('<div class="aa-card"><div class="aa-err">Escolha pelo menos um anúncio (ou marque "Automatizar todos").</div></div>');
       return;
     }
-    var btn = $('aa-gen'); btn.disabled = true;
-    loading('Analisando seus anúncios e montando o plano…');
+    AA._busy = true;
+    var btn = $('aa-gen'), vbtn = $('aa-verify');
+    btn.disabled = true; if (vbtn) vbtn.disabled = true;
+    loading(AA._verifying ? 'Verificando o que já entrou…' : 'Analisando seus anúncios e montando o plano…');
     try {
       var data;
       if (DEMO){ data = AA.demoPlan(tacos, items); }
       else {
-        var token = await AA.getToken();
-        if (!token){ out('<div class="aa-card"><div class="aa-err">Não consegui acessar sua conta. Recarregue o app e tente de novo.</div></div>'); return; }
-        var r = await fetch(AA.PROXY+'/api/auto-ads/plan', {
-          method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        var res = await AA.api('/api/auto-ads/plan', {
+          method:'POST', headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({ tacos_target: tacos, item_ids: items })   // items=null => todos
         });
-        data = await r.json();
-        if (!r.ok) throw new Error((data && data.error) || ('HTTP '+r.status));
+        if (!res.ok){ AA.planError(AA.errMsg(res)); return; }
+        data = res.data;
       }
       AA.render(data);
       $('aa-verify').classList.remove('aa-hidden');
-    } catch(e){ out('<div class="aa-card"><div class="aa-err">Não rolou gerar o plano agora. ('+esc(e.message)+') Tenta de novo em instantes.</div></div>'); }
-    finally { btn.disabled = false; }
+    } catch(e){ AA.planError('Não deu pra gerar o plano agora. Tente de novo em instantes.'); }
+    finally { AA._busy = false; AA._verifying = false; btn.disabled = false; if (vbtn) vbtn.disabled = false; }
   };
-  window.aaVerify = function(){ AA._verifying = true; window.aaGeneratePlan(); };
+  // erro durante o "Verificar" NÃO destrói o plano que estava na tela (os botões de copiar continuam lá)
+  AA.planError = function(msg){
+    var banner = '<div class="aa-card"><div class="aa-err">'+esc(msg)+'</div></div>';
+    if (AA._verifying && AA._lastData){ AA._verifying = false; AA.render(AA._lastData, banner); }
+    else out(banner);
+  };
+  // "Verificar" também re-checa o monitor das faixas — o usuário acabou de mexer no painel do ML
+  window.aaVerify = function(){ AA._verifying = true; try{ window.aaCheckBands(); }catch(e){} window.aaGeneratePlan(); };
 
-  AA.render = function(d){
+  AA.render = function(d, extraBanner){
+    AA._lastData = d;
     var s = d.summary || {};
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou (conta MLBs)
     var plan = d.plan_items || d.plan || {};
     var movesNow = Object.keys(plan).reduce(function(t,k){ return t + ((plan[k]||[]).length); }, 0);
-    var banner = '';
+    var banner = extraBanner || '';
     if (AA._verifying && AA._prevMoves != null && d.bands_setup_ok){
       var applied = AA._prevMoves - movesNow;
-      if (applied > 0) banner = '<div class="aa-ok" style="margin-bottom:12px;">✓ '+applied+' anúncio(s) já organizados'+(movesNow>0 ? (' — faltam '+movesNow+'.') : '. Tudo no lugar! 🎉')+'</div>';
-      else if (movesNow > 0) banner = '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
+      if (applied > 0) banner += '<div class="aa-ok" style="margin-bottom:12px;">✓ '+applied+' anúncio(s) já organizados'+(movesNow>0 ? (' — faltam '+movesNow+'.') : '. Tudo no lugar! 🎉')+'</div>';
+      else if (movesNow > 0) banner += '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
     }
     AA._verifying = false; AA._prevMoves = movesNow;
-    var html = banner + '<div class="aa-card"><h2>📊 Situação</h2><div class="aa-stat-grid">';
-    html += '<div class="aa-stat"><div class="v">'+ (s.accountTacos!=null? (s.accountTacos+'%') : '—') +'</div><div class="k">do faturamento vem de ads hoje</div></div>';
+    var html = banner + '<div class="aa-card"><h2>'+icon('chart')+' Situação</h2><div class="aa-stat-grid">';
+    // TACOS atual vs meta: verde quando dentro da meta, âmbar quando acima
+    var tacosCol = (s.accountTacos != null && s.target != null) ? (s.accountTacos <= s.target ? 'var(--green)' : 'var(--amber)') : 'inherit';
+    html += '<div class="aa-stat"><div class="v" style="color:'+tacosCol+'">'+ (s.accountTacos!=null? (s.accountTacos+'%') : '—') +'</div><div class="k">do faturamento investido em ads hoje</div></div>';
     html += '<div class="aa-stat"><div class="v">'+ (s.target!=null? (s.target+'%') : '—') +'</div><div class="k">sua meta</div></div>';
-    // contagem que o usuário reconhece = anúncios (MLBs) analisados; grupos internos do ML só como fallback de backend antigo
-    var nAds = (d.coverage && d.coverage.ads_evaluated != null) ? d.coverage.ads_evaluated : d.ad_groups_evaluated;
-    html += '<div class="aa-stat"><div class="v">'+ (nAds!=null? nAds : '—') +'</div><div class="k">anúncios analisados</div></div>';
-    html += '</div></div>';
+    // contagem que o usuário reconhece: seleção ativa = "selecionados"; modo todos = anúncios analisados
+    if (d.selected_count != null){
+      html += '<div class="aa-stat"><div class="v">'+d.selected_count+'</div><div class="k">anúncio(s) selecionado(s)</div></div>';
+    } else {
+      var nAds = (d.coverage && d.coverage.ads_evaluated != null) ? d.coverage.ads_evaluated : d.ad_groups_evaluated;
+      html += '<div class="aa-stat"><div class="v">'+ (nAds!=null? nAds : '—') +'</div><div class="k">anúncios analisados</div></div>';
+    }
+    html += '</div>';
+    if (d.coverage && d.coverage.truncated) html += '<div class="aa-warn" style="margin-top:10px;">Sua conta tem muitos anúncios — analisei os '+(d.coverage.ads_evaluated||'')+' principais neste ciclo. Rode de novo depois de aplicar pra cobrir o restante.</div>';
+    html += '</div>';
     // macro: faturamento × investimento nos últimos 30d vs os 30d anteriores (sinal de eficiência, exibível)
     if (s.revGrowthPct != null || s.costGrowthPct != null){
       var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
       var healthy = (s.revGrowthPct||0) >= (s.costGrowthPct||0);
       var col = healthy ? 'var(--green)' : 'var(--amber)';
-      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>📈 Faturamento × investimento <span class="aa-label" style="font-weight:600;">(últimos 30 dias vs anteriores)</span></h2>'
+      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>'+icon('trend')+' Faturamento × investimento <span class="aa-label" style="font-weight:600;">(últimos 30 dias vs anteriores)</span></h2>'
         + '<div class="aa-stat-grid">'
         + '<div class="aa-stat"><div class="v" style="color:'+col+'">'+fg(s.revGrowthPct)+'</div><div class="k">faturamento por ads</div></div>'
         + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
         + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
     }
-    html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation();
+    html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation(d);
     out(html);
   };
 
@@ -366,85 +499,120 @@
     var inv = {}, bci = d.band_campaign_ids || {};
     Object.keys(bci).forEach(function(k){ inv[String(bci[k])] = k; });
     var plan = d.plan || {}, ids = Object.keys(plan);
-    var html = '<div class="aa-card"><h2>✅ Plano pronto</h2>';
+    var html = '<div class="aa-card"><h2>'+icon('check')+' Plano pronto</h2>';
     if (!ids.length){ return html + '<div class="aa-ok">Tudo já está no lugar certo — nada pra reorganizar neste ciclo.</div></div>'; }
     html += '<p class="aa-sub" style="margin:0 0 6px;">Pra cada faixa abaixo:</p>'
       + '<ol class="aa-steps" style="margin:0 0 14px;">'
-      + '<li><b>Copiar MLBs</b> dos anúncios da faixa.</li>'
+      + '<li><b>Copiar códigos</b> dos anúncios da faixa.</li>'
       + '<li><b>Abrir no ML →</b> abre a tela de adicionar anúncios daquela campanha.</li>'
-      + '<li>Cole no campo de busca, <b>marque todos</b> e clique <b>Adicionar</b>.</li>'
+      + '<li>Cole no campo de busca e aperte <b>Enter</b>. Depois <b>marque todos</b> e clique <b>Adicionar</b>.</li>'
       + '<li>Volte aqui e clique <b>Verificar de novo</b> — o Marketfácil confirma o que entrou.</li></ol>';
     var planItems = d.plan_items || {};
+    var planSearch = d.plan_search_ids || {};
+    var totalMlbs = 0;
     ids.forEach(function(cid){
       var key = inv[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
-      var mlbs = planItems[cid] || plan[cid] || [];   // MLBs (item_ids) — o painel do ML filtra por MLB
+      var mlbs = planItems[cid] || plan[cid] || [];          // contagem amigável (anúncios/MLBs)
+      var copyIds = planSearch[cid] || mlbs;                 // IDs BUSCÁVEIS (família = ID do produto, não MLB)
+      totalMlbs += mlbs.length;
       html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
         + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
         + '<div class="aa-band-actions">'
-        + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+mlbs.join(',')+'\',this)">Copiar MLBs</button>'
-        + '<button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+        + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
+        + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
     });
-    var s = d.summary || {};
-    if (s.toNeverActivate) html += '<div class="aa-hint" style="margin-top:10px;">'+s.toNeverActivate+' anúncio(s) foram movidos pra faixa que não recebe investimento (gasto sem retorno).</div>';
+    // variações do mesmo produto entram juntas (o ML agrupa) — evita o susto "marquei 2, apareceram 9"
+    if (d.selected_count != null && totalMlbs > d.selected_count){
+      html += '<div class="aa-hint">Você marcou '+d.selected_count+' e o plano tem '+totalMlbs+'? É normal: variações do mesmo produto andam juntas no Mercado Livre.</div>';
+    }
+    // quantos anúncios o plano manda pra faixa sem investimento (derivado do PRÓPRIO plano, tempo futuro)
+    var naCid = bci.NA != null ? String(bci.NA) : null;
+    var naCount = naCid && planItems[naCid] ? planItems[naCid].length : 0;
+    if (naCount > 0) html += '<div class="aa-hint" style="margin-top:10px;">'+naCount+' anúncio(s) vão pra faixa que não recebe investimento (estavam gastando sem retorno).</div>';
     html += '<div class="aa-row" style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já adicionei no ML — Verificar</button></div>';
     return html + '</div>';   // fecha o card "Plano pronto"
   };
 
-  AA.guidedCreation = function(){
-    var names = AA.BAND_NAMES.map(function(n){ return '<li><span class="aa-name-pill">'+esc(n)+'</span> <button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCopyText(\''+esc(n)+'\',this)">copiar</button></li>'; }).join('');
-    return '<div class="aa-card"><h2>🛠️ Primeiro, crie suas faixas (só uma vez)</h2>'
-      + '<p class="aa-sub" style="margin:0 0 10px;">O Marketfácil organiza seus anúncios em 5 faixas. Crie estas campanhas no painel do ML com <b>exatamente estes nomes</b> — deixe o resto no padrão, o Marketfácil cuida da configuração de cada uma.</p>'
+  AA.guidedCreation = function(d){
+    var missing = (d && d.bands_missing) || null;   // se o backend disser O QUE falta, destacamos só isso
+    var keys = Object.keys(AA.BAND_NAME_BY_KEY);
+    var names = keys.map(function(k){
+      var n = AA.BAND_NAME_BY_KEY[k], tgt = AA.BAND_TARGETS[k] || {};
+      var falta = !missing || missing.indexOf(k) !== -1;
+      var meta = (k === 'NA') ? 'deixe <b>pausada</b>' : (tgt.roas ? 'ROAS objetivo <b>'+tgt.roas+'</b> · ACOS '+tgt.acos+'%' : '');
+      var badge = falta ? '' : ' <span class="aa-badge aa-b-ok">✓ já existe</span>';
+      return '<li><span class="aa-name-pill">'+esc(n)+'</span> <span class="aa-label">'+meta+'</span>'+badge
+        + (falta ? ' <button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar nome" onclick="window.aaCopyText(\''+esc(n)+'\',this)">copiar nome</button>' : '')
+        + '</li>';
+    }).join('');
+    return '<div class="aa-card"><h2>'+icon('tools')+' Primeiro, crie suas faixas (só uma vez)</h2>'
+      + '<p class="aa-sub" style="margin:0 0 10px;">O Marketfácil organiza seus anúncios em 5 faixas. Crie estas campanhas no painel do ML com <b>exatamente estes nomes</b> e, na criação, defina o <b>ROAS objetivo</b> indicado (estratégia personalizada). A "Nunca ativar" fica <b>pausada</b>.</p>'
       + '<ul class="aa-names">'+names+'</ul>'
       + '<ol class="aa-steps" style="margin-top:14px;">'
       + '<li>Abra o painel de campanhas do Mercado Livre.</li>'
-      + '<li>Crie 5 campanhas, uma com cada nome acima.</li>'
-      + '<li>Volte aqui e clique <b>Verificar de novo</b> — o Marketfácil ajusta cada faixa e monta o plano.</li></ol>'
-      + '<div class="aa-row" style="margin-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaOpenMl(\'\')">Abrir painel do ML →</button></div></div>';
+      + '<li>Crie cada campanha com o nome e o ROAS objetivo acima.</li>'
+      + '<li>Volte aqui e clique <b>Verificar de novo</b> — o Marketfácil confere tudo e monta o plano.</li></ol>'
+      + '<div class="aa-row" style="margin-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaOpenMl(\'\')">Abrir painel do ML →</button> <button class="aa-btn aa-btn-ghost" onclick="window.aaVerify()">Verificar de novo</button></div></div>';
   };
 
   window.aaCopyText = function(txt, btn){
-    var done = function(){ if(btn){ var o=btn.textContent; btn.textContent='Copiado ✓'; setTimeout(function(){ btn.textContent=o; },1400);} };
-    if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done, function(){ AA.fallbackCopy(txt); done(); }); }
-    else { AA.fallbackCopy(txt); done(); }
+    var restore = function(label){ if(btn){ btn.textContent = label; setTimeout(function(){ btn.textContent = btn.getAttribute('data-label') || 'Copiar'; }, 1600); } };
+    var ok = function(){ restore('Copiado ✓'); };
+    var bad = function(){ restore('Não copiou ✕'); };   // sem feedback falso: só confirma quando copiou mesmo
+    var viaFallback = function(){ AA.fallbackCopy(txt) ? ok() : bad(); };
+    if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok, viaFallback); }
+    else viaFallback();
   };
-  AA.fallbackCopy = function(txt){ try{ var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }catch(e){} };
-  window.aaOpenMl = function(cid){ window.open(cid ? (AA.ML_PANEL+'/'+encodeURIComponent(cid)+'/ads') : AA.ML_PANEL, '_blank', 'noopener'); };
+  AA.fallbackCopy = function(txt){ try{ var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); var r=document.execCommand('copy'); t.remove(); return !!r; }catch(e){ return false; } };
+  window.aaOpenMl = function(cid){ window.open(cid ? AA.ML_ADD_ADS.replace('{cid}', encodeURIComponent(cid)) : AA.ML_CAMPAIGNS, '_blank', 'noopener'); };
+  window.aaOpenCampaign = function(cid){ window.open(AA.ML_CAMPAIGN_DASH.replace('{cid}', encodeURIComponent(cid)), '_blank', 'noopener'); };
 
   // ---------- demo ----------
   AA.demoAds = function(off){
     var base = [
-      {item_id:'MLB111',title:'Blusinha Feminina Canelada Básica',status:'active',in_automation:false},
-      {item_id:'MLB112',title:'Conjunto Fitness Feminino Academia',status:'active',in_automation:true,automation_band:'Equilibrado'},
-      {item_id:'MLB113',title:'Vestido Longo Floral Verão',status:'paused',in_automation:false},
-      {item_id:'MLB114',title:'Calça Wide Leg Alfaiataria',status:'idle',in_automation:false},
-      {item_id:'MLB115',title:'Cropped Ribana Manga Longa',status:'hold',in_automation:false},
-      {item_id:'MLB116',title:'Saia Midi Plissada',status:'active',in_automation:false}
+      {item_id:'MLB111',title:'Blusinha Feminina Canelada Básica',status:'active',in_automation:false,eligible_default:true},
+      {item_id:'MLB112',title:'Conjunto Fitness Feminino Academia',status:'active',in_automation:true,automation_band:'Equilibrado',eligible_default:true},
+      {item_id:'MLB113',title:'Vestido Longo Floral Verão',status:'paused',in_automation:false,eligible_default:true},
+      {item_id:'MLB114',title:'Calça Wide Leg Alfaiataria',status:'idle',in_automation:false,eligible_default:true},
+      {item_id:'MLB115',title:'Cropped Ribana Manga Longa',status:'hold',in_automation:false,eligible_default:false},
+      {item_id:'MLB116',title:'Saia Midi Plissada',status:'active',in_automation:false,eligible_default:true}
     ];
-    return { paging:{ total: base.length, offset:off, limit:50 }, ads: base };
+    return { advertiser_id: 4242, paging:{ total: base.length, offset:off, limit:50 }, ads: base };
   };
   AA.demoPlan = function(tacos, items){
     var n = items ? items.length : 9;
-    return { advertiser_id:0, seller_id:0, site_id:'MLB', bands_setup_ok:true, selected_count: items?items.length:null,
+    return { advertiser_id:0, seller_id:0, site_id:'MLB', bands_setup_ok:true, bands_missing:[], selected_count: items?items.length:null,
       band_campaign_ids:{ B1:1001, B2:1002, B3:1003, B4:1004, NA:1005 }, ad_groups_evaluated:n,
       plan:{ '1001':['111','112'], '1003':['221'] },
       plan_items:{ '1001':['MLB1111111111','MLB2222222222'], '1003':['MLB3333333333'] },
+      plan_search_ids:{ '1001':['774884615150225','MLB2222222222'], '1003':['MLB3333333333'] },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
       summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[
-      { key:'B1', label:'Econômico',   exists:true,  ok:true,  status:'active', roas_target:33.33, roas_target_expected:33.33, issues:[], budget_suggestion:{ has_ads:true, lost_pct:35, budget:6, suggested_budget:10, needs_more:true } },
-      { key:'B2', label:'Equilibrado', exists:true,  ok:false, status:'paused', roas_target:15,    roas_target_expected:16.67, issues:['roas_target'] },
-      { key:'B3', label:'Acelerado',   exists:true,  ok:true,  status:'paused', roas_target:11.11, roas_target_expected:11.11, issues:[] },
-      { key:'B4', label:'Máximo',      exists:true,  ok:true,  status:'paused', roas_target:8.33,  roas_target_expected:8.33,  issues:[] },
+      { key:'B1', label:'Econômico',   exists:true,  ok:true,  status:'active', campaign_id:357700038, roas_target:33.33, roas_target_expected:33.33, issues:[], budget_suggestion:{ has_ads:true, lost_pct:35, budget:6, suggested_budget:10, needs_more:true } },
+      { key:'B2', label:'Equilibrado', exists:true,  ok:false, status:'paused', campaign_id:357706909, roas_target:15,    roas_target_expected:16.67, issues:['roas_target'] },
+      { key:'B3', label:'Acelerado',   exists:true,  ok:true,  status:'paused', campaign_id:357716147, roas_target:11.11, roas_target_expected:11.11, issues:[] },
+      { key:'B4', label:'Máximo',      exists:true,  ok:true,  status:'paused', campaign_id:357700135, roas_target:8.33,  roas_target_expected:8.33,  issues:[] },
       { key:'NA', label:'Nunca ativar',exists:false, ok:false, issues:['missing'] }
     ], summary:{ total_expected:5, ok_count:3, missing:1, misconfigured:1, budget_alerts:1 } };
+  };
+
+  // re-render do element no Bubble: re-aplica o estado vivo no DOM recém-criado
+  AA.rehydrate = function(){
+    try { AA.applyAllModeUI(); } catch(e){}
+    try { AA.restoreTacos(); } catch(e){}
+    try { var b = $('aa-bands'); if (b && !b.querySelector('.aa-band') && !b.querySelector('.aa-err')) window.aaCheckBands(); } catch(e){}
+    try { if (AA.ads.length && $('aa-list') && !$('aa-list').innerHTML) AA.renderList(); } catch(e){}
+    try { if (AA._lastData && $('aa-out') && !$('aa-out').innerHTML) AA.render(AA._lastData); } catch(e){}
   };
 
   // onboarding: por padrão "Automatizar todos" vem marcado (no servidor o hold/sem estoque fica de fora).
   // loadSel() depois restaura o rascunho do usuário recorrente quando ele carrega a lista.
   AA.applyAllModeUI = function(){ var amc=$('aa-allmode'); if(amc) amc.checked = AA.allMode; var sz=$('aa-selzone'); if(sz) sz.classList.toggle('aa-dim', AA.allMode); };
   try { AA.applyAllModeUI(); } catch(e){}
+  try { AA.restoreTacos(); } catch(e){}
   // init: ao abrir, verifica a configuração das faixas
   try { window.aaCheckBands(); } catch(e){}
 })();
