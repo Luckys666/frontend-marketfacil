@@ -343,7 +343,9 @@
     var html = banner + '<div class="aa-card"><h2>📊 Situação</h2><div class="aa-stat-grid">';
     html += '<div class="aa-stat"><div class="v">'+ (s.accountTacos!=null? (s.accountTacos+'%') : '—') +'</div><div class="k">do faturamento vem de ads hoje</div></div>';
     html += '<div class="aa-stat"><div class="v">'+ (s.target!=null? (s.target+'%') : '—') +'</div><div class="k">sua meta</div></div>';
-    html += '<div class="aa-stat"><div class="v">'+ (d.ad_groups_evaluated!=null? d.ad_groups_evaluated : '—') +'</div><div class="k">anúncios no plano</div></div>';
+    // contagem que o usuário reconhece = anúncios (MLBs) analisados; grupos internos do ML só como fallback de backend antigo
+    var nAds = (d.coverage && d.coverage.ads_evaluated != null) ? d.coverage.ads_evaluated : d.ad_groups_evaluated;
+    html += '<div class="aa-stat"><div class="v">'+ (nAds!=null? nAds : '—') +'</div><div class="k">anúncios analisados</div></div>';
     html += '</div></div>';
     // macro: faturamento × investimento nos últimos 30d vs os 30d anteriores (sinal de eficiência, exibível)
     if (s.revGrowthPct != null || s.costGrowthPct != null){
