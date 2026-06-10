@@ -206,5 +206,56 @@ const gc = AA.guidedCreation({ bands_missing: ['NA'] });
 check('guidedCreation destaca só o que falta (✓ já existe nas outras)', /já existe/.test(gc));
 check('guidedCreation expoe ROAS/ACOS por faixa (liberado)', /33,33/.test(gc));
 
+// ---------- v4 (artefato "Seu plano de ação" + ciclos persistentes) ----------
+
+// demoPlan expõe os campos novos do backend
+const dp4 = AA.demoPlan(3, null);
+check('demoPlan expoe health_score/health_factors', typeof dp4.health_score === 'number' && Array.isArray(dp4.health_factors));
+check('demoPlan expoe plan_weights e budget_reductions', dp4.plan_weights && Array.isArray(dp4.budget_reductions));
+
+// o render monta o artefato: score + etapas numeradas + checkbox de feito
+AA.advertiserId = 4242;
+let html4 = '';
+try { AA.render(dp4); html4 = byId('aa-out').innerHTML; } catch (e) { html4 = ''; }
+check('render mostra o score de saúde (72)', /aa-score/.test(html4) && />72</.test(html4));
+check('render tem o header "Seu plano de ação"', /Seu plano de ação/.test(html4));
+check('render tem etapas com checkbox "marcar etapa como feita"', /marcar etapa como feita/.test(html4));
+check('render tem a etapa final "Confirme as mudanças"', /Confirme as mudanças/.test(html4));
+check('render tem details "como subir o score"', /como subir o score/.test(html4));
+check('render tem etapa de reduzir orçamento (budget_reductions)', /Reduza o orçamento/.test(html4) && /R\$ 18/.test(html4));
+
+// ordenação por impacto: faixa 1003 (peso 42.5) vem antes da 1001 (peso 10.1)
+check('plano ordenado por plan_weights (1003 antes de 1001)',
+  html4.indexOf('Acelerado') !== -1 && html4.indexOf('Acelerado') < html4.indexOf('Econômico'));
+
+// planCards nova assinatura: corpo da etapa, SEM wrapper de card nem header proprio
+const body4 = AA.planCards(dp4, ['1003', '1001']);
+check('planCards NAO tem mais o wrapper aa-card/header proprio', body4.indexOf('aa-card') === -1 && body4.indexOf('Plano pronto') === -1);
+check('planCards vazio retorna string vazia', AA.planCards({ plan: {} }, []) === '');
+
+// ciclo persistente: ensureCycle cria, aaStageDone marca e persiste, closeCycle arquiva
+const cyc = AA.loadCycle();
+check('ensureCycle criou o ciclo no localStorage (mf_aa_cycle_<id>)', !!cyc && Array.isArray(cyc.stageIds));
+sandbox.aaStageDone('plan', true, null);
+check('aaStageDone persiste o feito no ciclo', !!(AA.loadCycle().done || {}).plan);
+AA.render(dp4);   // re-render preserva o done
+check('re-render preserva etapa marcada como feita', /is-done/.test(byId('aa-out').innerHTML));
+AA.closeCycle(dp4.summary);
+check('closeCycle arquiva no histórico e limpa o ciclo', AA.loadHist().length === 1 && AA.loadCycle() === null);
+AA.render(dp4);
+check('render mostra ciclos anteriores (histórico)', /ciclos anteriores \(1\)/.test(byId('aa-out').innerHTML));
+
+// card secundário de melhorias (buybox + unservable) com links pras outras funções
+check('card "Melhore estes anúncios" presente', /Melhore estes anúncios/.test(byId('aa-out').innerHTML));
+check('card de melhorias linka Concorrência de Catálogo', /concorrencia-catalogo/.test(byId('aa-out').innerHTML));
+check('card de melhorias linka Análise de Anúncios', /analise-anuncio/.test(byId('aa-out').innerHTML));
+
+// estado vazio: sem etapas -> "Tudo no lugar"
+const dpEmpty = AA.demoPlan(3, null);
+dpEmpty.plan = {}; dpEmpty.plan_items = {}; dpEmpty.probe_items = {}; dpEmpty.budget_reductions = [];
+let emptyOk = true;
+try { AA.render(dpEmpty); } catch (e) { emptyOk = false; }
+check('render nao lanca com plano vazio (Tudo no lugar)', emptyOk && /Tudo no lugar/.test(byId('aa-out').innerHTML));
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);

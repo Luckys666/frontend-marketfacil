@@ -41,6 +41,27 @@
   details.aa-more summary::before{content:'▸ ';}
   details.aa-more[open] summary::before{content:'▾ ';}
   .aa-okline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.9rem;color:var(--green);font-weight:600;}
+  /* plano de ação: etapas numeradas (o artefato principal da página) */
+  .aa-stage{display:flex;gap:14px;padding:18px 0;border-bottom:1px dashed var(--line);}
+  .aa-stage:last-of-type{border-bottom:none;}
+  .aa-stage-num{width:34px;height:34px;border-radius:50%;background:var(--blue);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;font-size:1.02rem;}
+  .aa-stage-num.aa-step-ok{background:var(--green);}
+  .aa-stage-body{flex:1;min-width:0;}
+  .aa-stage-body h3{margin:0 0 3px;font-size:.98rem;font-weight:700;}
+  .aa-stage-body .aa-stage-desc{font-size:.85rem;color:var(--muted);margin:0 0 10px;}
+  .aa-macro-line{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);margin-top:10px;flex-wrap:wrap;}
+  .aa-macro-line b{font-size:.95rem;}
+  /* score de saúde dos Ads */
+  .aa-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px;}
+  .aa-score{text-align:center;flex:none;}
+  .aa-score .n{font-size:2.3rem;font-weight:800;line-height:1;}
+  .aa-score .l{font-size:.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+  .aa-statline{display:flex;gap:18px;flex-wrap:wrap;font-size:.85rem;color:var(--muted);margin:4px 0 0;}
+  .aa-statline b{color:var(--ink);font-size:1.05rem;}
+  /* checkbox "feito" da etapa */
+  .aa-stage-done{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);cursor:pointer;user-select:none;margin-top:8px;}
+  .aa-stage.is-done{opacity:.55;}
+  .aa-stage.is-done .aa-stage-num{background:var(--green);}
   .aa-h1{font-size:1.5rem;font-weight:800;margin:0 0 4px;letter-spacing:-.02em;}
   .aa-sub{color:var(--muted);font-size:.92rem;margin:0 0 20px;}
   .aa-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;}
@@ -508,6 +529,46 @@
       + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
   };
 
+  // ---------- ciclo de otimização (persistente em localStorage, por advertiser) ----------
+  AA.cycleKey = function(){ return 'mf_aa_cycle_' + (AA.advertiserId || 'x'); };
+  AA.histKey  = function(){ return 'mf_aa_hist_'  + (AA.advertiserId || 'x'); };
+  AA.nextKey  = function(){ return 'mf_aa_next_'  + (AA.advertiserId || 'x'); };
+  AA.loadCycle = function(){ try{ return JSON.parse(localStorage.getItem(AA.cycleKey()) || 'null'); }catch(e){ return null; } };
+  AA.saveCycle = function(c){ try{ if(c) localStorage.setItem(AA.cycleKey(), JSON.stringify(c)); else localStorage.removeItem(AA.cycleKey()); }catch(e){} };
+  AA.loadHist = function(){ try{ return JSON.parse(localStorage.getItem(AA.histKey()) || '[]'); }catch(e){ return []; } };
+  // garante um ciclo corrente coerente com o plano da tela; preserva "feito" de etapas com o mesmo id
+  AA.ensureCycle = function(stageIds, meta){
+    var c = AA.loadCycle();
+    var sameSet = c && c.stageIds && c.stageIds.join('|') === stageIds.join('|');
+    if (!sameSet){
+      var prevDone = (c && c.done) || {};
+      c = { startedAt: new Date().toISOString(), stageIds: stageIds, done: {}, meta: meta || {} };
+      stageIds.forEach(function(id){ if (prevDone[id]) c.done[id] = true; });
+      AA.saveCycle(c);
+    } else { c.meta = meta || c.meta; AA.saveCycle(c); }
+    return c;
+  };
+  window.aaStageDone = function(stageId, checked, el){
+    var c = AA.loadCycle(); if (!c) return;
+    if (checked) c.done[stageId] = true; else delete c.done[stageId];
+    AA.saveCycle(c);
+    var stage = el && el.closest ? el.closest('.aa-stage') : null;
+    if (stage) stage.classList.toggle('is-done', !!checked);
+  };
+  // fecha o ciclo (tudo aplicado e confirmado): arquiva no histórico + agenda a próxima análise
+  AA.closeCycle = function(s){
+    var c = AA.loadCycle(); if (!c) return;
+    try {
+      var hist = AA.loadHist();
+      hist.unshift({ startedAt: c.startedAt, closedAt: new Date().toISOString(),
+        score: (c.meta||{}).score, tacos: s && s.accountTacos, moves: (c.meta||{}).moves });
+      localStorage.setItem(AA.histKey(), JSON.stringify(hist.slice(0, 12)));
+      localStorage.setItem(AA.nextKey(), String(Date.now() + 7*86400000));
+    } catch(e){}
+    AA.saveCycle(null);
+  };
+  AA.scoreColor = function(n){ return n >= 80 ? 'var(--green)' : (n >= 50 ? 'var(--amber)' : 'var(--red)'); };
+
   AA.render = function(d, extraBanner){
     AA._lastData = d;
     var s = d.summary || {};
@@ -519,53 +580,141 @@
       var applied = AA._prevMoves - movesNow;
       if (applied > 0) banner += '<div class="aa-ok" style="margin-bottom:12px;">✓ '+applied+' anúncio(s) já organizados'+(movesNow>0 ? (' — faltam '+movesNow+'.') : '. Tudo no lugar! 🎉')+'</div>';
       else if (movesNow > 0) banner += '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
+      if (movesNow === 0) AA.closeCycle(s);   // ciclo concluído e confirmado
     }
     AA._verifying = false; AA._prevMoves = movesNow;
-    var html = banner + '<div class="aa-cols">';
-    // — Situação —
-    html += '<div class="aa-card"><h2>'+icon('chart')+' Situação</h2><div class="aa-stat-grid">';
-    // TACOS atual vs meta: verde quando dentro da meta, âmbar quando acima
-    var tacosCol = (s.accountTacos != null && s.target != null) ? (s.accountTacos <= s.target ? 'var(--green)' : 'var(--amber)') : 'inherit';
-    html += '<div class="aa-stat"><div class="v" style="color:'+tacosCol+'">'+ (s.accountTacos!=null? (s.accountTacos+'%') : '—') +'</div><div class="k">do faturamento investido em ads hoje</div></div>';
-    html += '<div class="aa-stat"><div class="v">'+ (s.target!=null? (s.target+'%') : '—') +'</div><div class="k">sua meta</div></div>';
-    // contagem que o usuário reconhece: seleção ativa = "selecionados"; modo todos = anúncios analisados
-    if (d.selected_count != null){
-      html += '<div class="aa-stat"><div class="v">'+d.selected_count+'</div><div class="k">anúncio(s) selecionado(s)</div></div>';
-    } else {
-      var nAds = (d.coverage && d.coverage.ads_evaluated != null) ? d.coverage.ads_evaluated : d.ad_groups_evaluated;
-      html += '<div class="aa-stat"><div class="v">'+ (nAds!=null? nAds : '—') +'</div><div class="k">anúncios analisados</div></div>';
-    }
-    html += '</div>';
-    if (d.coverage && d.coverage.truncated) html += '<div class="aa-warn" style="margin-top:10px;">Sua conta tem muitos anúncios — analisei os '+(d.coverage.ads_evaluated||'')+' principais neste ciclo. Rode de novo depois de aplicar pra cobrir o restante.</div>';
-    html += '</div>';
-    // — macro: faturamento × investimento (30d vs anteriores) —
-    if (s.revGrowthPct != null || s.costGrowthPct != null){
-      var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
-      var healthy = (s.revGrowthPct||0) >= (s.costGrowthPct||0);
-      var col = healthy ? 'var(--green)' : 'var(--amber)';
-      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>'+icon('trend')+' Faturamento × investimento <span class="aa-label" style="font-weight:600;">(30 dias vs anteriores)</span></h2>'
-        + '<div class="aa-stat-grid">'
-        + '<div class="aa-stat"><div class="v" style="color:'+col+'">'+fg(s.revGrowthPct)+'</div><div class="k">faturamento por ads</div></div>'
-        + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
-        + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
-    }
-    html += '</div>'; // fecha aa-cols (Situação | macro)
+    var html = banner;
+    if (!d.bands_setup_ok){ html += AA.guidedCreation(d); out(html); return; }
 
-    // — avisos lado a lado: fora das campanhas | catálogo sem ficha (listas colapsadas) —
+    // ════════ O ARTEFATO: "Seu plano de ação" — etapas numeradas com estado ════════
+    var inv = AA.bandInv(d);
+    var stages = [];   // { id, title, desc, body, warn }
+
+    // etapa: dar mais força (anúncios parados)
+    var probe = d.probe_items || {};
+    var probeSearch = d.probe_search_ids || {};
+    var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
+    var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
+    if (nProbe > 0){
+      var probeBody = '';
+      probeIds.forEach(function(cid){
+        var mlbs = probe[cid] || [];
+        probeBody += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, probeSearch[cid] || mlbs);
+      });
+      stages.push({ id: 'probe', title: 'Dê mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s'),
+        desc: 'Estão ativos mas quase não aparecem — mova-os pra faixa indicada. Depois de aplicar, dê alguns dias pro Mercado Livre reagir.',
+        body: probeBody });
+    }
+
+    // etapa: reorganizar (o plano principal, ordenado pelo impacto)
+    var planMap = d.plan || {};
+    var planItems = d.plan_items || {};
+    var weights = d.plan_weights || {};
+    var planIds = Object.keys(planMap).sort(function(a,b){ return (weights[b]||0) - (weights[a]||0); });
+    var totalMlbs = planIds.reduce(function(t,c){ return t + ((planItems[c]||planMap[c]||[]).length); }, 0);
+    if (planIds.length){
+      stages.push({ id: 'plan', title: 'Reorganize '+totalMlbs+' anúncio'+(totalMlbs===1?'':'s')+' entre as faixas',
+        desc: 'Cada anúncio vai pra faixa que a entrega dele sustenta — começando pelo que mais mexe no resultado.',
+        body: AA.planCards(d, planIds) });
+    }
+
+    // etapa: reduzir orçamento (conta acima da meta sem mais apertos por faixa)
+    var reds = d.budget_reductions || [];
+    if (reds.length){
+      var redBody = reds.map(function(r){
+        return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+((AA.BANDS[r.key]||{}).color||'#64748b')+'"></span>'
+          + '<div><div class="aa-band-name">'+esc(r.label||r.key)+'</div><div class="aa-band-count">orçamento de R$ '+r.budget+' → <b>R$ '+r.suggested_budget+'/dia</b></div></div></div>'
+          + '<div class="aa-band-actions">'
+          + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="copiar R$ '+r.suggested_budget+'" onclick="window.aaCopyText(\''+r.suggested_budget+'\',this)">copiar R$ '+r.suggested_budget+'</button>'
+          + (r.campaign_id ? '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenCampaign(\''+esc(r.campaign_id)+'\')">Ver campanha →</button>' : '')
+          + '</div></div>';
+      }).join('');
+      stages.push({ id: 'budget', title: 'Reduza o orçamento de '+reds.length+' faixa'+(reds.length===1?'':'s'),
+        desc: 'Seu investimento passou da meta e os anúncios já estão nas faixas certas — o ajuste agora é no orçamento diário.',
+        body: redBody });
+    }
+
+    // ciclo persistente: preserva o "feito" entre cliques
+    var stageIds = stages.map(function(st){ return st.id; });
+    var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalMlbs + nProbe }) : AA.loadCycle();
+    var doneMap = (cycle && cycle.done) || {};
+
+    // header do artefato: score + estatísticas compactas
+    var score = d.health_score;
+    var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
+    var tacosCol = (s.accountTacos != null && s.target != null) ? (s.accountTacos <= s.target ? 'var(--green)' : 'var(--amber)') : 'inherit';
+    var nAds = d.selected_count != null ? d.selected_count : ((d.coverage && d.coverage.ads_evaluated != null) ? d.coverage.ads_evaluated : d.ad_groups_evaluated);
+    html += '<div class="aa-card"><div class="aa-plan-head">'
+      + '<div style="flex:1;min-width:240px;"><h2 style="margin-bottom:2px;">'+icon('check')+' Seu plano de ação</h2>'
+      + '<div class="aa-statline">'
+      + '<span><b style="color:'+tacosCol+'">'+ (s.accountTacos!=null? s.accountTacos+'%' : '—') +'</b> investido em ads</span>'
+      + '<span><b>'+ (s.target!=null? s.target+'%' : '—') +'</b> meta</span>'
+      + '<span><b>'+ (nAds!=null? nAds : '—') +'</b> '+(d.selected_count!=null?'selecionados':'analisados')+'</span>'
+      + (s.revGrowthPct != null || s.costGrowthPct != null
+          ? '<span>faturamento <b style="color:'+(((s.revGrowthPct||0)>=(s.costGrowthPct||0))?'var(--green)':'var(--amber)')+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b> (30d)</span>'
+          : '')
+      + '</div></div>';
+    if (score != null){
+      html += '<div class="aa-score"><div class="n" style="color:'+AA.scoreColor(score)+'">'+score+'</div><div class="l">saúde dos ads</div></div>';
+    }
+    html += '</div>';
+    if (score != null && score < 100 && (d.health_factors||[]).length){
+      html += '<details class="aa-more"><summary>como subir o score</summary><ul class="aa-names" style="margin:0;">'
+        + d.health_factors.slice(0,3).map(function(f){ return '<li><span class="aa-badge aa-b-warn">−'+f.penalty+'</span> <span class="aa-label">'+esc(f.hint)+'</span></li>'; }).join('')
+        + '</ul></details>';
+    }
+    if (d.coverage && d.coverage.truncated) html += '<div class="aa-warn" style="margin-top:10px;">Sua conta tem muitos anúncios — analisei os '+(d.coverage.ads_evaluated||'')+' principais neste ciclo. Rode de novo depois de aplicar pra cobrir o restante.</div>';
+
+    // etapas numeradas
+    if (!stages.length){
+      html += '<div class="aa-ok" style="margin-top:10px;">✓ Tudo no lugar — nada pra fazer neste ciclo.</div>';
+      var nextAt = 0; try{ nextAt = parseInt(localStorage.getItem(AA.nextKey()) || '0', 10); }catch(e){}
+      if (nextAt > Date.now()) html += '<div class="aa-hint">Próxima análise recomendada: <b>'+new Date(nextAt).toLocaleDateString('pt-BR')+'</b>.</div>';
+    } else {
+      stages.forEach(function(st, i){
+        var done = !!doneMap[st.id];
+        html += '<div class="aa-stage'+(done?' is-done':'')+'"><div class="aa-stage-num'+(done?' aa-step-ok':'')+'">'+(done?'✓':(i+1))+'</div>'
+          + '<div class="aa-stage-body"><h3>'+st.title+'</h3><div class="aa-stage-desc">'+st.desc+'</div>'
+          + st.body
+          + '<label class="aa-stage-done"><input type="checkbox" '+(done?'checked':'')+' onchange="window.aaStageDone(\''+st.id+'\',this.checked,this)"> marcar etapa como feita</label>'
+          + '</div></div>';
+      });
+      html += '<div class="aa-stage"><div class="aa-stage-num">'+(stages.length+1)+'</div><div class="aa-stage-body">'
+        + '<h3>Confirme as mudanças</h3><div class="aa-stage-desc">Depois de aplicar as etapas no Mercado Livre, confirme aqui — o Marketfácil confere o que entrou e fecha o ciclo.</div>'
+        + '<button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já apliquei — Verificar</button></div></div>';
+    }
+    // histórico de ciclos
+    var hist = AA.loadHist();
+    if (hist.length){
+      html += '<details class="aa-more"><summary>ciclos anteriores ('+hist.length+')</summary><ul class="aa-names" style="margin:0;">'
+        + hist.map(function(h){ return '<li><span class="aa-label">'+new Date(h.closedAt).toLocaleDateString('pt-BR')+' — '+(h.moves||0)+' ajuste(s)'+(h.score!=null?(' · saúde '+h.score):'')+(h.tacos!=null?(' · TACOS '+h.tacos+'%'):'')+'</span></li>'; }).join('')
+        + '</ul></details>';
+    }
+    html += '</div>'; // fecha o card do plano de ação
+
+    // ════════ card secundário: 💡 melhorias fora das campanhas ════════
     var temUns = d.unservable && d.unservable.count > 0;
     var temBB = d.buybox_losers && d.buybox_losers.count > 0;
-    if (temUns || temBB){
-      html += '<div class="aa-cols">';
+    var noReach = (s.noReach || 0);
+    if (temUns || temBB || noReach){
+      var totalMelhorias = (temUns ? d.unservable.count : 0) + (temBB ? d.buybox_losers.count : 0);
+      html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Melhore estes anúncios pra um desempenho ainda melhor</h2>'
+        + '<p class="aa-sub" style="margin:0 0 10px;">'+totalMelhorias+' anúncio(s) com oportunidades que <b>não dependem de campanha</b> — resolvendo isso, eles voltam ao jogo dos Ads.</p>';
+      if (temBB){
+        var bl = d.buybox_losers;
+        html += '<div style="margin-bottom:10px;"><div class="aa-band-name" style="margin-bottom:2px;">Catálogo: perdendo a disputa da ficha <span class="aa-badge aa-b-warn">'+bl.count+'</span></div>'
+          + '<div class="aa-hint" style="margin:0;">Anúncio que não ganha a ficha quase não aparece nos Ads. Resolva com preço, frete e reputação — <a href="https://app.marketfacil.com.br/concorrencia-catalogo" target="_blank" rel="noopener"><b>abrir Concorrência de Catálogo →</b></a></div>'
+          + (noReach ? '<div class="aa-hint" style="margin:4px 0 0;">'+noReach+' desses já passaram por todas as faixas sem aparecer.</div>' : '')
+          + AA.mlbDetails(bl.items, bl.count) + '</div>';
+      }
       if (temUns){
         var ug = d.unservable.groups || {};
         var GRUPOS = [
-          ['cannot_display', 'Não se pode mostrar', 'O Mercado Livre não está conseguindo exibir estes anúncios nos Ads — normalmente é elegibilidade do anúncio (tipo de anúncio, frete ou categoria).'],
-          ['under_review', 'Em revisão', 'O Mercado Livre está revisando estes anúncios. Quando terminar, eles voltam a poder anunciar.'],
-          ['paused_ml', 'Pausados no Mercado Livre', 'Estão pausados na sua conta — reative-os no Mercado Livre pra poder anunciar.'],
+          ['cannot_display', 'Não se pode mostrar', 'O Mercado Livre não consegue exibi-los nos Ads — confira a saúde do anúncio na <a href="https://app.marketfacil.com.br/analise-anuncio" target="_blank" rel="noopener"><b>Análise de Anúncios →</b></a>'],
+          ['under_review', 'Em revisão pelo Mercado Livre', 'Aguarde a revisão terminar — depois eles voltam a poder anunciar.'],
+          ['paused_ml', 'Pausados no Mercado Livre', 'Reative-os na sua conta pra poder anunciar.'],
           ['other', 'Indisponíveis no momento', 'Não podem anunciar agora (ex.: sem estoque).']
         ];
-        html += '<div class="aa-card" style="border-left:3px solid var(--slate);"><h2>'+icon('tools')+' '+d.unservable.count+' anúncio(s) fora das campanhas</h2>'
-          + '<p class="aa-sub" style="margin:0 0 10px;">O Mercado Ads <b>não consegue exibi-los</b> agora — colocá-los em campanha não traria resultado.</p>';
         GRUPOS.forEach(function(g){
           var grp = ug[g[0]];
           if (!grp || !grp.count) return;
@@ -573,51 +722,24 @@
             + '<div class="aa-hint" style="margin:0;">'+g[2]+'</div>'
             + AA.mlbDetails(grp.items, grp.count) + '</div>';
         });
-        html += '</div>';
-      }
-      if (temBB){
-        var bl = d.buybox_losers;
-        html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Catálogo: '+bl.count+' anúncio(s) sem alcance</h2>'
-          + '<div class="aa-warn">Não estão <b>ganhando a disputa da ficha</b> — e anúncio assim quase não aparece nos Ads, em nenhuma faixa. A solução não é campanha: é competir melhor na ficha (preço, frete, reputação).</div>'
-          + AA.mlbDetails(bl.items, bl.count)
-          + '<div class="aa-hint">Dica: use a <b>Concorrência de Catálogo</b> do Marketfácil pra ver o que falta pra ganhar cada ficha.</div></div>';
       }
       html += '</div>';
     }
-    // dar mais força: anúncios ativos que não imprimem (plano separado — a cadência é do usuário)
-    var probe = d.probe_items || {};
-    var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
-    if (d.bands_setup_ok && probeIds.length){
-      var invP = AA.bandInv(d);
-      var probeSearch = d.probe_search_ids || {};
-      var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
-      html += '<div class="aa-card" style="border-left:3px solid var(--blue);"><h2>'+icon('trend')+' Dar mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s')+'</h2>'
-        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios estão ativos mas <b>quase não aparecem</b>. O Marketfácil vai movê-los pra uma faixa com mais força de exibição.</p>'
-        + '<div class="aa-warn" style="margin-bottom:10px;">Depois de aplicar, dê <b>alguns dias</b> pro Mercado Livre reagir antes de rodar a próxima análise.</div>';
-      probeIds.forEach(function(cid){
-        var mlbs = probe[cid] || [];
-        html += AA.bandActionRow(cid, invP[String(cid)], mlbs.length, probeSearch[cid] || mlbs);
-      });
-      if (d.summary && d.summary.noReach > 0){
-        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) não aparecem nem na faixa mais forte — pra esses veja os cards de avisos acima.</div>';
-      }
-      html += '</div>';
-    }
-    html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation(d);
     out(html);
   };
 
-  AA.planCards = function(d){
+  // corpo da etapa "Reorganize" — o render envolve no wrapper de etapa; planIds já vêm ordenados por impacto
+  AA.planCards = function(d, planIds){
     var inv = AA.bandInv(d), bci = d.band_campaign_ids || {};
-    var plan = d.plan || {}, ids = Object.keys(plan);
-    var html = '<div class="aa-card"><h2>'+icon('check')+' Plano pronto</h2>';
-    if (!ids.length){ return html + '<div class="aa-ok">Tudo já está no lugar certo — nada pra reorganizar neste ciclo.</div></div>'; }
-    html += '<p class="aa-sub" style="margin:0 0 6px;">Pra cada faixa abaixo:</p>'
-      + '<ol class="aa-steps" style="margin:0 0 14px;">'
+    var plan = d.plan || {};
+    var ids = planIds || Object.keys(plan);
+    if (!ids.length) return '';
+    var html = '<details class="aa-more" open><summary>como aplicar (passo a passo)</summary>'
+      + '<ol class="aa-steps" style="margin:6px 0 0;">'
       + '<li><b>Copiar códigos</b> dos anúncios da faixa.</li>'
       + '<li><b>Abrir no ML →</b> abre a tela de adicionar anúncios daquela campanha.</li>'
       + '<li>Cole no campo de busca e aperte <b>Enter</b>. Depois <b>marque todos</b> e clique <b>Adicionar</b>.</li>'
-      + '<li>Volte aqui e clique <b>Verificar de novo</b> — o Marketfácil confirma o que entrou.</li></ol>';
+      + '<li>Repita pra cada faixa abaixo.</li></ol></details>';
     var planItems = d.plan_items || {};
     var planSearch = d.plan_search_ids || {};
     var totalMlbs = 0;
@@ -634,8 +756,7 @@
     var naCid = bci.NA != null ? String(bci.NA) : null;
     var naCount = naCid && planItems[naCid] ? planItems[naCid].length : 0;
     if (naCount > 0) html += '<div class="aa-hint" style="margin-top:10px;">'+naCount+' anúncio(s) vão pra faixa que não recebe investimento (estavam gastando sem retorno).</div>';
-    html += '<div class="aa-row" style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já adicionei no ML — Verificar</button></div>';
-    return html + '</div>';   // fecha o card "Plano pronto"
+    return html;
   };
 
   AA.guidedCreation = function(d){
@@ -695,6 +816,14 @@
       probe_plan:{ '1002':['331'] }, probe_items:{ '1002':['MLB6666666666'] }, probe_search_ids:{ '1002':['MLB6666666666'] },
       unservable:{ count:3, groups:{ cannot_display:{ count:2, items:[ { mlb:'MLB7777777777', title:'Produto Exemplo A' }, { mlb:'MLB8888888888', title:'Produto Exemplo B' } ] }, under_review:{ count:1, items:[ { mlb:'MLB9999999999', title:'Produto Exemplo C' } ] } } },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
+      health_score:72,
+      health_factors:[
+        { key:'coerencia', label:'Anúncios fora da faixa ideal', penalty:13, hint:'3 anúncio(s) fora da faixa que a entrega sustenta — aplique o plano abaixo.' },
+        { key:'buybox', label:'Catálogo perdendo a ficha', penalty:8, hint:'2 anúncio(s) de catálogo perdendo a disputa da ficha.' },
+        { key:'indisponiveis', label:'Anúncios indisponíveis', penalty:7, hint:'3 anúncio(s) que o Mercado Livre não consegue exibir nos Ads.' }
+      ],
+      plan_weights:{ '1003':42.5, '1001':10.1 },
+      budget_reductions:[ { key:'B2', label:'Equilibrado', campaign_id:1002, budget:30, suggested_budget:18 } ],
       summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1, probes:1, noReach:1 } };
   };
   AA.demoBands = function(){
