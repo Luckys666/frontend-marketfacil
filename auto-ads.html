@@ -493,6 +493,29 @@
         + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
         + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
     }
+    // anúncios que o Ads NÃO consegue exibir (hold): ficam fora das campanhas SEMPRE — sinalizar
+    // a lista com o motivo, senão o usuário acha que o Marketfácil "esqueceu" deles.
+    if (d.unservable && d.unservable.count > 0){
+      var ug = d.unservable.groups || {};
+      var GRUPOS = [
+        ['cannot_display', 'Não se pode mostrar', 'O Mercado Livre não está conseguindo exibir estes anúncios nos Ads — normalmente é elegibilidade do anúncio (tipo de anúncio, frete ou categoria).'],
+        ['under_review', 'Em revisão', 'O Mercado Livre está revisando estes anúncios. Quando a revisão terminar, eles voltam a poder anunciar.'],
+        ['paused_ml', 'Pausados no Mercado Livre', 'Estes anúncios estão pausados na sua conta — reative-os no Mercado Livre pra poder anunciar.'],
+        ['other', 'Indisponíveis no momento', 'Estes anúncios não podem anunciar agora (ex.: sem estoque).']
+      ];
+      html += '<div class="aa-card" style="border-left:3px solid var(--slate);"><h2>'+icon('tools')+' '+d.unservable.count+' anúncio(s) fora das campanhas</h2>'
+        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios <b>não podem ser exibidos</b> pelo Mercado Ads agora, então o Marketfácil os deixa fora das faixas — colocá-los em campanha não traria resultado.</p>';
+      GRUPOS.forEach(function(g){
+        var grp = ug[g[0]];
+        if (!grp || !grp.count) return;
+        var lis = (grp.items || []).slice(0, 5).map(function(i){ return '<li><span class="aa-name-pill">'+esc(i.mlb)+'</span> <span class="aa-label">'+esc(i.title||'')+'</span></li>'; }).join('');
+        var mais = grp.count > 5 ? '<div class="aa-hint">…e mais '+(grp.count-5)+'.</div>' : '';
+        html += '<div style="margin-bottom:12px;"><div class="aa-band-name" style="margin-bottom:4px;">'+esc(g[1])+' <span class="aa-badge aa-b-warn">'+grp.count+'</span></div>'
+          + '<div class="aa-hint" style="margin:0 0 6px;">'+g[2]+'</div>'
+          + '<ul class="aa-names" style="margin:0;">'+lis+'</ul>' + mais + '</div>';
+      });
+      html += '</div>';
+    }
     // anúncios de catálogo perdendo a ficha: não imprimem em faixa NENHUMA — o problema não é a
     // campanha, é a disputa do catálogo (preço/frete/reputação). Avisar em vez de esconder.
     if (d.buybox_losers && d.buybox_losers.count > 0){
@@ -628,6 +651,7 @@
       plan_search_ids:{ '1001':['774884615150225','MLB2222222222'], '1003':['MLB3333333333'] },
       buybox_losers:{ count:2, items:[ { mlb:'MLB4444444444', title:'Filtro Regulador Conjunto Lubrifil' }, { mlb:'MLB5555555555', title:'Filtro De Ar Odontológico Triplo' } ] },
       probe_plan:{ '1002':['331'] }, probe_items:{ '1002':['MLB6666666666'] }, probe_search_ids:{ '1002':['MLB6666666666'] },
+      unservable:{ count:3, groups:{ cannot_display:{ count:2, items:[ { mlb:'MLB7777777777', title:'Produto Exemplo A' }, { mlb:'MLB8888888888', title:'Produto Exemplo B' } ] }, under_review:{ count:1, items:[ { mlb:'MLB9999999999', title:'Produto Exemplo C' } ] } } },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
       summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1, probes:1, noReach:1 } };
   };

@@ -180,6 +180,13 @@ check('STATUS mapeia delegated/revoked (sem ingles cru)', AA.STATUS.delegated &&
 check('HOLD_RAW mapeia Y (Nao se pode mostrar) / S (Em revisao) / M (Pausado no ML)',
   AA.HOLD_RAW && /Não se pode mostrar/.test(AA.HOLD_RAW.Y[0]) && /revisão/.test(AA.HOLD_RAW.S[0]) && /Pausado no ML/.test(AA.HOLD_RAW.M[0]));
 
+// anúncios fora das campanhas (unservable): card com motivos
+const dpU = AA.demoPlan(3, null);
+check('demoPlan expoe unservable (3 fora das campanhas)', dpU.unservable && dpU.unservable.count === 3);
+let renderUOk = true;
+try { AA.render(dpU); } catch (e) { renderUOk = false; }
+check('AA.render nao lanca com unservable no plano', renderUOk);
+
 // catálogo perdendo a ficha: card de aviso no plano (não imprime em faixa nenhuma)
 const dpBL = AA.demoPlan(3, null);
 check('demoPlan expoe buybox_losers', dpBL.buybox_losers && dpBL.buybox_losers.count === 2);
