@@ -185,6 +185,13 @@ let renderBLOk = true; let blHtml = '';
 try { AA.render(dpBL); } catch (e) { renderBLOk = false; }
 check('AA.render nao lanca com buybox_losers no plano', renderBLOk);
 
+// teste de alcance: plano separado com instrucao de cadencia
+const dpProbe = AA.demoPlan(3, null);
+check('demoPlan expoe probe_items (teste de alcance)', dpProbe.probe_items && Object.keys(dpProbe.probe_items).length === 1);
+let renderProbeOk = true;
+try { AA.render(dpProbe); } catch (e) { renderProbeOk = false; }
+check('AA.render nao lanca com probe_items no plano', renderProbeOk);
+
 // guidedCreation marca o que ja existe quando bands_missing vem do backend
 const gc = AA.guidedCreation({ bands_missing: ['NA'] });
 check('guidedCreation destaca só o que falta (✓ já existe nas outras)', /já existe/.test(gc));

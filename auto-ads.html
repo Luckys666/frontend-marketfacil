@@ -502,6 +502,33 @@
         + '<ul class="aa-names">'+lis+'</ul>' + mais
         + '<div class="aa-hint">Dica: use a <b>Concorrência de Catálogo</b> do Marketfácil pra ver exatamente o que falta pra ganhar cada ficha.</div></div>';
     }
+    // teste de alcance: anúncios ativos que não imprimem testam as faixas em escada (33→16→12→8).
+    // Plano SEPARADO porque a instrução é outra: aplicar e ESPERAR alguns dias por degrau.
+    var probe = d.probe_items || {};
+    var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
+    if (d.bands_setup_ok && probeIds.length){
+      var inv2 = {}, bci2 = d.band_campaign_ids || {};
+      Object.keys(bci2).forEach(function(k){ inv2[String(bci2[k])] = k; });
+      var probeSearch = d.probe_search_ids || {};
+      var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
+      html += '<div class="aa-card" style="border-left:3px solid var(--blue);"><h2>'+icon('trend')+' Teste de alcance ('+nProbe+' anúncio'+(nProbe===1?'':'s')+' sem entrega)</h2>'
+        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios estão ativos mas <b>quase não aparecem</b> na faixa atual. Vamos testá-los na próxima faixa da escada (33 → 16 → 12 → 8) pra ver se começam a entregar.</p>'
+        + '<div class="aa-warn" style="margin-bottom:10px;">Importante: aplique e <b>espere alguns dias</b> antes de rodar o próximo teste — cada degrau precisa de tempo pra provar se entrega.</div>';
+      probeIds.forEach(function(cid){
+        var key = inv2[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
+        var mlbs = probe[cid] || [];
+        var copyIds = probeSearch[cid] || mlbs;
+        html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
+          + '<div><div class="aa-band-name">testar no '+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
+          + '<div class="aa-band-actions">'
+          + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
+          + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+      });
+      if (d.summary && d.summary.noReach > 0){
+        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) já testaram todas as faixas sem entregar — pra esses o problema é a disputa da ficha, não a campanha (veja o card de catálogo).</div>';
+      }
+      html += '</div>';
+    }
     html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation(d);
     out(html);
   };
@@ -598,8 +625,9 @@
       plan_items:{ '1001':['MLB1111111111','MLB2222222222'], '1003':['MLB3333333333'] },
       plan_search_ids:{ '1001':['774884615150225','MLB2222222222'], '1003':['MLB3333333333'] },
       buybox_losers:{ count:2, items:[ { mlb:'MLB4444444444', title:'Filtro Regulador Conjunto Lubrifil' }, { mlb:'MLB5555555555', title:'Filtro De Ar Odontológico Triplo' } ] },
+      probe_plan:{ '1002':['331'] }, probe_items:{ '1002':['MLB6666666666'] }, probe_search_ids:{ '1002':['MLB6666666666'] },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
-      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1 } };
+      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1, probes:1, noReach:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[
