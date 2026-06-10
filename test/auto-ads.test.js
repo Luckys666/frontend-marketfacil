@@ -178,6 +178,13 @@ check('AA.rehydrate existe (re-render do element no Bubble)', typeof AA.rehydrat
 check('guard de requisicao em voo (_busy) existe', AA._busy === false);
 check('STATUS mapeia delegated/revoked (sem ingles cru)', AA.STATUS.delegated && AA.STATUS.revoked);
 
+// catálogo perdendo a ficha: card de aviso no plano (não imprime em faixa nenhuma)
+const dpBL = AA.demoPlan(3, null);
+check('demoPlan expoe buybox_losers', dpBL.buybox_losers && dpBL.buybox_losers.count === 2);
+let renderBLOk = true; let blHtml = '';
+try { AA.render(dpBL); } catch (e) { renderBLOk = false; }
+check('AA.render nao lanca com buybox_losers no plano', renderBLOk);
+
 // guidedCreation marca o que ja existe quando bands_missing vem do backend
 const gc = AA.guidedCreation({ bands_missing: ['NA'] });
 check('guidedCreation destaca só o que falta (✓ já existe nas outras)', /já existe/.test(gc));

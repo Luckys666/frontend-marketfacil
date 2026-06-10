@@ -491,6 +491,17 @@
         + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
         + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
     }
+    // anúncios de catálogo perdendo a ficha: não imprimem em faixa NENHUMA — o problema não é a
+    // campanha, é a disputa do catálogo (preço/frete/reputação). Avisar em vez de esconder.
+    if (d.buybox_losers && d.buybox_losers.count > 0){
+      var bl = d.buybox_losers;
+      var lis = (bl.items || []).slice(0, 5).map(function(i){ return '<li><span class="aa-name-pill">'+esc(i.mlb)+'</span> <span class="aa-label">'+esc(i.title||'')+'</span></li>'; }).join('');
+      var mais = bl.count > 5 ? '<div class="aa-hint">…e mais '+(bl.count-5)+'.</div>' : '';
+      html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Catálogo: '+bl.count+' anúncio(s) sem alcance</h2>'
+        + '<div class="aa-warn">Estes anúncios de catálogo <b>não estão ganhando a disputa da ficha</b> — e anúncio assim quase não aparece nos Ads, em nenhuma faixa. Aqui a solução não é campanha: é competir melhor na ficha (preço, frete, reputação).</div>'
+        + '<ul class="aa-names">'+lis+'</ul>' + mais
+        + '<div class="aa-hint">Dica: use a <b>Concorrência de Catálogo</b> do Marketfácil pra ver exatamente o que falta pra ganhar cada ficha.</div></div>';
+    }
     html += d.bands_setup_ok ? AA.planCards(d) : AA.guidedCreation(d);
     out(html);
   };
@@ -586,6 +597,7 @@
       plan:{ '1001':['111','112'], '1003':['221'] },
       plan_items:{ '1001':['MLB1111111111','MLB2222222222'], '1003':['MLB3333333333'] },
       plan_search_ids:{ '1001':['774884615150225','MLB2222222222'], '1003':['MLB3333333333'] },
+      buybox_losers:{ count:2, items:[ { mlb:'MLB4444444444', title:'Filtro Regulador Conjunto Lubrifil' }, { mlb:'MLB5555555555', title:'Filtro De Ar Odontológico Triplo' } ] },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
       summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1 } };
   };
