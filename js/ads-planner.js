@@ -4128,7 +4128,14 @@ function renderCampaignInsights(overview, containerId) {
             </div>
             <div class="adp-campaign-badges">
                 <span class="adp-badge ${stratBadge}">${stratLabel}</span>
-                <span class="adp-badge adp-badge-gray">${campItems.length} an\u00fancio${campItems.length !== 1 ? 's' : ''}</span>
+                ${(() => {
+                    // Badge de contagem: a lista de anuncios cobre so os top da conta.
+                    // Com lista parcial, nao afirmar total; com 0 listados, omitir (o
+                    // drilldown explica). Metricas do card seguem cobrindo a campanha inteira.
+                    if (campItems.length === 0) return '';
+                    if (overview.partial) return `<span class="adp-badge adp-badge-gray" title="An\u00fancios desta campanha que est\u00e3o entre os mais ativos da conta \u2014 as m\u00e9tricas do card cobrem a campanha inteira">${campItems.length} listado${campItems.length !== 1 ? 's' : ''}</span>`;
+                    return `<span class="adp-badge adp-badge-gray">${campItems.length} an\u00fancio${campItems.length !== 1 ? 's' : ''}</span>`;
+                })()}
                 ${camp.budget ? `<span class="adp-badge ${isBudgetLimited ? 'adp-badge-red' : 'adp-badge-yellow'}">Or\u00e7amento: ${fmtMoney(camp.budget)}${isBudgetLimited ? ` (${fmt(budgetInfo.usage, 0)}% uso)` : ''}</span>` : ''}
                 ${camp.acos_target ? `<span class="adp-badge adp-badge-blue">Meta ACOS: ${camp.acos_target}%</span>` : ''}
                 ${camp.roas_target ? `<span class="adp-badge adp-badge-green">Meta ROAS: ${camp.roas_target}x</span>` : ''}
@@ -4204,7 +4211,17 @@ function renderCampaignInsights(overview, containerId) {
             ${(() => {
                 // Drilldown \u2014 anuncios que pertencem a esta campanha (sem tendencias por item:
                 // titulo numa linha, metricas na linha de baixo \u2014 nada cortado)
-                if (campItems.length === 0) return '';
+                if (campItems.length === 0) {
+                    // Campanha com gasto mas nenhum anuncio listado: ou os anuncios sairam
+                    // da campanha (custo do periodo fica nela) ou nao estao entre os top da conta.
+                    if (campCost <= 0) return '';
+                    return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+                        <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--row-alt);border-radius:var(--radius-sm);font-size:0.7rem;line-height:1.5;color:var(--text-secondary);">
+                            <span>\u2139\ufe0f</span>
+                            <span>Os an\u00fancios desta campanha n\u00e3o est\u00e3o entre os mais ativos da conta no per\u00edodo \u2014 ou j\u00e1 foram movidos/removidos da campanha. Os n\u00fameros acima cobrem todo o investimento e faturamento que a campanha registrou no per\u00edodo.</span>
+                        </div>
+                    </div>`;
+                }
                 const sorted = [...campItems].sort((a,b) => (b.cost||0) - (a.cost||0));
                 const top5 = sorted.slice(0, 5);
                 const rest = sorted.slice(5);
@@ -4236,7 +4253,7 @@ function renderCampaignInsights(overview, containerId) {
                 const verTodosBtn = rest.length ? `<div style="text-align:center;padding:6px;"><button onclick="window.adpToggleCampItems('${restId}', this)" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);font-size:0.68rem;padding:4px 12px;border-radius:4px;cursor:pointer;font-family:inherit;">Ver todos (+${rest.length})</button></div>` : '';
                 return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;cursor:pointer;" onclick="window.adpToggleCampDrilldown('${drilldownId}', this)">
-                        <div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">An\u00fancios desta campanha (${campItems.length})</div>
+                        <div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;" ${overview.partial ? 'title="Mostrando os an\u00fancios desta campanha que est\u00e3o entre os mais ativos da conta \u2014 as m\u00e9tricas do card cobrem a campanha inteira"' : ''}>An\u00fancios desta campanha (${campItems.length}${overview.partial ? ' listados' : ''})</div>
                         <span class="adp-camp-drilldown-arrow" style="font-size:0.7rem;color:var(--text-muted);">\u25bc</span>
                     </div>
                     <div id="${drilldownId}" style="display:none;">
