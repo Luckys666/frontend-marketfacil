@@ -23,7 +23,24 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.45;}
-  .aa-wrap{max-width:880px;margin:0 auto;padding:24px 16px 64px;}
+  .aa-wrap{max-width:1320px;margin:0 auto;padding:24px 16px 64px;}
+  /* grid horizontal: cards lado a lado quando a tela permite */
+  .aa-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;align-items:start;margin-bottom:16px;}
+  .aa-cols > .aa-card{margin-bottom:0;}
+  /* monitor compacto: 5 faixas em tiles horizontais */
+  .aa-bands-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+  .aa-tile{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fff;}
+  .aa-tile.aa-row-warn{border-color:#fde68a;background:#fffbeb;}
+  .aa-tile.aa-row-bad{border-color:#fecaca;background:#fef2f2;}
+  .aa-tile-head{display:flex;align-items:center;gap:7px;font-weight:700;font-size:.88rem;margin-bottom:4px;}
+  .aa-tile-sub{font-size:.76rem;color:var(--muted);}
+  .aa-tile .aa-band-actions{margin-top:8px;}
+  /* listas longas colapsadas */
+  details.aa-more summary{cursor:pointer;font-size:.82rem;color:var(--blue);font-weight:600;list-style:none;padding:4px 0;}
+  details.aa-more summary::-webkit-details-marker{display:none;}
+  details.aa-more summary::before{content:'▸ ';}
+  details.aa-more[open] summary::before{content:'▾ ';}
+  .aa-okline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.9rem;color:var(--green);font-weight:600;}
   .aa-h1{font-size:1.5rem;font-weight:800;margin:0 0 4px;letter-spacing:-.02em;}
   .aa-sub{color:var(--muted);font-size:.92rem;margin:0 0 20px;}
   .aa-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;}
@@ -270,47 +287,61 @@
 
   AA.ISSUE_MSG = { roas_target:'ajuste o ROAS objetivo', strategy:'use a estratégia "Maximizar retorno (ROAS)"', na_should_be_paused:'precisa ficar pausada' };
 
+  // tile compacto de UMA faixa (usado no monitor — grid horizontal)
+  AA.bandTile = function(b){
+    var band = AA.BANDS[b.key] || { color:'#64748b' };
+    var tgt = AA.BAND_TARGETS[b.key] || {};
+    var name = AA.BAND_NAME_BY_KEY[b.key] || b.label;
+    var badge, cls = '';
+    if (!b.exists){ badge = '<span class="aa-badge aa-b-bad">criar</span>'; cls = ' aa-row-bad'; }
+    else if (!b.ok){ badge = '<span class="aa-badge aa-b-warn">ajustar</span>'; cls = ' aa-row-warn'; }
+    else { badge = '<span class="aa-badge aa-b-ok">✓</span>'; }
+    var sub = (b.key === 'NA')
+      ? 'deixe <b>pausada</b>'
+      : (tgt.roas ? ('ROAS <b>'+tgt.roas+'</b> · ACOS '+tgt.acos+'%') : '');
+    if (b.exists && !b.ok){
+      var msgs = (b.issues||[]).map(function(i){ return AA.ISSUE_MSG[i] || i; });
+      sub += '<br>⚠ ' + esc(msgs.join('; '));
+    }
+    var bs = b.budget_suggestion, actions = '';
+    if (bs && bs.needs_more){
+      if (b.ok) cls = ' aa-row-warn';   // config certa, mas o orçamento está limitando -> destaca
+      sub += '<br>Perde ~'+bs.lost_pct+'% por orçamento — sugiro <b>R$ '+bs.suggested_budget+'/dia</b> (hoje R$ '+bs.budget+').';
+      actions = '<div class="aa-band-actions">'
+        + '<button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar R$ '+bs.suggested_budget+'" onclick="window.aaCopyText(\''+bs.suggested_budget+'\',this)">copiar R$ '+bs.suggested_budget+'</button>'
+        + (b.campaign_id ? '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenCampaign(\''+esc(b.campaign_id)+'\')">Ver campanha →</button>' : '')
+        + '</div>';
+    } else if (!b.ok) {
+      actions = '<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar nome" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>';
+    }
+    return '<div class="aa-tile'+cls+'"><div class="aa-tile-head"><span class="aa-dot" style="background:'+band.color+'"></span>'+esc(b.label)+' '+badge+'</div>'
+      + '<div class="aa-tile-sub">'+sub+'</div>' + actions + '</div>';
+  };
+
   AA.renderBands = function(d){
     var bands = d.bands || [], allOk = d.all_ok;
     var bAlerts = (d.summary && d.summary.budget_alerts) || 0;
     AA.setBandsStep(allOk && !bAlerts ? 'ok' : 'warn');
-    var head = allOk
-      ? (bAlerts > 0
-          ? '<div class="aa-warn">Config das 5 faixas OK — mas '+bAlerts+' faixa(s) estão perdendo impressões por orçamento. Veja a sugestão abaixo.</div>'
-          : '<div class="aa-ok">✓ Suas 5 faixas estão configuradas certinho. Pode seguir.</div>')
-      : '<p class="aa-sub" style="margin:0 0 12px;">Crie ou ajuste estas campanhas no painel do Mercado Livre com <b>exatamente</b> o nome e o ROAS objetivo indicados. Depois volte e clique <b>Verificar de novo</b>.</p>';
-    var rows = bands.map(function(b){
-      var band = AA.BANDS[b.key] || { color:'#64748b' };
-      var tgt = AA.BAND_TARGETS[b.key] || {};
-      var name = AA.BAND_NAME_BY_KEY[b.key] || b.label;
-      var badge, rowcls = '';
-      if (!b.exists){ badge = '<span class="aa-badge aa-b-bad">criar</span>'; rowcls = ' aa-row-bad'; }
-      else if (!b.ok){ badge = '<span class="aa-badge aa-b-warn">ajustar</span>'; rowcls = ' aa-row-warn'; }
-      else { badge = '<span class="aa-badge aa-b-ok">✓ ok</span>'; }
-      var sub = (b.key === 'NA')
-        ? 'deixe <b>pausada</b> (faixa sem investimento)'
-        : (tgt.roas ? ('ROAS objetivo <b>'+tgt.roas+'</b> · ACOS '+tgt.acos+'%') : '');
-      if (b.exists && !b.ok){
-        var msgs = (b.issues||[]).map(function(i){ return AA.ISSUE_MSG[i] || i; });
-        sub += (sub ? ' — ' : '') + '⚠ ' + esc(msgs.join('; '));
-      }
-      var bs = b.budget_suggestion, actions;
-      if (bs && bs.needs_more){
-        if (b.ok) rowcls = ' aa-row-warn';   // config certa, mas o orçamento está limitando -> destaca
-        sub += '<br>Perde ~'+bs.lost_pct+'% das impressões por orçamento. Sugiro <b>R$ '+bs.suggested_budget+'/dia</b> (hoje R$ '+bs.budget+').';
-        actions = '<div class="aa-band-actions">'
-          + '<button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar R$ '+bs.suggested_budget+'" onclick="window.aaCopyText(\''+bs.suggested_budget+'\',this)">copiar R$ '+bs.suggested_budget+'</button>'
-          + (b.campaign_id ? '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenCampaign(\''+esc(b.campaign_id)+'\')">Ver campanha →</button>' : '')
-          + '</div>';
-      } else {
-        actions = b.ok ? '' : ('<div class="aa-band-actions"><button class="aa-btn aa-btn-ghost aa-btn-sm aa-copy-btn" data-label="copiar nome" onclick="window.aaCopyText(\''+esc(name)+'\',this)">copiar nome</button></div>');
-      }
-      return '<div class="aa-band'+rowcls+'"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-        + '<div><div class="aa-band-name">'+esc(b.label)+' '+badge+'</div><div class="aa-band-count">'+sub+'</div></div></div>'
-        + actions + '</div>';
-    }).join('');
-    var foot = allOk ? '' : '<div class="aa-row" style="margin-top:12px;"><button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaOpenMl(\'\')">Abrir painel do ML →</button> <button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCheckBands()">Verificar de novo</button></div>';
-    $('aa-bands').innerHTML = head + rows + foot;
+    var grid = '<div class="aa-bands-grid">' + bands.map(AA.bandTile).join('') + '</div>';
+    var html;
+    if (allOk && !bAlerts){
+      // tudo certo: DISCRETO — uma linha + detalhes sob demanda (decisão Lucas 10/06)
+      html = '<div class="aa-okline">✓ Suas 5 faixas estão configuradas certinho.'
+        + '<details class="aa-more" style="flex:1 1 100%;"><summary>ver minhas faixas</summary>' + grid + '</details></div>';
+    } else if (allOk && bAlerts > 0){
+      // config ok mas há AVISOS (orçamento): mostra só o que precisa de atenção; o resto colapsado
+      var warnTiles = bands.filter(function(b){ return b.budget_suggestion && b.budget_suggestion.needs_more; });
+      var okTiles = bands.filter(function(b){ return !(b.budget_suggestion && b.budget_suggestion.needs_more); });
+      html = '<div class="aa-warn" style="margin-bottom:10px;">'+bAlerts+' faixa(s) perdendo impressões por orçamento — veja a sugestão:</div>'
+        + '<div class="aa-bands-grid">' + warnTiles.map(AA.bandTile).join('') + '</div>'
+        + '<details class="aa-more"><summary>ver as outras faixas</summary><div class="aa-bands-grid" style="margin-top:8px;">' + okTiles.map(AA.bandTile).join('') + '</div></details>';
+    } else {
+      // setup incompleto/errado: card completo com instrução
+      html = '<p class="aa-sub" style="margin:0 0 12px;">Crie ou ajuste estas campanhas no painel do Mercado Livre com <b>exatamente</b> o nome e o ROAS objetivo indicados. Depois volte e clique <b>Verificar de novo</b>.</p>'
+        + grid
+        + '<div class="aa-row" style="margin-top:12px;"><button class="aa-btn aa-btn-primary aa-btn-sm" onclick="window.aaOpenMl(\'\')">Abrir painel do ML →</button> <button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaCheckBands()">Verificar de novo</button></div>';
+    }
+    $('aa-bands').innerHTML = html;
   };
 
   // ---------- 1) seleção de anúncios ----------
@@ -454,6 +485,29 @@
   // "Verificar" também re-checa o monitor das faixas — o usuário acabou de mexer no painel do ML
   window.aaVerify = function(){ AA._verifying = true; try{ window.aaCheckBands(); }catch(e){} window.aaGeneratePlan(); };
 
+  // ---------- helpers de render (sem markup duplicado) ----------
+  // inverso de band_campaign_ids: campaignId -> bandKey
+  AA.bandInv = function(d){
+    var inv = {}, bci = (d && d.band_campaign_ids) || {};
+    Object.keys(bci).forEach(function(k){ inv[String(bci[k])] = k; });
+    return inv;
+  };
+  // lista de anúncios (MLB + título) COLAPSADA — listas longas poluíam a página
+  AA.mlbDetails = function(items, count, rotulo){
+    var lis = (items || []).map(function(i){ return '<li><span class="aa-name-pill">'+esc(i.mlb)+'</span> <span class="aa-label">'+esc(i.title||'')+'</span></li>'; }).join('');
+    var resto = count > (items || []).length ? '<div class="aa-hint">…e mais '+(count-(items||[]).length)+'.</div>' : '';
+    return '<details class="aa-more"><summary>'+esc(rotulo || ('ver anúncios ('+count+')'))+'</summary><ul class="aa-names" style="margin:0;">'+lis+'</ul>'+resto+'</details>';
+  };
+  // linha de faixa com ações Copiar/Abrir (usada no plano E no "dar mais força")
+  AA.bandActionRow = function(cid, bandKey, nCount, copyIds, sufixoNome){
+    var band = (bandKey && AA.BANDS[bandKey]) || { label:'Faixa', color:'#64748b' };
+    return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
+      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+nCount+' anúncio(s)</div></div></div>'
+      + '<div class="aa-band-actions">'
+      + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
+      + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+  };
+
   AA.render = function(d, extraBanner){
     AA._lastData = d;
     var s = d.summary || {};
@@ -467,7 +521,9 @@
       else if (movesNow > 0) banner += '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
     }
     AA._verifying = false; AA._prevMoves = movesNow;
-    var html = banner + '<div class="aa-card"><h2>'+icon('chart')+' Situação</h2><div class="aa-stat-grid">';
+    var html = banner + '<div class="aa-cols">';
+    // — Situação —
+    html += '<div class="aa-card"><h2>'+icon('chart')+' Situação</h2><div class="aa-stat-grid">';
     // TACOS atual vs meta: verde quando dentro da meta, âmbar quando acima
     var tacosCol = (s.accountTacos != null && s.target != null) ? (s.accountTacos <= s.target ? 'var(--green)' : 'var(--amber)') : 'inherit';
     html += '<div class="aa-stat"><div class="v" style="color:'+tacosCol+'">'+ (s.accountTacos!=null? (s.accountTacos+'%') : '—') +'</div><div class="k">do faturamento investido em ads hoje</div></div>';
@@ -482,75 +538,68 @@
     html += '</div>';
     if (d.coverage && d.coverage.truncated) html += '<div class="aa-warn" style="margin-top:10px;">Sua conta tem muitos anúncios — analisei os '+(d.coverage.ads_evaluated||'')+' principais neste ciclo. Rode de novo depois de aplicar pra cobrir o restante.</div>';
     html += '</div>';
-    // macro: faturamento × investimento nos últimos 30d vs os 30d anteriores (sinal de eficiência, exibível)
+    // — macro: faturamento × investimento (30d vs anteriores) —
     if (s.revGrowthPct != null || s.costGrowthPct != null){
       var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
       var healthy = (s.revGrowthPct||0) >= (s.costGrowthPct||0);
       var col = healthy ? 'var(--green)' : 'var(--amber)';
-      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>'+icon('trend')+' Faturamento × investimento <span class="aa-label" style="font-weight:600;">(últimos 30 dias vs anteriores)</span></h2>'
+      html += '<div class="aa-card" style="border-left:3px solid '+col+';"><h2>'+icon('trend')+' Faturamento × investimento <span class="aa-label" style="font-weight:600;">(30 dias vs anteriores)</span></h2>'
         + '<div class="aa-stat-grid">'
         + '<div class="aa-stat"><div class="v" style="color:'+col+'">'+fg(s.revGrowthPct)+'</div><div class="k">faturamento por ads</div></div>'
         + '<div class="aa-stat"><div class="v">'+fg(s.costGrowthPct)+'</div><div class="k">investimento em ads</div></div>'
         + '</div><div class="aa-hint">'+(healthy ? 'Seu faturamento está acompanhando (ou superando) o investimento. 👍' : 'O investimento subiu mais que o faturamento — o Marketfácil segura a aceleração até reequilibrar.')+'</div></div>';
     }
-    // anúncios que o Ads NÃO consegue exibir (hold): ficam fora das campanhas SEMPRE — sinalizar
-    // a lista com o motivo, senão o usuário acha que o Marketfácil "esqueceu" deles.
-    if (d.unservable && d.unservable.count > 0){
-      var ug = d.unservable.groups || {};
-      var GRUPOS = [
-        ['cannot_display', 'Não se pode mostrar', 'O Mercado Livre não está conseguindo exibir estes anúncios nos Ads — normalmente é elegibilidade do anúncio (tipo de anúncio, frete ou categoria).'],
-        ['under_review', 'Em revisão', 'O Mercado Livre está revisando estes anúncios. Quando a revisão terminar, eles voltam a poder anunciar.'],
-        ['paused_ml', 'Pausados no Mercado Livre', 'Estes anúncios estão pausados na sua conta — reative-os no Mercado Livre pra poder anunciar.'],
-        ['other', 'Indisponíveis no momento', 'Estes anúncios não podem anunciar agora (ex.: sem estoque).']
-      ];
-      html += '<div class="aa-card" style="border-left:3px solid var(--slate);"><h2>'+icon('tools')+' '+d.unservable.count+' anúncio(s) fora das campanhas</h2>'
-        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios <b>não podem ser exibidos</b> pelo Mercado Ads agora, então o Marketfácil os deixa fora das faixas — colocá-los em campanha não traria resultado.</p>';
-      GRUPOS.forEach(function(g){
-        var grp = ug[g[0]];
-        if (!grp || !grp.count) return;
-        var lis = (grp.items || []).slice(0, 5).map(function(i){ return '<li><span class="aa-name-pill">'+esc(i.mlb)+'</span> <span class="aa-label">'+esc(i.title||'')+'</span></li>'; }).join('');
-        var mais = grp.count > 5 ? '<div class="aa-hint">…e mais '+(grp.count-5)+'.</div>' : '';
-        html += '<div style="margin-bottom:12px;"><div class="aa-band-name" style="margin-bottom:4px;">'+esc(g[1])+' <span class="aa-badge aa-b-warn">'+grp.count+'</span></div>'
-          + '<div class="aa-hint" style="margin:0 0 6px;">'+g[2]+'</div>'
-          + '<ul class="aa-names" style="margin:0;">'+lis+'</ul>' + mais + '</div>';
-      });
+    html += '</div>'; // fecha aa-cols (Situação | macro)
+
+    // — avisos lado a lado: fora das campanhas | catálogo sem ficha (listas colapsadas) —
+    var temUns = d.unservable && d.unservable.count > 0;
+    var temBB = d.buybox_losers && d.buybox_losers.count > 0;
+    if (temUns || temBB){
+      html += '<div class="aa-cols">';
+      if (temUns){
+        var ug = d.unservable.groups || {};
+        var GRUPOS = [
+          ['cannot_display', 'Não se pode mostrar', 'O Mercado Livre não está conseguindo exibir estes anúncios nos Ads — normalmente é elegibilidade do anúncio (tipo de anúncio, frete ou categoria).'],
+          ['under_review', 'Em revisão', 'O Mercado Livre está revisando estes anúncios. Quando terminar, eles voltam a poder anunciar.'],
+          ['paused_ml', 'Pausados no Mercado Livre', 'Estão pausados na sua conta — reative-os no Mercado Livre pra poder anunciar.'],
+          ['other', 'Indisponíveis no momento', 'Não podem anunciar agora (ex.: sem estoque).']
+        ];
+        html += '<div class="aa-card" style="border-left:3px solid var(--slate);"><h2>'+icon('tools')+' '+d.unservable.count+' anúncio(s) fora das campanhas</h2>'
+          + '<p class="aa-sub" style="margin:0 0 10px;">O Mercado Ads <b>não consegue exibi-los</b> agora — colocá-los em campanha não traria resultado.</p>';
+        GRUPOS.forEach(function(g){
+          var grp = ug[g[0]];
+          if (!grp || !grp.count) return;
+          html += '<div style="margin-bottom:10px;"><div class="aa-band-name" style="margin-bottom:2px;">'+esc(g[1])+' <span class="aa-badge aa-b-warn">'+grp.count+'</span></div>'
+            + '<div class="aa-hint" style="margin:0;">'+g[2]+'</div>'
+            + AA.mlbDetails(grp.items, grp.count) + '</div>';
+        });
+        html += '</div>';
+      }
+      if (temBB){
+        var bl = d.buybox_losers;
+        html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Catálogo: '+bl.count+' anúncio(s) sem alcance</h2>'
+          + '<div class="aa-warn">Não estão <b>ganhando a disputa da ficha</b> — e anúncio assim quase não aparece nos Ads, em nenhuma faixa. A solução não é campanha: é competir melhor na ficha (preço, frete, reputação).</div>'
+          + AA.mlbDetails(bl.items, bl.count)
+          + '<div class="aa-hint">Dica: use a <b>Concorrência de Catálogo</b> do Marketfácil pra ver o que falta pra ganhar cada ficha.</div></div>';
+      }
       html += '</div>';
     }
-    // anúncios de catálogo perdendo a ficha: não imprimem em faixa NENHUMA — o problema não é a
-    // campanha, é a disputa do catálogo (preço/frete/reputação). Avisar em vez de esconder.
-    if (d.buybox_losers && d.buybox_losers.count > 0){
-      var bl = d.buybox_losers;
-      var lis = (bl.items || []).slice(0, 5).map(function(i){ return '<li><span class="aa-name-pill">'+esc(i.mlb)+'</span> <span class="aa-label">'+esc(i.title||'')+'</span></li>'; }).join('');
-      var mais = bl.count > 5 ? '<div class="aa-hint">…e mais '+(bl.count-5)+'.</div>' : '';
-      html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Catálogo: '+bl.count+' anúncio(s) sem alcance</h2>'
-        + '<div class="aa-warn">Estes anúncios de catálogo <b>não estão ganhando a disputa da ficha</b> — e anúncio assim quase não aparece nos Ads, em nenhuma faixa. Aqui a solução não é campanha: é competir melhor na ficha (preço, frete, reputação).</div>'
-        + '<ul class="aa-names">'+lis+'</ul>' + mais
-        + '<div class="aa-hint">Dica: use a <b>Concorrência de Catálogo</b> do Marketfácil pra ver exatamente o que falta pra ganhar cada ficha.</div></div>';
-    }
-    // teste de alcance: anúncios ativos que não imprimem testam as faixas em escada (33→16→12→8).
-    // Plano SEPARADO porque a instrução é outra: aplicar e ESPERAR alguns dias por degrau.
+    // dar mais força: anúncios ativos que não imprimem (plano separado — a cadência é do usuário)
     var probe = d.probe_items || {};
     var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
     if (d.bands_setup_ok && probeIds.length){
-      var inv2 = {}, bci2 = d.band_campaign_ids || {};
-      Object.keys(bci2).forEach(function(k){ inv2[String(bci2[k])] = k; });
+      var invP = AA.bandInv(d);
       var probeSearch = d.probe_search_ids || {};
       var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
       html += '<div class="aa-card" style="border-left:3px solid var(--blue);"><h2>'+icon('trend')+' Dar mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s')+'</h2>'
         + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios estão ativos mas <b>quase não aparecem</b>. O Marketfácil vai movê-los pra uma faixa com mais força de exibição.</p>'
         + '<div class="aa-warn" style="margin-bottom:10px;">Depois de aplicar, dê <b>alguns dias</b> pro Mercado Livre reagir antes de rodar a próxima análise.</div>';
       probeIds.forEach(function(cid){
-        var key = inv2[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
         var mlbs = probe[cid] || [];
-        var copyIds = probeSearch[cid] || mlbs;
-        html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-          + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
-          + '<div class="aa-band-actions">'
-          + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
-          + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+        html += AA.bandActionRow(cid, invP[String(cid)], mlbs.length, probeSearch[cid] || mlbs);
       });
       if (d.summary && d.summary.noReach > 0){
-        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) não aparecem nem na faixa mais forte — pra esses o problema é a disputa da ficha do catálogo, não a campanha (veja o card de catálogo).</div>';
+        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) não aparecem nem na faixa mais forte — pra esses veja os cards de avisos acima.</div>';
       }
       html += '</div>';
     }
@@ -559,8 +608,7 @@
   };
 
   AA.planCards = function(d){
-    var inv = {}, bci = d.band_campaign_ids || {};
-    Object.keys(bci).forEach(function(k){ inv[String(bci[k])] = k; });
+    var inv = AA.bandInv(d), bci = d.band_campaign_ids || {};
     var plan = d.plan || {}, ids = Object.keys(plan);
     var html = '<div class="aa-card"><h2>'+icon('check')+' Plano pronto</h2>';
     if (!ids.length){ return html + '<div class="aa-ok">Tudo já está no lugar certo — nada pra reorganizar neste ciclo.</div></div>'; }
@@ -574,15 +622,9 @@
     var planSearch = d.plan_search_ids || {};
     var totalMlbs = 0;
     ids.forEach(function(cid){
-      var key = inv[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
       var mlbs = planItems[cid] || plan[cid] || [];          // contagem amigável (anúncios/MLBs)
-      var copyIds = planSearch[cid] || mlbs;                 // IDs BUSCÁVEIS (família = ID do produto, não MLB)
       totalMlbs += mlbs.length;
-      html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-        + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
-        + '<div class="aa-band-actions">'
-        + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
-        + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+      html += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, planSearch[cid] || mlbs);
     });
     // variações do mesmo produto entram juntas (o ML agrupa) — evita o susto "marquei 2, apareceram 9"
     if (d.selected_count != null && totalMlbs > d.selected_count){
