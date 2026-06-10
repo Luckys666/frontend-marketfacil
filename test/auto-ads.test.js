@@ -177,6 +177,8 @@ check('AA.errMsg traduz falha de rede', /internet|servidor/.test(AA.errMsg({ net
 check('AA.rehydrate existe (re-render do element no Bubble)', typeof AA.rehydrate === 'function');
 check('guard de requisicao em voo (_busy) existe', AA._busy === false);
 check('STATUS mapeia delegated/revoked (sem ingles cru)', AA.STATUS.delegated && AA.STATUS.revoked);
+check('HOLD_RAW mapeia Y (Nao se pode mostrar) / S (Em revisao) / M (Pausado no ML)',
+  AA.HOLD_RAW && /Não se pode mostrar/.test(AA.HOLD_RAW.Y[0]) && /revisão/.test(AA.HOLD_RAW.S[0]) && /Pausado no ML/.test(AA.HOLD_RAW.M[0]));
 
 // catálogo perdendo a ficha: card de aviso no plano (não imprime em faixa nenhuma)
 const dpBL = AA.demoPlan(3, null);

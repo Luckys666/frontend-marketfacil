@@ -187,6 +187,8 @@
     BAND_TARGETS: { B1:{acos:3,roas:'33,33'}, B2:{acos:6,roas:'16,67'}, B3:{acos:9,roas:'11,11'}, B4:{acos:12,roas:'8,33'}, NA:{} },
     STATUS: { active:['Ativo','aa-b-active'], paused:['Pausado','aa-b-paused'], idle:['Sem campanha','aa-b-idle'],
               hold:['Em espera','aa-b-hold'], delegated:['Delegado','aa-b-paused'], revoked:['Revogado','aa-b-paused'] },
+    // sub-status do "hold" (vem cru do ML): Y = o Ads não consegue exibir; S = item em revisão; M = pausado no ML
+    HOLD_RAW: { Y:['Não se pode mostrar','aa-b-bad'], S:['Em revisão','aa-b-hold'], M:['Pausado no ML','aa-b-paused'] },
     ads: [], sel: {}, offset: 0, total: 0, allMode: true,
     _prevMoves: null, _verifying: false, _busy: false, _loading: false, _lastData: null
   };
@@ -362,7 +364,7 @@
       return;
     }
     var rows = AA.ads.map(function(a){
-      var st = AA.STATUS[a.status] || ['Outro','aa-b-paused'];
+      var st = (a.status === 'hold' && AA.HOLD_RAW[a.status_raw]) || AA.STATUS[a.status] || ['Outro','aa-b-paused'];
       var checked = AA.sel[a.item_id] ? 'checked' : '';
       var autoPill = a.in_automation ? '<span class="aa-auto-pill">já na automação'+(a.automation_band?(' · '+esc(a.automation_band)):'')+'</span>' : '';
       return '<label class="aa-item">'
