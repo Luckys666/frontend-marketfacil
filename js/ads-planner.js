@@ -53,6 +53,54 @@ function fmtInt(n) {
     return Number(Math.round(n)).toLocaleString(_mfCfg().locale);
 }
 
+// Métricas consolidadas de uma campanha. Preferimos camp.metrics (vem da API do ML
+// via /ads-aggregated e cobre 100% dos anúncios da campanha no período). Fallback:
+// soma dos items carregados — PARCIAL, pois /ads-items traz só os top 50 da conta.
+function getCampaignMetrics(camp, items) {
+    const m = camp && camp.metrics;
+    if (m) {
+        const cost = m.cost || 0;
+        const revenue = m.revenue || 0;
+        const orgRevenue = m.organic_revenue || 0;
+        const clicks = m.clicks || 0;
+        const impressions = m.impressions || 0;
+        const orders = m.orders || 0;
+        const orgOrders = m.organic_orders || 0;
+        const totalRev = revenue + orgRevenue;
+        const totalOrders = orders + orgOrders;
+        return {
+            cost, revenue, organic_revenue: orgRevenue, clicks, impressions, orders, organic_orders: orgOrders,
+            acos: revenue > 0 ? (cost / revenue) * 100 : 0,
+            tacos: totalRev > 0 ? (cost / totalRev) * 100 : 0,
+            roas: cost > 0 ? revenue / cost : 0,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+            cvr: clicks > 0 ? (orders / clicks) * 100 : 0,
+            adsSalesPct: totalOrders > 0 ? (orders / totalOrders) * 100 : 0,
+            partial: false
+        };
+    }
+    const ci = (items || []).filter(i => i.campaign_id === (camp && camp.campaign_id));
+    const cost = ci.reduce((s, i) => s + (i.cost || 0), 0);
+    const revenue = ci.reduce((s, i) => s + (i.revenue || 0), 0);
+    const orgRevenue = ci.reduce((s, i) => s + (i.organic_revenue || 0), 0);
+    const clicks = ci.reduce((s, i) => s + (i.clicks || 0), 0);
+    const impressions = ci.reduce((s, i) => s + (i.impressions || 0), 0);
+    const orders = ci.reduce((s, i) => s + (i.orders || 0), 0);
+    const orgOrders = ci.reduce((s, i) => s + (i.organic_orders || 0), 0);
+    const totalRev = revenue + orgRevenue;
+    const totalOrders = orders + orgOrders;
+    return {
+        cost, revenue, organic_revenue: orgRevenue, clicks, impressions, orders, organic_orders: orgOrders,
+        acos: revenue > 0 ? (cost / revenue) * 100 : 0,
+        tacos: totalRev > 0 ? (cost / totalRev) * 100 : 0,
+        roas: cost > 0 ? revenue / cost : 0,
+        ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+        cvr: clicks > 0 ? (orders / clicks) * 100 : 0,
+        adsSalesPct: totalOrders > 0 ? (orders / totalOrders) * 100 : 0,
+        partial: true
+    };
+}
+
 // ══════════════════════════════════════════════════════
 // Section 0.5: Retention Engine (localStorage-based)
 // ══════════════════════════════════════════════════════
@@ -215,29 +263,20 @@ function rtSaveItemAndCampaignSnapshots(overview) {
     while (itemFiltered.length > 14) itemFiltered.shift();
     rtSet(sid, itemKey, itemFiltered);
 
-    // Campanhas — todas
+    // Campanhas — todas (metrics da API quando disponível; senão soma parcial dos items)
     const campaigns = overview.campaigns || [];
     const allItems = overview.items || [];
     const campSnap = {};
     for (const c of campaigns) {
-        const ci = allItems.filter(i => i.campaign_id === c.campaign_id);
-        const cost = ci.reduce((s,i) => s + (i.cost||0), 0);
-        const revenue = ci.reduce((s,i) => s + (i.revenue||0), 0);
-        const orgRev = ci.reduce((s,i) => s + (i.organic_revenue||0), 0);
-        const orders = ci.reduce((s,i) => s + (i.orders||0), 0);
-        const orgOrders = ci.reduce((s,i) => s + (i.organic_orders||0), 0);
-        const prints = ci.reduce((s,i) => s + (i.impressions||0), 0);
-        const clicks = ci.reduce((s,i) => s + (i.clicks||0), 0);
-        const totalRev = revenue + orgRev;
-        const totalOrders = orders + orgOrders;
+        const cm = getCampaignMetrics(c, allItems);
         campSnap[c.campaign_id] = {
-            cost, revenue, prints, clicks, orders,
-            roas: cost > 0 ? revenue / cost : 0,
-            acos: revenue > 0 ? (cost / revenue) * 100 : 0,
-            tacos: totalRev > 0 ? (cost / totalRev) * 100 : 0,
-            ctr: prints > 0 ? (clicks / prints) * 100 : 0,
-            cvr: clicks > 0 ? (orders / clicks) * 100 : 0,
-            adsSalesPct: totalOrders > 0 ? (orders / totalOrders) * 100 : 0
+            cost: cm.cost, revenue: cm.revenue, prints: cm.impressions, clicks: cm.clicks, orders: cm.orders,
+            roas: cm.roas,
+            acos: cm.acos,
+            tacos: cm.tacos,
+            ctr: cm.ctr,
+            cvr: cm.cvr,
+            adsSalesPct: cm.adsSalesPct
         };
     }
     const campKey = `campaigns_${period}`;
@@ -2319,8 +2358,7 @@ function generateAlerts(overview, itemDetails) {
     const constrainedCampaigns = [];
     for (const camp of campaignsForBudget) {
         if (!camp.budget || camp.budget <= 0) continue;
-        const campItems = itemsForBudget.filter(i => i.campaign_id === camp.campaign_id);
-        const campCost = campItems.reduce((s, i) => s + (i.cost || 0), 0);
+        const campCost = getCampaignMetrics(camp, itemsForBudget).cost;
         if (campCost <= 0) continue;
         const dailyAvgCost = campCost / (_currentDays || 30);
         const usage = (dailyAvgCost / camp.budget) * 100;
@@ -4028,8 +4066,7 @@ function renderCampaignInsights(overview, containerId) {
     const budgetConstrained = [];
     for (const camp of campaigns) {
         if (!camp.budget || camp.budget <= 0) continue;
-        const campItems = items.filter(i => i.campaign_id === camp.campaign_id);
-        const campCost = campItems.reduce((s, i) => s + (i.cost || 0), 0);
+        const campCost = getCampaignMetrics(camp, items).cost;
         if (campCost <= 0) continue;
         const usage = ((campCost / daysForAvg) / camp.budget) * 100;
         if (usage >= 80) budgetConstrained.push({ id: camp.campaign_id, usage });
@@ -4055,20 +4092,20 @@ function renderCampaignInsights(overview, containerId) {
 
     for (const camp of campaigns) {
         const campItems = items.filter(i => i.campaign_id === camp.campaign_id);
-        const campCost = campItems.reduce((s, i) => s + i.cost, 0);
-        const campRevenue = campItems.reduce((s, i) => s + i.revenue, 0);
-        const campOrgRevenue = campItems.reduce((s, i) => s + (i.organic_revenue || 0), 0);
-        const campAcos = campRevenue > 0 ? (campCost / campRevenue) * 100 : 0;
-        const campTacos = (campRevenue + campOrgRevenue) > 0 ? (campCost / (campRevenue + campOrgRevenue)) * 100 : 0;
-        const campRoas = campCost > 0 ? campRevenue / campCost : 0;
-        const campOrders = campItems.reduce((s, i) => s + (i.orders || 0), 0);
-        const campOrgOrders = campItems.reduce((s, i) => s + (i.organic_orders || 0), 0);
-        const campTotalOrders = campOrders + campOrgOrders;
-        const campAdsSalesPct = campTotalOrders > 0 ? (campOrders / campTotalOrders) * 100 : 0;
-        const campImpressions = campItems.reduce((s, i) => s + (i.impressions || 0), 0);
-        const campClicks = campItems.reduce((s, i) => s + (i.clicks || 0), 0);
-        const campCvr = campClicks > 0 ? (campOrders / campClicks) * 100 : 0;
-        const campCtr = campImpressions > 0 ? (campClicks / campImpressions) * 100 : 0;
+        // Métricas REAIS da campanha (API ML via camp.metrics). A soma dos items
+        // seria parcial: /ads-items traz só os top 50 da conta inteira.
+        const cm = getCampaignMetrics(camp, items);
+        const campCost = cm.cost;
+        const campRevenue = cm.revenue;
+        const campAcos = cm.acos;
+        const campTacos = cm.tacos;
+        const campRoas = cm.roas;
+        const campOrders = cm.orders;
+        const campAdsSalesPct = cm.adsSalesPct;
+        const campImpressions = cm.impressions;
+        const campClicks = cm.clicks;
+        const campCvr = cm.cvr;
+        const campCtr = cm.ctr;
 
         // Tend\u00eancias por campanha (vs visita anterior)
         const cTrend = sidCamp ? rtGetCampaignTrend(sidCamp, camp.campaign_id) : null;
@@ -4097,52 +4134,29 @@ function renderCampaignInsights(overview, containerId) {
                 ${camp.roas_target ? `<span class="adp-badge adp-badge-green">Meta ROAS: ${camp.roas_target}x</span>` : ''}
                 ${camp.status ? `<span class="adp-badge ${camp.status === 'active' ? 'adp-badge-green' : 'adp-badge-red'}">${camp.status === 'active' ? 'Ativo' : camp.status === 'paused' ? 'Pausado' : camp.status}</span>` : ''}
             </div>
-            <div class="adp-campaign-metrics" style="grid-template-columns:repeat(auto-fit,minmax(95px,1fr));">
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">Custo ${rtTrendChip(cTrend && cTrend.cost, true)}</div>
-                    <div class="adp-campaign-metric-value">${fmtMoney(campCost)}</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">Fat. Ads ${rtTrendChip(cTrend && cTrend.revenue, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmtMoney(campRevenue)}</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">ACOS ${rtTrendChip(cTrend && cTrend.acos, true)}</div>
-                    <div class="adp-campaign-metric-value ${campAcos > 30 ? 'text-red' : campAcos > 20 ? 'text-yellow' : 'text-green'}">${fmt(campAcos)}%</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">TACOS ${rtTrendChip(cTrend && cTrend.tacos, true)}</div>
-                    <div class="adp-campaign-metric-value ${campTacos > 15 ? 'text-red' : campTacos > 10 ? 'text-yellow' : 'text-green'}">${fmt(campTacos)}%</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">ROAS ${rtTrendChip(cTrend && cTrend.roas, false)}</div>
-                    <div class="adp-campaign-metric-value ${campRoas < 1 ? 'text-red' : campRoas < 3 ? 'text-yellow' : 'text-green'}">${fmt(campRoas)}x</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">% Ads ${rtTrendChip(cTrend && cTrend.adsSalesPct, true)}</div>
-                    <div class="adp-campaign-metric-value ${campAdsSalesPct > 80 ? 'text-red' : campAdsSalesPct > 60 ? 'text-yellow' : 'text-green'}">${fmt(campAdsSalesPct, 0)}%</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">Impr. ${rtTrendChip(cTrend && cTrend.prints, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmtInt(campImpressions)}</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">Cliques ${rtTrendChip(cTrend && cTrend.clicks, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmtInt(campClicks)}</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">CTR ${rtTrendChip(cTrend && cTrend.ctr, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmt(campCtr, 2)}%</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">CVR ${rtTrendChip(cTrend && cTrend.cvr, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmt(campCvr, 2)}%</div>
-                </div>
-                <div class="adp-campaign-metric">
-                    <div class="adp-campaign-metric-label">Pedidos ${rtTrendChip(cTrend && cTrend.orders, false)}</div>
-                    <div class="adp-campaign-metric-value">${fmtInt(campOrders)}</div>
-                </div>
-            </div>
+            ${(() => {
+                // Célula de métrica: label / valor / tendência em linhas separadas (nada corta)
+                const cell = (label, valueHtml, chip) => `<div class="adp-campaign-metric">
+                    <div class="adp-campaign-metric-label">${label}</div>
+                    <div class="adp-campaign-metric-value">${valueHtml}</div>
+                    <div class="adp-campaign-metric-trend">${chip || '&nbsp;'}</div>
+                </div>`;
+                const heroCells =
+                    cell('Custo da campanha', `<span title="${fmtMoney(campCost)}">${fmtMoney(campCost)}</span>`, rtTrendChip(cTrend && cTrend.cost, true, { size: '0.65rem' })) +
+                    cell('Faturamento Ads', `<span class="text-green" title="${fmtMoney(campRevenue)}">${fmtMoney(campRevenue)}</span>`, rtTrendChip(cTrend && cTrend.revenue, false, { size: '0.65rem' }));
+                const gridCells =
+                    cell('ACOS', `<span class="${campAcos > 30 ? 'text-red' : campAcos > 20 ? 'text-yellow' : 'text-green'}">${fmt(campAcos)}%</span>`, rtTrendChip(cTrend && cTrend.acos, true)) +
+                    cell('TACOS', `<span class="${campTacos > 15 ? 'text-red' : campTacos > 10 ? 'text-yellow' : 'text-green'}">${fmt(campTacos)}%</span>`, rtTrendChip(cTrend && cTrend.tacos, true)) +
+                    cell('ROAS', `<span class="${campRoas < 1 ? 'text-red' : campRoas < 3 ? 'text-yellow' : 'text-green'}">${fmt(campRoas)}x</span>`, rtTrendChip(cTrend && cTrend.roas, false)) +
+                    cell('% Ads', `<span class="${campAdsSalesPct > 80 ? 'text-red' : campAdsSalesPct > 60 ? 'text-yellow' : 'text-green'}">${fmt(campAdsSalesPct, 0)}%</span>`, rtTrendChip(cTrend && cTrend.adsSalesPct, true)) +
+                    cell('CTR', `${fmt(campCtr, 2)}%`, rtTrendChip(cTrend && cTrend.ctr, false)) +
+                    cell('CVR', `${fmt(campCvr, 2)}%`, rtTrendChip(cTrend && cTrend.cvr, false)) +
+                    cell('Impressões', fmtInt(campImpressions), rtTrendChip(cTrend && cTrend.prints, false)) +
+                    cell('Cliques', fmtInt(campClicks), rtTrendChip(cTrend && cTrend.clicks, false)) +
+                    cell('Pedidos', fmtInt(campOrders), rtTrendChip(cTrend && cTrend.orders, false));
+                return `<div class="adp-campaign-metrics adp-camp-hero">${heroCells}</div>
+            <div class="adp-campaign-metrics">${gridCells}</div>`;
+            })()}
             ${camp.roas_target || camp.acos_target ? (() => {
                 let targetHtml = '';
                 if (camp.roas_target && campRoas > 0) {
@@ -4188,7 +4202,8 @@ function renderCampaignInsights(overview, containerId) {
                     '</div>';
             })()}
             ${(() => {
-                // Drilldown \u2014 anuncios que pertencem a esta campanha, com tendencias por item
+                // Drilldown \u2014 anuncios que pertencem a esta campanha (sem tendencias por item:
+                // titulo numa linha, metricas na linha de baixo \u2014 nada cortado)
                 if (campItems.length === 0) return '';
                 const sorted = [...campItems].sort((a,b) => (b.cost||0) - (a.cost||0));
                 const top5 = sorted.slice(0, 5);
@@ -4198,35 +4213,21 @@ function renderCampaignInsights(overview, containerId) {
                 const restId = `${drilldownId}-rest`;
                 const renderItemRow = (it) => {
                     const d = detailsItems[it.item_id] || {};
-                    const titulo = (d.title || it.item_id).slice(0, 36);
                     const thumb = (d.thumbnail || '').replace(/^http:\/\//,'https://');
                     const itRoas = it.cost > 0 ? (it.revenue / it.cost) : 0;
                     const totalRev = (it.revenue||0) + (it.organic_revenue||0);
                     const itTacos = totalRev > 0 ? (it.cost / totalRev) * 100 : 0;
-                    const tr = sidCamp ? rtGetItemTrend(sidCamp, it.item_id) : null;
-                    const t = tr || {};
-                    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 6px;border-bottom:1px dashed var(--border);font-size:0.7rem;">
-                        ${thumb ? `<img src="${escapeHtml(thumb)}" style="width:24px;height:24px;border-radius:3px;object-fit:cover;flex-shrink:0;">` : '<div style="width:24px;height:24px;background:var(--border);border-radius:3px;flex-shrink:0;"></div>'}
-                        <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;" title="${escapeHtml(d.title || it.item_id)}">${escapeHtml(titulo)}</div>
-                        <div style="text-align:right;min-width:50px;font-family:'DM Mono',monospace;">
-                            <div style="font-weight:700;${itRoas < 1 ? 'color:var(--red-dark)' : itRoas >= 3 ? 'color:var(--green-dark)' : ''}">${fmt(itRoas)}x</div>
-                            <div style="font-size:0.55rem;color:var(--text-muted);">ROAS ${rtTrendChip(t.roas, false)}</div>
-                        </div>
-                        <div style="text-align:right;min-width:50px;font-family:'DM Mono',monospace;">
-                            <div style="font-weight:700;">${fmt(itTacos)}%</div>
-                            <div style="font-size:0.55rem;color:var(--text-muted);">TACOS ${rtTrendChip(t.tacos, true)}</div>
-                        </div>
-                        <div style="text-align:right;min-width:60px;font-family:'DM Mono',monospace;">
-                            <div style="font-weight:700;">${fmtMoney(it.cost||0)}</div>
-                            <div style="font-size:0.55rem;color:var(--text-muted);">Custo ${rtTrendChip(t.cost, true)}</div>
-                        </div>
-                        <div style="text-align:right;min-width:55px;font-family:'DM Mono',monospace;">
-                            <div style="font-weight:700;">${fmtInt(it.impressions||0)}</div>
-                            <div style="font-size:0.55rem;color:var(--text-muted);">Impr ${rtTrendChip(t.prints, false)}</div>
-                        </div>
-                        <div style="text-align:right;min-width:60px;font-family:'DM Mono',monospace;">
-                            <div style="font-weight:700;">${fmtMoney(it.revenue||0)}</div>
-                            <div style="font-size:0.55rem;color:var(--text-muted);">Fat ${rtTrendChip(t.revenue, false)}</div>
+                    const stat = (label, value, valueStyle) => `<span style="white-space:nowrap;"><span style="color:var(--text-muted);font-size:0.6rem;text-transform:uppercase;">${label}</span> <span style="font-family:'DM Mono',monospace;font-weight:700;${valueStyle || ''}">${value}</span></span>`;
+                    return `<div class="adp-camp-item-row">
+                        ${thumb ? `<img src="${escapeHtml(thumb)}" style="width:30px;height:30px;border-radius:4px;object-fit:cover;flex-shrink:0;">` : '<div style="width:30px;height:30px;background:var(--border);border-radius:4px;flex-shrink:0;"></div>'}
+                        <div style="flex:1;min-width:0;">
+                            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:0.72rem;" title="${escapeHtml(d.title || it.item_id)}">${escapeHtml(d.title || it.item_id)}</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:2px;font-size:0.68rem;">
+                                ${stat('Custo', fmtMoney(it.cost||0))}
+                                ${stat('Fat. Ads', fmtMoney(it.revenue||0), 'color:var(--green-dark);')}
+                                ${stat('ROAS', fmt(itRoas) + 'x', itRoas < 1 ? 'color:var(--red-dark);' : itRoas >= 3 ? 'color:var(--green-dark);' : '')}
+                                ${stat('TACOS', fmt(itTacos) + '%')}
+                            </div>
                         </div>
                     </div>`;
                 };
@@ -4235,7 +4236,7 @@ function renderCampaignInsights(overview, containerId) {
                 const verTodosBtn = rest.length ? `<div style="text-align:center;padding:6px;"><button onclick="window.adpToggleCampItems('${restId}', this)" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);font-size:0.68rem;padding:4px 12px;border-radius:4px;cursor:pointer;font-family:inherit;">Ver todos (+${rest.length})</button></div>` : '';
                 return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;cursor:pointer;" onclick="window.adpToggleCampDrilldown('${drilldownId}', this)">
-                        <div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">An\u00fancios desta campanha (${campItems.length}) \u2014 tend\u00eancias por item</div>
+                        <div style="font-size:0.62rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">An\u00fancios desta campanha (${campItems.length})</div>
                         <span class="adp-camp-drilldown-arrow" style="font-size:0.7rem;color:var(--text-muted);">\u25bc</span>
                     </div>
                     <div id="${drilldownId}" style="display:none;">
@@ -4605,8 +4606,7 @@ function buildHealthChecklist(overview, alerts) {
     const daysForAvg = _currentDays || 30;
     const budgetLimited = campaigns.filter(c => {
         if (!c.budget || c.budget <= 0) return false;
-        const cItems = items.filter(i => i.campaign_id === c.campaign_id);
-        const cost = cItems.reduce((s, i) => s + (i.cost || 0), 0);
+        const cost = getCampaignMetrics(c, items).cost;
         if (cost <= 0) return false;
         return ((cost / daysForAvg) / c.budget) * 100 >= 80;
     });
@@ -4655,10 +4655,7 @@ function buildHealthChecklist(overview, alerts) {
     const campsWithTarget = campaigns.filter(c => c.roas_target > 0);
     if (campsWithTarget.length > 0) {
         const belowTarget = campsWithTarget.filter(c => {
-            const cItems = items.filter(i => i.campaign_id === c.campaign_id);
-            const cost = cItems.reduce((s, i) => s + (i.cost || 0), 0);
-            const rev = cItems.reduce((s, i) => s + (i.revenue || 0), 0);
-            const campRoas = cost > 0 ? rev / cost : 0;
+            const campRoas = getCampaignMetrics(c, items).roas;
             return campRoas > 0 && campRoas < c.roas_target;
         });
         // IDs dos an\u00fancios das campanhas abaixo da meta (pra filtrar tabela)
