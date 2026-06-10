@@ -571,6 +571,7 @@
 
   AA.render = function(d, extraBanner){
     AA._lastData = d;
+    if (d.advertiser_id) AA.advertiserId = d.advertiser_id;   // ciclo/seleção chaveados por conta mesmo sem carregar a lista
     var s = d.summary || {};
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou (conta MLBs)
     var plan = d.plan_items || d.plan || {};

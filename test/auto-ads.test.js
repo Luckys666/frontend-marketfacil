@@ -250,6 +250,13 @@ check('card "Melhore estes anúncios" presente', /Melhore estes anúncios/.test(
 check('card de melhorias linka Concorrência de Catálogo', /concorrencia-catalogo/.test(byId('aa-out').innerHTML));
 check('card de melhorias linka Análise de Anúncios', /analise-anuncio/.test(byId('aa-out').innerHTML));
 
+// render adota o advertiser_id do plano (ciclo por conta mesmo sem carregar a lista de anuncios)
+AA.advertiserId = null;
+const dpAdv = AA.demoPlan(3, null); dpAdv.advertiser_id = 55667;
+AA.render(dpAdv);
+check('render seta AA.advertiserId a partir do plano (ciclo por conta)', AA.advertiserId === 55667 && AA.cycleKey() === 'mf_aa_cycle_55667');
+AA.advertiserId = 4242;
+
 // estado vazio: sem etapas -> "Tudo no lugar"
 const dpEmpty = AA.demoPlan(3, null);
 dpEmpty.plan = {}; dpEmpty.plan_items = {}; dpEmpty.probe_items = {}; dpEmpty.budget_reductions = [];
