@@ -511,21 +511,21 @@
       Object.keys(bci2).forEach(function(k){ inv2[String(bci2[k])] = k; });
       var probeSearch = d.probe_search_ids || {};
       var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
-      html += '<div class="aa-card" style="border-left:3px solid var(--blue);"><h2>'+icon('trend')+' Teste de alcance ('+nProbe+' anúncio'+(nProbe===1?'':'s')+' sem entrega)</h2>'
-        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios estão ativos mas <b>quase não aparecem</b> na faixa atual. Vamos testá-los na próxima faixa da escada (33 → 16 → 12 → 8) pra ver se começam a entregar.</p>'
-        + '<div class="aa-warn" style="margin-bottom:10px;">Importante: aplique e <b>espere alguns dias</b> antes de rodar o próximo teste — cada degrau precisa de tempo pra provar se entrega.</div>';
+      html += '<div class="aa-card" style="border-left:3px solid var(--blue);"><h2>'+icon('trend')+' Dar mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s')+'</h2>'
+        + '<p class="aa-sub" style="margin:0 0 10px;">Estes anúncios estão ativos mas <b>quase não aparecem</b>. O Marketfácil vai movê-los pra uma faixa com mais força de exibição.</p>'
+        + '<div class="aa-warn" style="margin-bottom:10px;">Depois de aplicar, dê <b>alguns dias</b> pro Mercado Livre reagir antes de rodar a próxima análise.</div>';
       probeIds.forEach(function(cid){
         var key = inv2[String(cid)] || null, band = (key && AA.BANDS[key]) || { label:'Faixa', color:'#64748b' };
         var mlbs = probe[cid] || [];
         var copyIds = probeSearch[cid] || mlbs;
         html += '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-          + '<div><div class="aa-band-name">testar no '+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
+          + '<div><div class="aa-band-name">'+esc(band.label)+'</div><div class="aa-band-count">'+mlbs.length+' anúncio(s)</div></div></div>'
           + '<div class="aa-band-actions">'
           + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
           + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
       });
       if (d.summary && d.summary.noReach > 0){
-        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) já testaram todas as faixas sem entregar — pra esses o problema é a disputa da ficha, não a campanha (veja o card de catálogo).</div>';
+        html += '<div class="aa-hint">'+d.summary.noReach+' anúncio(s) não aparecem nem na faixa mais forte — pra esses o problema é a disputa da ficha do catálogo, não a campanha (veja o card de catálogo).</div>';
       }
       html += '</div>';
     }
