@@ -403,7 +403,9 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
     divHint = `${pctRound}% da receita vem de Ads — começando a ficar dependente. Atenção.`;
   } else {
     div = 25;
-    divHint = `${pctRound}% da receita vem de Ads. Saudável — você tem orgânico forte como base.`;
+    divHint = pctRound === 0
+      ? 'Receita 100% orgânica — base sólida. Ads pode ser uma alavanca de crescimento.'
+      : `${pctRound}% da receita vem de Ads. Saudável — você tem orgânico forte como base.`;
   }
   out.components.push({
     id: 'div',
@@ -721,11 +723,15 @@ async function fetchAdsWithIssues(sellerId) {
 // Pedidos do período (vendas brutas, sem descontar cancelamentos) — numerador
 // da "Conversão de visitas" igual ao Seller Central (pedidos ÷ visitas).
 // Unidades vendidas inflavam a conversão (1 pedido pode ter N unidades).
-async function fetchOrdersCount(sellerId, periodDays) {
+// includeRevenue: pede também soma de receita + série diária (paginação de
+// pedidos no proxy) — usado só quando a conta não tem dados de Mercado Ads,
+// porque aí os pedidos são a única fonte de receita disponível.
+async function fetchOrdersCount(sellerId, periodDays, includeRevenue) {
   if (!sellerId || !STATE.token) return null;
   try {
     const { from, to } = periodToDates(periodDays);
-    const r = await fetch(`${BASE_URL_PROXY}/api/orders-count?seller_id=${sellerId}&date_from=${from}&date_to=${to}`, {
+    const rev = includeRevenue ? '&include_revenue=1' : '';
+    const r = await fetch(`${BASE_URL_PROXY}/api/orders-count?seller_id=${sellerId}&date_from=${from}&date_to=${to}${rev}`, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
     });
     if (!r.ok) return null;
@@ -1449,9 +1455,15 @@ function wireNotifications(root) {
 }
 
 function renderHero(seller, agg, totals, streak, history) {
-  // Só o primeiro nome na saudação (first_name do ML pode vir com nome completo)
+  // Só o primeiro nome na saudação. first_name do ML pode vir com nome completo
+  // OU poluído com números (telefone/documento digitado no campo de nome, ex.
+  // "39 873 819 mariana") — pega o primeiro token que contenha letra.
   const fullName = (seller && (seller.first_name || seller.nickname)) || '';
-  const name = String(fullName).trim().split(/\s+/)[0] || '';
+  let name = String(fullName).trim().split(/\s+/).filter(t => /\p{L}/u.test(t))[0] || '';
+  if (!name && seller && seller.nickname) {
+    name = String(seller.nickname).trim().split(/\s+/)[0] || '';
+  }
+  if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
   const tier = (seller && seller.seller_reputation && seller.seller_reputation.power_seller_status) || null;
   const tierMap = {
     'platinum': { label: '👑 Platinum', cls: 'platinum' },
@@ -1809,9 +1821,22 @@ function buildHeroSub(agg, totals, streak, seller) {
   }
   if (totalRev === 0) {
     const prefix = tierTxt ? `${tierTxt} com ` : 'Você tem ';
-    return `${prefix}${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'} e zero vendas no período. Bora investigar o que está prendendo as vendas.`;
+    const itensTxt = `${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}`;
+    // agg sem nenhuma chave = ML não devolveu dados de Ads (conta sem campanha).
+    // A medição por pedidos pode estar carregando ou ter falhado — não dá pra
+    // afirmar "zero vendas" sem fonte.
+    if (!Object.keys(agg).length) {
+      if (STATE.ordersLoading) return `${prefix}${itensTxt}. Medindo suas vendas do período...`;
+      return `${prefix}${itensTxt}. Não consegui medir suas vendas do período agora — recarregue pra tentar de novo.`;
+    }
+    return `${prefix}${itensTxt} e zero vendas no período. Bora investigar o que está prendendo as vendas.`;
   }
   const tierPrefix = tierTxt ? `${tierTxt} · ` : '';
+  // Sem investimento em Ads no período, ROAS não se aplica
+  if ((agg.total_cost || 0) === 0) {
+    const aboutRev = agg.revenue_complete === false ? 'mais de ' : '';
+    return `${tierPrefix}${aboutRev}${fmtMoneyCompact(totalRev)} faturados, ${fmtInt(sales)} unidades vendidas — 100% orgânico, sem investir em Ads.`;
+  }
   return `${tierPrefix}${fmtMoneyCompact(totalRev)} faturados, ${fmtInt(sales)} unidades vendidas, ROAS ${fmt(agg.overall_roas || 0, 2)}x.`;
 }
 
@@ -1925,6 +1950,8 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
   const sales = (agg.total_orders || 0) + (agg.organic_orders || 0);
   const tacos = agg.avg_tacos || 0;
   const roas = agg.overall_roas || 0;
+  // Sem gasto em Ads no período, TACOS/ROAS não se aplicam — "0%"/"0x" parece métrica ruim
+  const hasAdsSpend = (agg.total_cost || 0) > 0;
 
   const revPrev = prevSnap ? ((prevSnap.revenue || 0) + (prevSnap.organic_revenue || 0)) : null;
   const salesPrev = prevSnap ? (prevSnap.sales || 0) : null;
@@ -1962,23 +1989,23 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
     {
       label: 'TACOS',
       ico: '⚖️',
-      value: fmtPct(tacos, 1),
+      value: hasAdsSpend ? fmtPct(tacos, 1) : '—',
       help: 'Total ACOS — quanto da sua receita TOTAL (ads + orgânica) foi gasto em ads. Quanto menor, melhor.',
-      delta: tacosDelta,
-      deltaText: tacosDelta != null ? `${deltaArrow(tacosDelta)} ${fmt(Math.abs(tacosDelta), 2)}pp` : null,
+      delta: hasAdsSpend ? tacosDelta : null,
+      deltaText: hasAdsSpend && tacosDelta != null ? `${deltaArrow(tacosDelta)} ${fmt(Math.abs(tacosDelta), 2)}pp` : null,
       deltaInverted: true,
-      tone: tacosDelta == null ? '' : (tacosDelta < 0 ? 'good' : tacosDelta > 0.5 ? 'warn' : ''),
+      tone: !hasAdsSpend || tacosDelta == null ? '' : (tacosDelta < 0 ? 'good' : tacosDelta > 0.5 ? 'warn' : ''),
       sparklineDataKey: 'tacos'
     },
     {
       label: 'ROAS',
       ico: '📈',
-      value: fmt(roas, 2) + 'x',
+      value: hasAdsSpend ? fmt(roas, 2) + 'x' : '—',
       help: 'Return on Ad Spend — quanto cada R$ 1 investido em ads gerou em vendas. ROAS 4x = cada R$ 1 virou R$ 4. Abaixo de 1x você está pagando pra vender.',
-      delta: roasDelta,
-      deltaText: roasDelta != null ? `${deltaArrow(roasDelta)} ${fmt(Math.abs(roasDelta), 2)}x` : null,
+      delta: hasAdsSpend ? roasDelta : null,
+      deltaText: hasAdsSpend && roasDelta != null ? `${deltaArrow(roasDelta)} ${fmt(Math.abs(roasDelta), 2)}x` : null,
       deltaInverted: false,
-      tone: roasDelta == null ? '' : (roasDelta > 0 ? 'good' : roasDelta < 0 ? 'crit' : ''),
+      tone: !hasAdsSpend || roasDelta == null ? '' : (roasDelta > 0 ? 'good' : roasDelta < 0 ? 'crit' : ''),
       sparklineDataKey: 'roas'
     },
     {
@@ -2715,6 +2742,10 @@ function buildPlainSummary(agg, totals, daily, prevSnap, period, seller) {
       ? ` em ${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}`
       : '';
     paragraphs.push(`${tierPrefix}faturou <b>${fmtMoney(totalRev)}</b> ${periodFull} — ${fmtInt(sales)} ${sales === 1 ? 'unidade vendida' : 'unidades vendidas'}${itemsPart}.`);
+  } else if (!Object.keys(agg).length) {
+    // ML não devolveu dados de Ads (conta sem campanha) e a medição por pedidos
+    // ainda não chegou (ou falhou) — sem fonte, não dá pra afirmar "não vendeu"
+    paragraphs.push(`Você tem <b>${totals.activeItems}</b> ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}. Ainda estou medindo suas vendas do período — se esse aviso persistir, recarregue a página.`);
   } else {
     paragraphs.push(`Você tem <b>${totals.activeItems}</b> ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}, mas não vendeu nada ${periodFull}. Vale dar uma olhada na exposição: visitas tão chegando? O preço tá competitivo? O título prende a busca?`);
   }
@@ -2817,6 +2848,11 @@ function renderReputationCard(seller) {
   const positivePct = Math.round((ratings.positive || 0) * 100);
   const neutralPct  = Math.round((ratings.neutral || 0) * 100);
   const negativePct = Math.round((ratings.negative || 0) * 100);
+  // ML não expõe mais o detalhamento real de avaliações pra muitas contas: a API
+  // devolve 0/1/0 (tudo "neutro") ou tudo zero. Esses padrões = sem dado, não
+  // "100% neutras" — esconder a barra em vez de mostrar distribuição falsa.
+  const ratingsUnavailable = (ratings.positive || 0) === 0 && (ratings.negative || 0) === 0
+    && ((ratings.neutral || 0) >= 0.995 || (ratings.neutral || 0) === 0);
   const m = rep.metrics || {};
   const claims = m.claims || {};
   const delays = m.delayed_handling_time || {};
@@ -2888,7 +2924,12 @@ function renderReputationCard(seller) {
         </div>
       </div>
 
-      ${total > 0 ? `
+      ${total > 0 ? (ratingsUnavailable ? `
+      <div class="mfd-rep-history">
+        <div class="mfd-rep-history-lb">Avaliações</div>
+        <div class="mfd-rep-history-note">O Mercado Livre não divulga o detalhamento de avaliações dessa conta pela API. Acompanhe suas avaliações direto no painel do Mercado Livre.</div>
+      </div>
+      ` : `
       <div class="mfd-rep-history">
         <div class="mfd-rep-history-lb">
           Avaliações ${isHistoric ? '(histórico desde a criação da conta)' : `(período: ${escapeHtml(ratingsPeriod)})`}
@@ -2905,7 +2946,7 @@ function renderReputationCard(seller) {
         </div>
         ${isHistoric && lvl.tone === 'good' ? '<div class="mfd-rep-history-note">As métricas recentes estão saudáveis — esse histórico inclui avaliações antigas que não afetam mais a reputação atual.</div>' : ''}
       </div>
-      ` : ''}
+      `) : ''}
 
       <div class="mfd-rep-summary">${escapeHtml(summary)}</div>
 
@@ -4385,9 +4426,12 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         patchHealthCard();
       });
 
-      // Em paralelo: conta pedidos (vendas brutas) pro funil de conversão estilo Seller Central
+      // Em paralelo: conta pedidos (vendas brutas) pro funil de conversão estilo Seller Central.
+      // Conta SEM dados de Mercado Ads (ML não devolve metrics_summary — seller sem campanha):
+      // pede também a receita por pedidos, que vira a fonte orgânica do dashboard inteiro.
+      const organicFallback = !aggData.aggregated;
       STATE.ordersLoading = true;
-      fetchOrdersCount(sidLocal, period).then(d => {
+      fetchOrdersCount(sidLocal, period, organicFallback).then(d => {
         if (reqId !== STATE._reqSeq) return;
         STATE.ordersLoading = false;
         STATE.ordersData = d; // null = indisponível (conversões caem pro cálculo por unidades)
@@ -4405,7 +4449,40 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
           }
           rtSaveSnapshot(sidLocal, period, reqSnap);
         }
-        patchOrganicVsCard();
+        if (organicFallback && d && d.revenue && typeof d.revenue.amount === 'number') {
+          // Sintetiza o agregado 100% orgânico no MESMO shape do /ads-aggregated:
+          // hero, KPIs, health, resumo e charts passam a funcionar sem nenhum
+          // tratamento especial (custo/cliques de Ads ficam zerados de verdade)
+          STATE.data.aggregated = {
+            total_cost: 0, total_revenue: 0,
+            organic_revenue: d.revenue.amount,
+            total_clicks: 0, total_impressions: 0,
+            total_orders: 0,
+            organic_orders: d.revenue.units || 0,
+            avg_acos: 0, avg_tacos: 0, overall_roas: 0,
+            avg_ctr: 0, avg_cvr: 0, avg_cpc: 0,
+            ads_sales_pct: 0,
+            organic_only: true,
+            revenue_complete: d.revenue.complete !== false
+          };
+          STATE.data.daily_aggregated = (d.daily || []).map(day => ({
+            date: day.date, cost: 0, clicks: 0, prints: 0,
+            total_amount: 0,
+            organic_units_amount: day.revenue || 0,
+            units_quantity: 0,
+            organic_units_quantity: day.units || 0
+          }));
+          if (reqSnap) {
+            reqSnap.organic_revenue = d.revenue.amount;
+            reqSnap.organic_orders = d.revenue.units || 0;
+            reqSnap.sales = d.revenue.units || 0;
+            rtSaveSnapshot(sidLocal, period, reqSnap);
+            rtUpdateRecords(sidLocal, Object.assign({ date: todayStr() }, reqSnap));
+          }
+          renderDashboard(); // re-render completo já com a receita orgânica
+        } else {
+          patchOrganicVsCard();
+        }
       }).catch(() => {
         if (reqId !== STATE._reqSeq) return;
         STATE.ordersLoading = false;
