@@ -485,6 +485,13 @@ function periodToDates(period) {
   return { from: fmtD(from), to: fmtD(to) };
 }
 
+// Desloca uma data YYYY-MM-DD em N dias (aritmética pura de calendário, sem fuso)
+function shiftYmd(ymd, days) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function fetchAdsAggregated(period) {
   const { from, to } = periodToDates(period);
   const url = `${API_ADS_AGGREGATED}?date_from=${from}&date_to=${to}`;
@@ -726,10 +733,10 @@ async function fetchAdsWithIssues(sellerId) {
 // includeRevenue: pede também soma de receita + série diária (paginação de
 // pedidos no proxy) — usado só quando a conta não tem dados de Mercado Ads,
 // porque aí os pedidos são a única fonte de receita disponível.
-async function fetchOrdersCount(sellerId, periodDays, includeRevenue) {
+async function fetchOrdersCount(sellerId, periodDays, includeRevenue, range) {
   if (!sellerId || !STATE.token) return null;
   try {
-    const { from, to } = periodToDates(periodDays);
+    const { from, to } = range || periodToDates(periodDays);
     const rev = includeRevenue ? '&include_revenue=1' : '';
     const r = await fetch(`${BASE_URL_PROXY}/api/orders-count?seller_id=${sellerId}&date_from=${from}&date_to=${to}${rev}`, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
@@ -1289,16 +1296,19 @@ function buildChecklist(agg, totals, sid) {
   const items = [];
   // 1. Sempre — abrir o app (já feito por estar aqui)
   items.push({ id: 'open',     text: 'Abrir o painel do dia', done: true, meta: 'feito ✓' });
-  // 2. Revisar campanhas se ROAS mudou
-  if ((agg.overall_roas || 0) < 2)
+  // 2. Item do meio depende do perfil: conta sem Ads não tem campanha pra auditar
+  if (agg.organic_only || ((agg.total_cost || 0) === 0 && (agg.organic_revenue || 0) > 0))
+    items.push({ id: 'campaigns', text: 'Rodar a Auditoria de Tags na conta', done: false, tool: 'tags' });
+  else if ((agg.overall_roas || 0) < 2)
     items.push({ id: 'campaigns', text: 'Auditar campanhas com ROAS baixo', done: false, tool: 'planner' });
   else
     items.push({ id: 'campaigns', text: 'Revisar performance de uma campanha', done: false, tool: 'planner' });
   // 3. Sempre — uma exploração
   items.push({ id: 'explore',   text: 'Explorar uma feature nova hoje', done: false, tool: 'finder' });
 
-  // Persiste
-  rtSetChecklist(sid, items);
+  // Persiste só quando os dados de receita já chegaram: em conta sem Ads o
+  // primeiro render vem com agg vazio e o item de campanha sairia errado pro dia todo
+  if (Object.keys(agg).length) rtSetChecklist(sid, items);
   return items;
 }
 
@@ -1781,6 +1791,9 @@ function renderOrganicVsAds(agg) {
         </div>
         <div class="mfd-vs-col mfd-vs-ads">
           <div class="mfd-vs-col-header"><span class="mfd-vs-icon">🎯</span><b>Ads</b></div>
+          ${agg.organic_only && adsRev === 0 && adsCost === 0 ? `
+          <div class="mfd-empty" style="margin-top:10px;">Você ainda não usa Product Ads — sua receita é 100% orgânica. Campanhas aceleram produtos que já vendem sozinhos.</div>
+          ` : `
           <div class="mfd-vs-metric">
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Receita das vendas que vieram de Ads — Mercado Livre marca a venda como impulsionada quando o cliente clicou no anúncio pago.')}</span>
             <span class="mfd-vs-value" title="${fmtMoney(adsRev)}">${fmtMoneyCompact(adsRev)}</span>
@@ -1795,6 +1808,7 @@ function renderOrganicVsAds(agg) {
             ${kpiCell({ label: 'ROAS', hint: 'Return on Ad Spend: pra cada R$ 1 gasto em Ads, quanto retornou em receita. Receita Ads ÷ Custo Ads.', value: `${fmt(adsRoas, 2)}x`, delta: deltaBadge(adsRoas, prevRoas, { absolute: true, suffix: 'x' }) })}
             ${kpiCell({ label: 'TACOS', hint: 'Total Advertising Cost of Sales: % do faturamento total (Ads + orgânico) que vai pra Ads. Custo Ads ÷ Receita total.', value: fmtPct(tacos, 2), delta: deltaBadge(tacos, prevTacos, { absolute: true, suffix: 'pp', inverted: true }) })}
           </div>
+          `}
         </div>
       </div>
     </div>
@@ -2046,7 +2060,7 @@ function renderKpi(k) {
       <div class="mfd-kpi-label"><span class="ico">${k.ico}</span>${escapeHtml(k.label)}${helpDot}</div>
       <div class="mfd-kpi-value">${k.value}</div>
       ${k.deltaText
-        ? `<div><span class="mfd-kpi-delta ${badgeClass}">${k.deltaText}</span>${!k.isHealth ? '<span class="mfd-kpi-delta-label">vs visita anterior</span>' : ''}</div>`
+        ? `<div><span class="mfd-kpi-delta ${badgeClass}">${k.deltaText}</span>${!k.isHealth ? `<span class="mfd-kpi-delta-label">${STATE.prevSnapshot && STATE.prevSnapshot._synthetic ? 'vs período anterior' : 'vs visita anterior'}</span>` : ''}</div>`
         : ''}
     </div>
   `;
@@ -4493,6 +4507,36 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         STATE.ordersData = null;
         patchOrganicVsCard();
       });
+
+      // Comparativo "vs período anterior" pra conta sem Mercado Ads: o snapshot
+      // local da visita anterior não existe (ou foi salvo zerado pelo bug do
+      // aggregated null) — sem ele, todos os deltas viram "—". Busca os pedidos
+      // do período equivalente ANTERIOR e monta um prev sintético com dados reais.
+      const prevLocal = STATE.prevSnapshot;
+      const prevLocalEmpty = !prevLocal ||
+        (((prevLocal.revenue || 0) + (prevLocal.organic_revenue || 0) + (prevLocal.sales || 0)) === 0);
+      if (organicFallback && prevLocalEmpty) {
+        const { from: curFrom } = periodToDates(period);
+        const prevRange = { from: shiftYmd(curFrom, -period), to: shiftYmd(curFrom, -1) };
+        fetchOrdersCount(sidLocal, period, true, prevRange).then(pd => {
+          if (reqId !== STATE._reqSeq) return;
+          if (pd && pd.revenue && typeof pd.revenue.amount === 'number' && pd.revenue.amount > 0) {
+            STATE.prevSnapshot = {
+              _synthetic: true, // não é visita real — banner "desde sua última visita" ignora
+              date: prevRange.to,
+              revenue: 0,
+              organic_revenue: pd.revenue.amount,
+              cost: 0,
+              sales: pd.revenue.units || 0,
+              ads_orders: 0,
+              organic_orders: pd.revenue.units || 0,
+              tacos: 0, roas: 0, clicks: 0, impressions: 0, cvr: 0,
+              visits: 0, organic_conversion: 0
+            };
+            renderDashboard();
+          }
+        }).catch(() => {});
+      }
 
       // Em paralelo: busca anúncios com problema (saúde unhealthy/warning)
       STATE.issuesLoading = true;
