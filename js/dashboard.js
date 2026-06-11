@@ -1502,6 +1502,8 @@ function renderHero(seller, agg, totals, streak, history) {
     ? Number(agg.total_revenue) / Number(agg.total_cost) : 0;
   const heroTacos = totalRev > 0 ? ((Number(agg.total_cost) || 0) / totalRev * 100) : 0;
   const hasData = totalRev > 0 || totalOrders > 0;
+  // Receita por pedidos com paginação no cap (conta orgânica gigante): valor é piso, não total
+  const revSuffix = agg.revenue_complete === false ? '+' : '';
 
   const html = `
     <div class="mfd-hero">
@@ -1517,11 +1519,11 @@ function renderHero(seller, agg, totals, streak, history) {
         <div class="mfd-hero-stats">
           <div class="mfd-hero-stat">
             <span class="mfd-hero-stat-label">faturamento</span>
-            <span class="mfd-hero-stat-value">${fmtMoneyCompact(totalRev)}</span>
+            <span class="mfd-hero-stat-value">${fmtMoneyCompact(totalRev)}${revSuffix}</span>
           </div>
           <div class="mfd-hero-stat">
             <span class="mfd-hero-stat-label">vendas</span>
-            <span class="mfd-hero-stat-value">${fmtInt(totalOrders)}</span>
+            <span class="mfd-hero-stat-value">${fmtInt(totalOrders)}${revSuffix}</span>
           </div>
           ${adsRoas > 0 ? `
           <div class="mfd-hero-stat">
@@ -1952,6 +1954,8 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
   const roas = agg.overall_roas || 0;
   // Sem gasto em Ads no período, TACOS/ROAS não se aplicam — "0%"/"0x" parece métrica ruim
   const hasAdsSpend = (agg.total_cost || 0) > 0;
+  // Receita por pedidos com paginação no cap: valor é piso, não total
+  const kpiRevSuffix = agg.revenue_complete === false ? '+' : '';
 
   const revPrev = prevSnap ? ((prevSnap.revenue || 0) + (prevSnap.organic_revenue || 0)) : null;
   const salesPrev = prevSnap ? (prevSnap.sales || 0) : null;
@@ -1967,7 +1971,7 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
     {
       label: 'Receita',
       ico: '💰',
-      value: fmtMoneyCompact(totalRev),
+      value: fmtMoneyCompact(totalRev) + kpiRevSuffix,
       help: 'Total que você faturou no período (vendas via ads + vendas orgânicas).',
       delta: revDelta,
       deltaText: revDelta != null ? `${deltaArrow(revDelta)} ${fmt(Math.abs(revDelta), 1)}%` : null,
@@ -1978,7 +1982,7 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
     {
       label: 'Vendas',
       ico: '🛒',
-      value: fmtCompact(sales),
+      value: fmtCompact(sales) + kpiRevSuffix,
       help: 'Quantidade de unidades vendidas no período (somando ads e orgânicas).',
       delta: salesDelta,
       deltaText: salesDelta != null ? `${deltaArrow(salesDelta)} ${fmt(Math.abs(salesDelta), 1)}%` : null,
