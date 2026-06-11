@@ -1,5 +1,5 @@
 /**
- * MarketFácil - Account Scanner Widget
+ * Marketfacil - Account Scanner Widget
  * Repositório: Luckys666/frontend-marketfacil
  * 
  * Este script gerencia a busca massiva de anúncios e filtragem local via Proxy.

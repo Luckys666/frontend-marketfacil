@@ -1,4 +1,4 @@
-/* === ADS PLANNER — MarketFácil === */
+/* === ADS PLANNER — Marketfacil === */
 /* Planejador de Ads com dados reais da API de Product Ads do Mercado Livre */
 
 // ══════════════════════════════════════════════════════

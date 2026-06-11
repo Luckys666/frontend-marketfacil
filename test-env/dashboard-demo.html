@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard MarketFácil — Demo (mock data)</title>
+<title>Dashboard Marketfacil — Demo (mock data)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -233,10 +233,53 @@ window.fetch = async function(url, opts) {
         problem: 'Qualidade da imagem principal abaixo do esperado',
         solution: 'Suba uma foto com 1200x1200 ou 1200x1540, boa iluminação e produto centralizado pra remover a penalização',
         status: 'warning',
-        url: 'https://app.marketfacil.com.br/analise-anuncio?input-url=MLB3785926845',
+        url: 'https://app.marketfacil.com.br/analise-anuncio?item=MLB3785926845',
         score: 38,
         level: 'medium'
       }
+    });
+  }
+
+  if (u.includes('/api/ads-items')) {
+    // Top anúncios em campanha (lista usada pelos cards "Melhores anúncios" e reviews)
+    if (!s.hasCampaigns) return jsonResp({ items: [] });
+    const mk = (i, title, cost, revenue, organic) => ({
+      item_id: `MLB${4000000 + i}`,
+      title,
+      thumbnail: '',
+      permalink: 'https://produto.mercadolivre.com.br/MLB-' + (4000000 + i),
+      catalog_listing: i % 2 === 0,
+      current_level: null,
+      cost, revenue, organic_revenue: organic,
+      roas: cost > 0 ? revenue / cost : 0,
+      tacos: (revenue + organic) > 0 ? (cost / (revenue + organic)) * 100 : 0,
+      ctr: 1.2 + i * 0.3, cvr: 2.5 + i * 0.8,
+      orders: 10 + i * 7, clicks: 300 + i * 120, impressions: 22000 + i * 9000
+    });
+    return jsonResp({ items: [
+      mk(1, 'Camiseta básica branca masculina 100% algodão premium', s.cost * 0.30, s.revenue * 0.28, s.organic * 0.2),
+      mk(2, 'Kit 3 poleiras adesivas multiuso banheiro cozinha inox', s.cost * 0.24, s.revenue * 0.22, s.organic * 0.15),
+      mk(3, 'Fone bluetooth sem fio com cancelamento de ruído', s.cost * 0.18, s.revenue * 0.2, s.organic * 0.12),
+      mk(4, 'Garrafa térmica inox 1 litro 12h quente gelado', s.cost * 0.12, s.revenue * 0.1, s.organic * 0.1),
+      mk(5, 'Organizador de gavetas modular 12 nichos dobrável', s.cost * 0.08, s.revenue * 0.06, s.organic * 0.05)
+    ] });
+  }
+
+  if (u.includes('/api/fetch-reviews')) {
+    const idm = u.match(/item_id=([^&]+)/);
+    const iid = idm ? decodeURIComponent(idm[1]) : 'MLB0';
+    const n = parseInt(iid.slice(-1), 10) || 1;
+    const reviews = Array.from({ length: Math.min(n + 1, 4) }, (_, i) => ({
+      rate: 5 - (i % 2),
+      title: i === 0 ? 'Excelente' : 'Muito bom',
+      content: i === 0 ? 'Produto de ótima qualidade, chegou rápido e bem embalado. Recomendo!' : 'Atendeu bem, voltaria a comprar.',
+      date_created: `2026-0${5 + (i % 2)}-1${i}T10:00:00.000Z`
+    }));
+    return jsonResp({
+      rating_average: 4.6,
+      paging: { total: n * 7 + 1 },
+      rating_levels: null,
+      reviews
     });
   }
 

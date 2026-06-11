@@ -1,6 +1,6 @@
 # frontend-marketfacil
 
-Repositório versionado do **código JS/HTML injetado no app Bubble MarketFácil**. O app real roda no Bubble — este repo é o dump/source-of-truth do que vai em cada HTML element.
+Repositório versionado do **código JS/HTML injetado no app Bubble Marketfacil**. O app real roda no Bubble — este repo é o dump/source-of-truth do que vai em cada HTML element.
 
 ## Contexto essencial
 
@@ -34,7 +34,7 @@ Repositório versionado do **código JS/HTML injetado no app Bubble MarketFácil
 
 ## ML API — limitações conhecidas
 
-- Token MarketFácil **não tem write legacy**: `PUT /items/{id}` bloqueado (403)
+- Token Marketfacil **não tem write legacy**: `PUT /items/{id}` bloqueado (403)
 - Para writes, usar API `user-products` (mapa completo em `docs/ML-API-SCOPES-MAP.md`)
 - i18n multi-site em andamento: plano 5 fases em memória `project_ml_i18n`
 

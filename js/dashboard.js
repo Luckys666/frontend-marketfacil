@@ -1,4 +1,4 @@
-/* === DASHBOARD MARKETFÁCIL ===
+/* === DASHBOARD MARKETFACIL ===
  * Painel inicial viciante que agrega métricas da conta inteira e
  * direciona o usuário pras ferramentas certas.
  *
@@ -206,9 +206,12 @@ function rtSaveSnapshot(sid, period, snap) {
   const today = todayStr();
   const list = rtGetHistory(sid);
   // dedupe (mesmo dia + mesmo período)
-  const filtered = list.filter(h => !(h.date === today && (h.period || 30) === period));
+  let filtered = list.filter(h => !(h.date === today && (h.period || 30) === period));
   filtered.push(Object.assign({ date: today, period, ts: Date.now() }, snap));
-  while (filtered.length > MAX_HISTORY) filtered.shift();
+  // Janela por DIAS (não por nº de entradas): cada dia gera até 4 entradas
+  // (uma por período visualizado) e o heatmap precisa de 90 dias completos.
+  filtered = filtered.filter(h => daysBetween(h.date, today) <= MAX_HISTORY);
+  while (filtered.length > MAX_HISTORY * 4) filtered.shift();
   _set('history', sid, filtered);
 }
 
@@ -297,6 +300,9 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
   const unhealthyCount = issues && Array.isArray(issues.slots) ? issues.slots.length : 0;
   let ads = MAX;
   let adsHint = 'Carregando lista de anúncios com problema de saúde detectado pelo ML...';
+  if (issues == null && STATE.issuesError) {
+    adsHint = 'Não foi possível verificar a saúde dos anúncios agora — atualize a página pra tentar de novo.';
+  }
   if (issues != null) {
     if (activeCount === 0) {
       ads = MAX;
@@ -309,8 +315,10 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
       else if (healthyPct >= 0.5) ads = 8;
       else                        ads = 0;
       adsHint = unhealthyCount > 0
-        ? `${unhealthyCount} de ${activeCount} anúncios com problema de saúde detectado pelo ML (tag negativa, qualidade baixa, etc).`
-        : `Todos os ${activeCount} anúncios ativos estão sem problema de saúde detectado.`;
+        ? `${unhealthyCount} de ${activeCount} ${activeCount === 1 ? 'anúncio' : 'anúncios'} com problema de saúde detectado pelo ML (tag negativa, qualidade baixa, etc).`
+        : activeCount === 1
+          ? 'Seu único anúncio ativo está sem problema de saúde detectado.'
+          : `Todos os ${activeCount} anúncios ativos estão sem problema de saúde detectado.`;
     }
   }
   out.components.push({
@@ -467,9 +475,10 @@ function classFromScore(score) {
 // ══════════════════════════════════════════════════════════════════════
 
 function periodToDates(period) {
+  // "Últimos N dias" = hoje incluso + (N-1) anteriores (API trata as pontas como inclusivas)
   const to = new Date();
   const from = new Date();
-  from.setDate(from.getDate() - period);
+  from.setDate(from.getDate() - (period - 1));
   const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   return { from: fmtD(from), to: fmtD(to) };
 }
@@ -499,73 +508,114 @@ async function fetchUserMe() {
   } catch (_) { return null; }
 }
 
-// Soma visitas totais dos anúncios ativos do seller no período.
-// Usa /api/fetch-visits-bulk em batches de 5. Paginação até 200 itens (cap).
+// Visitas totais da conta no período.
+// Caminho preferido: /api/user-visits (ML /users/$ID/items_visits) — UMA chamada
+// cobre a conta inteira, incluindo visitas atribuídas a anúncios de catálogo.
+// Fallback: soma por item em chunks (contas onde o agregado falhar).
 async function fetchOrganicVisits(sellerId, periodDays) {
   if (!sellerId || !STATE.token) return null;
+  const { from, to } = periodToDates(periodDays);
   try {
-    // Pega lista de IDs ativos (até 200 itens — cap razoável)
-    const idsRes = await fetch(`${API_FETCH_ADS}?seller_id=${sellerId}&status=active&limit=100&offset=0`, {
+    const r = await fetch(`${BASE_URL_PROXY}/api/user-visits?user_id=${sellerId}&date_from=${from}&date_to=${to}`, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
     });
-    if (!idsRes.ok) return null;
-    const idsData = await idsRes.json();
-    let ids = (idsData?.results || []).map(it => (typeof it === 'string' ? it : (it?.id || it?.item_id))).filter(Boolean);
-
-    const total = idsData?.paging?.total || ids.length;
-    if (total > 100) {
-      // Pega mais uma página até cap 200
-      const idsRes2 = await fetch(`${API_FETCH_ADS}?seller_id=${sellerId}&status=active&limit=100&offset=100`, {
-        headers: { 'Authorization': `Bearer ${STATE.token}` }
-      });
-      if (idsRes2.ok) {
-        const d2 = await idsRes2.json();
-        ids = ids.concat((d2?.results || []).map(it => (typeof it === 'string' ? it : (it?.id || it?.item_id))).filter(Boolean));
+    if (r.ok) {
+      const d = await r.json();
+      if (d && typeof d.total_visits === 'number') {
+        return {
+          total_visits: d.total_visits,
+          accountWide: true,        // conta inteira — não é amostra
+          sampled_items: null,
+          capped: false,
+          incomplete: false,
+          total_items_account: null
+        };
       }
     }
-    if (!ids.length) return { total_visits: 0, sampled_items: 0, capped: false };
+  } catch (_) { /* cai pro fallback por item */ }
+  try {
+    const MAX_ITEMS = 1000; // teto de segurança pra contas gigantes
+    let ids = [];
+    let total = 0;
+    for (let offset = 0; offset < MAX_ITEMS; offset += 100) {
+      const res = await fetch(`${API_FETCH_ADS}?seller_id=${sellerId}&status=active&limit=100&offset=${offset}`, {
+        headers: { 'Authorization': `Bearer ${STATE.token}` }
+      });
+      if (!res.ok) break;
+      const d = await res.json();
+      const page = (d?.results || []).map(it => (typeof it === 'string' ? it : (it?.id || it?.item_id))).filter(Boolean);
+      ids = ids.concat(page);
+      total = d?.paging?.total || ids.length;
+      if (!page.length || ids.length >= Math.min(total, MAX_ITEMS)) break;
+    }
+    ids = ids.slice(0, MAX_ITEMS);
+    if (!ids.length) return { total_visits: 0, sampled_items: 0, capped: false, incomplete: false };
 
-    // Define range de datas (mesmo período do dashboard)
-    const { from, to } = periodToDates(periodDays);
-
-    // Chama bulk em batches de 5 ids (limite do endpoint)
-    let totalVisits = 0;
-    const batchSize = 50; // mlb-proxy aceita até 50 em ?items=
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize);
-      const url = `${BASE_URL_PROXY}/api/fetch-visits-bulk?items=${batch.join(',')}&date_from=${from}&date_to=${to}`;
+    const fetchChunk = async (batch) => {
       try {
-        const r = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${STATE.token}` }
-        });
-        if (!r.ok) continue;
+        const url = `${BASE_URL_PROXY}/api/fetch-visits-bulk?items=${batch.join(',')}&date_from=${from}&date_to=${to}`;
+        const r = await fetch(url, { headers: { 'Authorization': `Bearer ${STATE.token}` } });
+        if (!r.ok) return null; // null = chunk falhou (≠ zero visitas)
         const data = await r.json();
-        // ML retorna { itemId: { total_visits: N, results: [...] } | array }
+        let sum = 0;
+        // Proxy retorna { itemId: { total_visits: N, results: [...] } | array }
         for (const k of Object.keys(data || {})) {
           const it = data[k];
           if (it == null) continue;
-          if (typeof it.total_visits === 'number') totalVisits += it.total_visits;
-          else if (Array.isArray(it.results)) {
-            totalVisits += it.results.reduce((s, r) => s + (r.total || 0), 0);
-          } else if (Array.isArray(it)) {
-            totalVisits += it.reduce((s, r) => s + (r.total || 0), 0);
-          }
+          if (typeof it.total_visits === 'number') sum += it.total_visits;
+          else if (Array.isArray(it.results)) sum += it.results.reduce((s, r) => s + (r.total || 0), 0);
+          else if (Array.isArray(it)) sum += it.reduce((s, r) => s + (r.total || 0), 0);
         }
-      } catch (_) {}
+        return sum;
+      } catch (_) { return null; }
+    };
+
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+    let totalVisits = 0;
+    let failedChunks = 0;
+    const WAVE = 5; // 5 chunks em paralelo por onda (não estoura proxy/ML)
+    for (let i = 0; i < chunks.length; i += WAVE) {
+      const sums = await Promise.all(chunks.slice(i, i + WAVE).map(fetchChunk));
+      for (const s of sums) {
+        if (s == null) failedChunks++;
+        else totalVisits += s;
+      }
     }
     return {
       total_visits: totalVisits,
       sampled_items: ids.length,
-      capped: total > 200,
+      capped: total > MAX_ITEMS,
+      incomplete: failedChunks > 0, // faltou pedaço → conversão sairia distorcida
       total_items_account: total
     };
   } catch (_) { return null; }
 }
 
-// Busca visitas DIÁRIAS agregadas — itera anúncios ativos via time_window.
-// Retorna { '2026-05-14': 1234, '2026-05-15': 980, ... }
+// Busca visitas DIÁRIAS agregadas.
+// Caminho preferido: /api/user-visits-daily (ML /users/$ID/items_visits/time_window)
+// — UMA chamada com a série da conta inteira. Fallback: amostra por item.
+// Retorna { daily: { '2026-05-14': 1234, ... }, ... }
 async function fetchOrganicVisitsDaily(sellerId, periodDays) {
   if (!sellerId || !STATE.token) return null;
+  const lastDays = Math.min(90, Math.max(1, periodDays || 30));
+  try {
+    const r = await fetch(`${BASE_URL_PROXY}/api/user-visits-daily?user_id=${sellerId}&last=${lastDays}&unit=day`, {
+      headers: { 'Authorization': `Bearer ${STATE.token}` }
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data && Array.isArray(data.results)) {
+        const daily = {};
+        for (const point of data.results) {
+          if (!point || !point.date) continue;
+          const ymd = String(point.date).slice(0, 10);
+          daily[ymd] = (daily[ymd] || 0) + (Number(point.total) || 0);
+        }
+        return { daily, accountWide: true, sampled_items: null };
+      }
+    }
+  } catch (_) { /* cai pro fallback por item */ }
   try {
     const idsRes = await fetch(`${API_FETCH_ADS}?seller_id=${sellerId}&status=active&limit=100&offset=0`, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
@@ -607,13 +657,25 @@ async function fetchOrganicVisitsDaily(sellerId, periodDays) {
 async function fetchModerations(sellerId) {
   if (!sellerId || !STATE.token) return null;
   try {
-    const itemsRes = await fetch(`${BASE_URL_PROXY}/api/moderations/items?seller_id=${sellerId}&limit=20`, {
-      headers: { 'Authorization': `Bearer ${STATE.token}` }
-    });
-    if (!itemsRes.ok) return null;
-    const itemsData = await itemsRes.json();
-    const ids = Array.isArray(itemsData?.results) ? itemsData.results : [];
-    const total = itemsData?.paging?.total || ids.length;
+    // Pagina até trazer todas as moderações (teto de 100 pra não estourar
+    // requisição em conta muito problemática — o card avisa se passar disso)
+    const PAGE = 50, MAX_IDS = 100;
+    let ids = [], total = 0, offset = 0;
+    do {
+      const itemsRes = await fetch(`${BASE_URL_PROXY}/api/moderations/items?seller_id=${sellerId}&limit=${PAGE}&offset=${offset}`, {
+        headers: { 'Authorization': `Bearer ${STATE.token}` }
+      });
+      if (!itemsRes.ok) {
+        if (offset === 0) return null; // primeira página falhou = erro real
+        break;                         // página extra falhou = segue com o que tem
+      }
+      const itemsData = await itemsRes.json();
+      const page = Array.isArray(itemsData?.results) ? itemsData.results : [];
+      ids = ids.concat(page);
+      total = itemsData?.paging?.total || ids.length;
+      offset += PAGE;
+      if (!page.length) break;
+    } while (ids.length < Math.min(total, MAX_IDS));
     if (!ids.length) return { items: [], total: 0, featured: null };
 
     // Detalhe da primeira moderação
@@ -634,7 +696,7 @@ async function fetchModerations(sellerId) {
             reason,
             remedy,
             date_created: mod.date_created,
-            url: `https://app.marketfacil.com.br/analise-anuncio?input-url=${ids[0]}`
+            url: `https://app.marketfacil.com.br/analise-anuncio?item=${ids[0]}`
           };
         }
       }
@@ -656,17 +718,35 @@ async function fetchAdsWithIssues(sellerId) {
   } catch (_) { return null; }
 }
 
+// Pedidos do período (vendas brutas, sem descontar cancelamentos) — numerador
+// da "Conversão de visitas" igual ao Seller Central (pedidos ÷ visitas).
+// Unidades vendidas inflavam a conversão (1 pedido pode ter N unidades).
+async function fetchOrdersCount(sellerId, periodDays) {
+  if (!sellerId || !STATE.token) return null;
+  try {
+    const { from, to } = periodToDates(periodDays);
+    const r = await fetch(`${BASE_URL_PROXY}/api/orders-count?seller_id=${sellerId}&date_from=${from}&date_to=${to}`, {
+      headers: { 'Authorization': `Bearer ${STATE.token}` }
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return (typeof d?.total_orders === 'number') ? d : null;
+  } catch (_) { return null; }
+}
+
 async function fetchAdsCount(sellerId, status) {
-  // Busca só 1 página com limit=1 pra pegar paging.total
+  // Busca só 1 página com limit=1 pra pegar paging.total.
+  // Retorna null em ERRO (≠ 0 anúncios) — quem consome trata como "desconhecido".
   try {
     const url = `${API_FETCH_ADS}?seller_id=${sellerId}&status=${status}&limit=1&offset=0`;
     const res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
     });
-    if (!res.ok) return 0;
+    if (!res.ok) return null;
     const data = await res.json();
-    return data?.paging?.total || 0;
-  } catch (_) { return 0; }
+    const t = data?.paging?.total;
+    return (typeof t === 'number') ? t : 0;
+  } catch (_) { return null; }
 }
 
 // Reviews dos top anúncios — paraleliza (1 fetch por item, máx 5).
@@ -763,8 +843,8 @@ function buildInsights(ctx) {
   const hasPrev = prevSnap && (prevSnap.revenue || prevSnap.organic_revenue || prevSnap.sales);
   const pctChange = (now, prev) => prev > 0 ? ((now - prev) / prev) : 0;
   const absChange = (now, prev) => now - prev;
-  const fmtPctDelta = (d) => (d > 0 ? '+' : '') + (d * 100).toFixed(1) + '%';
-  const fmtAbsDelta = (d, dec = 2) => (d > 0 ? '+' : '') + d.toFixed(dec);
+  const fmtPctDelta = (d) => (d > 0 ? '+' : d < 0 ? '-' : '') + fmt(Math.abs(d) * 100, 1) + '%';
+  const fmtAbsDelta = (d, dec = 2) => (d > 0 ? '+' : d < 0 ? '-' : '') + fmt(Math.abs(d), dec);
 
   // Streak/engajamento (não depende de meta)
   list.push({
@@ -787,7 +867,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = (agg.total_revenue || 0) + (agg.organic_revenue || 0);
       const prev = (prevSnap.revenue || 0) + (prevSnap.organic_revenue || 0);
-      return `Sua receita subiu <b>${fmtPctDelta(pctChange(now, prev))}</b> em relação ao período anterior (${fmtMoneyCompact(prev)} → ${fmtMoneyCompact(now)}). Bom momento pra explorar Concorrência de Catálogo e roubar share.`;
+      return `Sua receita subiu <b>${fmt(pctChange(now, prev) * 100, 1)}%</b> em relação ao período anterior (${fmtMoneyCompact(prev)} → ${fmtMoneyCompact(now)}). Bom momento pra explorar Concorrência de Catálogo e ganhar vendas dos concorrentes.`;
     },
     cta: { label: 'Ver Concorrência de Catálogo', tool: 'catalog' }
   });
@@ -803,7 +883,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = (agg.total_revenue || 0) + (agg.organic_revenue || 0);
       const prev = (prevSnap.revenue || 0) + (prevSnap.organic_revenue || 0);
-      return `Sua receita caiu <b>${fmtPctDelta(pctChange(now, prev))}</b> vs período anterior (${fmtMoneyCompact(prev)} → ${fmtMoneyCompact(now)}). Antes de cortar Ads, audite os top 3 anúncios — geralmente o problema é estoque, ficha técnica ou tag negativa.`;
+      return `Sua receita caiu <b>${fmt(Math.abs(pctChange(now, prev)) * 100, 1)}%</b> vs período anterior (${fmtMoneyCompact(prev)} → ${fmtMoneyCompact(now)}). Antes de cortar Ads, audite os top 3 anúncios — geralmente o problema é estoque, ficha técnica ou tag negativa.`;
     },
     cta: { label: 'Analisar Anúncio', tool: 'analyzer' }
   });
@@ -820,7 +900,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = (agg.total_orders || 0) + (agg.organic_orders || 0);
       const prev = prevSnap.sales || 0;
-      return `Vendas <b>${fmtPctDelta(pctChange(now, prev))}</b> vs período anterior (${prev} → ${now}). Acelera enquanto está com momentum — é o melhor momento pra criar variações dos produtos campeões.`;
+      return `Vendas <b>${fmtPctDelta(pctChange(now, prev))}</b> vs período anterior (${prev} → ${now}). Acelere enquanto o ritmo está forte — é o melhor momento pra criar variações dos produtos campeões.`;
     }
   });
 
@@ -835,7 +915,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = (agg.total_orders || 0) + (agg.organic_orders || 0);
       const prev = prevSnap.sales || 0;
-      return `Vendas caíram <b>${fmtPctDelta(pctChange(now, prev))}</b> (${prev} → ${now}). Veja se a queda foi orgânica (perdeu exposição) ou Ads (CTR/CVR caiu) — o card Visão Geral mostra os deltas separados.`;
+      return `Vendas caíram <b>${fmt(Math.abs(pctChange(now, prev)) * 100, 1)}%</b> (${prev} → ${now}). Veja se a queda foi orgânica (perdeu exposição) ou Ads (CTR/conversão caiu) — o card Visão Geral mostra as variações separadas.`;
     }
   });
 
@@ -851,7 +931,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = agg.overall_roas || 0;
       const prev = prevSnap.roas || 0;
-      return `ROAS subiu <b>${fmtAbsDelta(now - prev, 2)}x</b> (${fmt(prev, 2)}x → ${fmt(now, 2)}x). Identifique no Planejador quais campanhas estão puxando esse retorno e considere escalar.`;
+      return `ROAS subiu <b>${fmt(now - prev, 2)}x</b> (${fmt(prev, 2)}x → ${fmt(now, 2)}x). Identifique no Planejador quais campanhas estão puxando esse retorno e considere escalar.`;
     },
     cta: { label: 'Abrir Planejador de Ads', tool: 'planner' }
   });
@@ -867,7 +947,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = agg.overall_roas || 0;
       const prev = prevSnap.roas || 0;
-      return `ROAS caiu <b>${fmtAbsDelta(now - prev, 2)}x</b> (${fmt(prev, 2)}x → ${fmt(now, 2)}x). Antes de pausar, abra o Planejador — alguma campanha individual pode estar puxando a média pra baixo.`;
+      return `ROAS caiu <b>${fmt(Math.abs(now - prev), 2)}x</b> (${fmt(prev, 2)}x → ${fmt(now, 2)}x). Antes de pausar, abra o Planejador — alguma campanha individual pode estar puxando a média pra baixo.`;
     },
     cta: { label: 'Abrir Planejador de Ads', tool: 'planner' }
   });
@@ -884,7 +964,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = agg.avg_tacos || 0;
       const prev = prevSnap.tacos || 0;
-      return `TACOS subiu <b>${fmtAbsDelta(now - prev, 1)}pp</b> (${fmt(prev, 1)}% → ${fmt(now, 1)}%). Sua receita está custando mais em Ads — verifique se foi por aumento de gasto ou queda de receita orgânica.`;
+      return `TACOS subiu <b>${fmt(now - prev, 1)}pp</b> (${fmt(prev, 1)}% → ${fmt(now, 1)}%). Sua receita está custando mais em Ads — verifique se foi por aumento de gasto ou queda de receita orgânica.`;
     }
   });
 
@@ -900,7 +980,7 @@ function buildInsights(ctx) {
     text: () => {
       const now = STATE.visitsData.total_visits || 0;
       const prev = prevSnap.visits || 0;
-      return `Visitas caíram <b>${fmtPctDelta(pctChange(now, prev))}</b> (${fmtInt(prev)} → ${fmtInt(now)}). Sinal de perda de exposição orgânica. Veja se algum anúncio top caiu de posição ou ganhou tag negativa.`;
+      return `Visitas caíram <b>${fmt(Math.abs(pctChange(now, prev)) * 100, 1)}%</b> (${fmtInt(prev)} → ${fmtInt(now)}). Sinal de perda de exposição orgânica. Veja se algum anúncio top caiu de posição ou ganhou tag negativa.`;
     },
     cta: { label: 'Ver Auditoria de Tags', tool: 'tags' }
   });
@@ -912,17 +992,13 @@ function buildInsights(ctx) {
       if (!hasPrev) return false;
       const now = agg.avg_cvr || 0;
       // Recalcula CVR anterior se possível
-      const prevSales = prevSnap.sales || 0;
-      const prevClicks = prevSnap.clicks || 0;
-      const prevCvr = prevClicks > 0 ? (prevSales / prevClicks * 100) : 0;
+      const prevCvr = Number(prevSnap.cvr) || 0;
       return prevCvr > 0 && (prevCvr - now) >= 0.5;
     },
     text: () => {
       const now = agg.avg_cvr || 0;
-      const prevSales = prevSnap.sales || 0;
-      const prevClicks = prevSnap.clicks || 0;
-      const prevCvr = prevClicks > 0 ? (prevSales / prevClicks * 100) : 0;
-      return `Conversão de Ads caiu <b>${fmtAbsDelta(now - prevCvr, 2)}pp</b> (${fmt(prevCvr, 2)}% → ${fmt(now, 2)}%). Cliques sem virar venda = preço/ficha/foto não convencendo. Audite os anúncios com mais cliques.`;
+      const prevCvr = Number(prevSnap.cvr) || 0;
+      return `Conversão de Ads caiu <b>${fmt(Math.abs(now - prevCvr), 2)}pp</b> (${fmt(prevCvr, 2)}% → ${fmt(now, 2)}%). Cliques sem virar venda = preço/ficha/foto não convencendo. Audite os anúncios com mais cliques.`;
     },
     cta: { label: 'Analisar Anúncio', tool: 'analyzer' }
   });
@@ -931,7 +1007,7 @@ function buildInsights(ctx) {
   list.push({
     id: 'tip-no-prev',
     when: () => !hasPrev,
-    text: `Esta é a primeira vez que coletamos seus dados. A partir do próximo acesso passamos a comparar — você vai ver delta de cada métrica em tempo real.`
+    text: `Esta é a primeira vez que coletamos seus dados. A partir do próximo acesso passamos a comparar — você vai ver a variação de cada métrica a cada visita.`
   });
 
   // Sem Ads ativos (independente)
@@ -952,7 +1028,7 @@ function buildInsights(ctx) {
   list.push({
     id: 'tip-keyword',
     when: () => true,
-    text: `O <b>Agente de Palavras-Chave</b> descobre em 30s as palavras que faltam na <b>ficha técnica</b> do seu anúncio — comparando com o que está sendo buscado no ML. Quanto mais palavras nos atributos, mais buscas você aparece (sem mexer no título).`,
+    text: `O <b>Agente de Palavras-Chave</b> descobre em 30s as palavras que faltam na <b>ficha técnica</b> do seu anúncio — comparando com o que está sendo buscado no ML. Quanto mais palavras nos atributos, em mais buscas você aparece (sem mexer no título).`,
     cta: { label: 'Abrir Agente de Palavras-Chave', tool: 'keyword' }
   });
 
@@ -1005,7 +1081,7 @@ function buildAlerts(agg, totals, prevSnap, sid) {
       out.push({
         id: `all-paused-${campaigns.length}`,
         level: 'crit',
-        text: `🛑 Todas as suas ${campaigns.length} campanhas estão pausadas`,
+        text: campaigns.length === 1 ? '🛑 Sua única campanha está pausada' : `🛑 Todas as suas ${campaigns.length} campanhas estão pausadas`,
         cta: { label: 'reativar', tool: 'planner' }
       });
     }
@@ -1051,7 +1127,7 @@ function buildOpportunities(agg, totals, prevSnap, streak) {
     if (activeCamps.length === 0) {
       ops.push({
         ico: '▶️', tone: 'crit',
-        title: `Reativar suas ${campaigns.length} campanhas pausadas`,
+        title: campaigns.length === 1 ? 'Reativar sua campanha pausada' : `Reativar suas ${campaigns.length} campanhas pausadas`,
         meta: `Suas campanhas existem e têm orçamento configurado, mas estão paradas. Anúncio sem campanha ativa fica fora dos espaços de Product Ads — visibilidade despenca.`,
         score: 100, tool: 'planner'
       });
@@ -1060,11 +1136,10 @@ function buildOpportunities(agg, totals, prevSnap, streak) {
 
   // 1. Reativar anúncios pausados
   if (totals.pausedItems >= 1) {
-    const estVal = totals.pausedItems * 250; // estimativa simbólica de receita perdida/mês
     ops.push({
       ico: '⏸', tone: 'warn',
       title: `Reativar ${totals.pausedItems} ${totals.pausedItems === 1 ? 'anúncio pausado' : 'anúncios pausados'}`,
-      meta: `Cada pausa custa em média <b>${fmtMoneyCompact(estVal/totals.pausedItems)}</b>/mês em receita perdida.`,
+      meta: `Anúncio pausado some das buscas e não fatura — reative pra voltar a aparecer.`,
       score: 90, tool: 'analyzer'
     });
   }
@@ -1094,7 +1169,7 @@ function buildOpportunities(agg, totals, prevSnap, streak) {
     ops.push({
       ico: '📣', tone: 'purple',
       title: 'Criar primeiro anúncio com Product Ads',
-      meta: `Você tem <b>${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio' : 'anúncios'}</b> ativos sem ads. Boost orgânico é capado — ads multiplicam visitas em horas.`,
+      meta: `Você tem <b>${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}</b> sem ads. O alcance orgânico é limitado — ads multiplicam visitas em horas.`,
       score: 88, tool: 'planner'
     });
   }
@@ -1112,7 +1187,7 @@ function buildOpportunities(agg, totals, prevSnap, streak) {
     ops.push({
       ico: '🔥', tone: 'warn',
       title: 'Construir hábito de checagem diária',
-      meta: `Vendedores que checam o app 5+ dias na semana têm <b>~2x mais conversão</b>. Comece o streak hoje.`,
+      meta: `Quem acompanha os dados toda semana reage mais rápido a quedas e oportunidades. Comece o hábito hoje.`,
       score: 50, tool: null
     });
   }
@@ -1173,7 +1248,7 @@ function buildPerformers(agg, daily) {
       const d = sorted[i];
       top.push({
         title: 'Dia recorde',
-        meta: d.date,
+        meta: d.date ? `${String(d.date).slice(8, 10)}/${String(d.date).slice(5, 7)}` : '—',
         value: fmtMoneyCompact(d.total_amount || 0),
         valueClass: 'pos',
         rank: ['gold','silver','bronze'][i]
@@ -1187,7 +1262,7 @@ function buildPerformers(agg, daily) {
     reds.forEach(d => {
       att.push({
         title: 'Dia sem retorno',
-        meta: d.date,
+        meta: d.date ? `${String(d.date).slice(8, 10)}/${String(d.date).slice(5, 7)}` : '—',
         value: `-${fmtMoneyCompact((d.cost||0)-(d.total_amount||0))}`,
         valueClass: 'neg',
         rank: 'atten'
@@ -1256,6 +1331,14 @@ const NOTIFICATIONS = [
 
 const LS_READ_NOTIFS = 'mf_dash_read_notifications';
 
+// Só exibe notificações recentes — aviso velho some sozinho (45 dias)
+function activeNotifications() {
+  return NOTIFICATIONS.filter(n => {
+    const age = daysBetween(n.date, todayStr());
+    return age >= 0 && age <= 45;
+  });
+}
+
 function getReadNotifs() {
   try { return new Set(JSON.parse(localStorage.getItem(LS_READ_NOTIFS) || '[]')); }
   catch { return new Set(); }
@@ -1265,7 +1348,7 @@ function setReadNotifs(set) {
 }
 function unreadCount() {
   const read = getReadNotifs();
-  return NOTIFICATIONS.filter(n => !read.has(n.id)).length;
+  return activeNotifications().filter(n => !read.has(n.id)).length;
 }
 
 function renderNotificationBell() {
@@ -1280,7 +1363,7 @@ function renderNotificationBell() {
 
 function renderNotificationDrawer() {
   const read = getReadNotifs();
-  const items = NOTIFICATIONS.map(n => {
+  const items = activeNotifications().map(n => {
     const isUnread = !read.has(n.id);
     const kindLabel = n.kind === 'alert' ? '⚠️ Aviso' : '🎉 Novidade';
     const kindClass = n.kind === 'alert' ? 'alert' : 'news';
@@ -1321,7 +1404,9 @@ function renderNotificationDrawer() {
 
 function wireNotifications(root) {
   const dashRoot = root || document.getElementById(STATE.containerId);
-  if (!dashRoot) return;
+  // O container persiste entre renders (só o innerHTML troca) — registra UMA vez
+  if (!dashRoot || dashRoot.dataset.mfdNotifWired === '1') return;
+  dashRoot.dataset.mfdNotifWired = '1';
   dashRoot.addEventListener('click', (e) => {
     const target = e.target.closest('[data-mfd-action]');
     if (!target) return;
@@ -1352,12 +1437,21 @@ function wireNotifications(root) {
       dashRoot.querySelectorAll('.mfd-notif-item.unread').forEach(el => el.classList.remove('unread'));
       const badge = dashRoot.querySelector('.mfd-bell-badge');
       if (badge) badge.remove();
+    } else if (action === 'toggle-pills') {
+      e.preventDefault();
+      const pills = target.closest('.mfd-issue-others')?.querySelector('.mfd-issue-others-pills');
+      if (pills) {
+        const collapsed = pills.classList.toggle('collapsed');
+        target.textContent = collapsed ? (target.dataset.more || 'ver todos') : 'mostrar menos';
+      }
     }
   });
 }
 
 function renderHero(seller, agg, totals, streak, history) {
-  const name = (seller && (seller.first_name || seller.nickname)) || 'aí';
+  // Só o primeiro nome na saudação (first_name do ML pode vir com nome completo)
+  const fullName = (seller && (seller.first_name || seller.nickname)) || '';
+  const name = String(fullName).trim().split(/\s+/)[0] || '';
   const tier = (seller && seller.seller_reputation && seller.seller_reputation.power_seller_status) || null;
   const tierMap = {
     'platinum': { label: '👑 Platinum', cls: 'platinum' },
@@ -1370,10 +1464,10 @@ function renderHero(seller, agg, totals, streak, history) {
   // Pulse status
   let pulseClass = 'mfd-hero-pulse';
   if ((agg.overall_roas || 0) < 1 && (agg.total_cost || 0) > 100) pulseClass += ' err';
-  else if ((agg.overall_roas || 0) < 2 || totals.pausedItems > 3) pulseClass += ' warn';
+  else if (((agg.total_cost || 0) > 0 && (agg.overall_roas || 0) < 2) || totals.pausedItems >= 3) pulseClass += ' warn';
 
   // Atividade dos últimos 30 dias
-  const last30 = history.filter(h => daysBetween(h.date, todayStr()) <= 30);
+  const last30 = history.filter(h => daysBetween(h.date, todayStr()) < 30);
   const activeDays30 = new Set(last30.map(h => h.date)).size;
 
   const pills = [];
@@ -1402,7 +1496,7 @@ function renderHero(seller, agg, totals, streak, history) {
       <div class="mfd-hero-top">
         <div class="mfd-hero-greeting">
           <span class="${pulseClass}"></span>
-          ${escapeHtml(saudacao())}, ${escapeHtml(name)}
+          ${escapeHtml(saudacao())}${name ? ', ' + escapeHtml(name) : ' 👋'}
         </div>
         ${renderNotificationBell()}
       </div>
@@ -1445,18 +1539,19 @@ function patchHealthCard() {
   const sid = STATE.sellerId;
   const streak = sid ? rtGetStreak(sid) : { current: 0, best: 0 };
   const breakdown = computeHealthBreakdown(agg, totals, STATE.prevSnapshot, streak);
-  // Acha o health card e re-renderiza
-  const headers = root.querySelectorAll('.mfd-card-header .mfd-card-title');
-  for (const h of headers) {
-    if (h.textContent.includes('Saúde da conta')) {
-      const card = h.closest('.mfd-card');
-      const next = document.createElement('div');
-      next.innerHTML = renderHealthCard(breakdown.total, breakdown);
-      const fresh = next.querySelector('.mfd-card');
-      if (fresh && card) card.replaceWith(fresh);
-      return;
-    }
+  // Guarda o score no snapshot de hoje (alimenta o banner "Desde sua última visita")
+  if (STATE._currentSnap && sid && STATE._currentSnap.health !== breakdown.total) {
+    STATE._currentSnap.health = breakdown.total;
+    rtSaveSnapshot(sid, STATE.period, STATE._currentSnap);
   }
+  // Acha o health card pela classe (título mudou de capitalização no passado e
+  // quebrou o match por texto — classe é estável) e re-renderiza
+  const card = root.querySelector('.mfd-health-card');
+  if (!card) return;
+  const next = document.createElement('div');
+  next.innerHTML = renderHealthCard(breakdown.total, breakdown);
+  const fresh = next.querySelector('.mfd-card');
+  if (fresh) card.replaceWith(fresh);
 }
 
 // Helper: gera label com tooltip ⓘ pra explicar o que mede
@@ -1490,11 +1585,13 @@ function deltaBadge(now, prev, opts = {}) {
   if (Math.abs(delta) < (opts.absolute ? 0.05 : 0.5)) tone = 'flat';
   else if ((delta > 0) === !inv) tone = 'pos';
   else tone = 'neg';
-  const arrow = tone === 'pos' ? '▲' : tone === 'neg' ? '▼' : '•';
+  // Seta segue a DIREÇÃO do movimento; a cor (tone) diz se é bom ou ruim.
+  const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '•';
+  const sign = delta > 0 ? '+' : delta < 0 ? '-' : '';
   const txt = opts.absolute
-    ? (delta > 0 ? '+' : '') + delta.toFixed(2) + (opts.suffix || '')
-    : (delta > 0 ? '+' : '') + delta.toFixed(1) + '%';
-  return `<span class="mfd-delta ${tone}" title="${opts.absolute ? `${prev.toFixed(2)} → ${now.toFixed(2)}` : `${(prev).toFixed(1)} → ${(now).toFixed(1)}`}">${arrow} ${txt}</span>`;
+    ? sign + fmt(Math.abs(delta), 2) + (opts.suffix || '')
+    : sign + fmt(Math.abs(delta), 1) + '%';
+  return `<span class="mfd-delta ${tone}" title="${opts.absolute ? `${fmt(prev, 2)} → ${fmt(now, 2)}` : `${fmt(prev, 1)} → ${fmt(now, 1)}`}">${arrow} ${txt}</span>`;
 }
 
 function patchOrganicVsCard() {
@@ -1555,18 +1652,60 @@ function renderOrganicVsAds(agg) {
   let orgConvNow = 0;
   let overallConvNow = 0;
   let visitsHint = '';
+  let overallConvDelta = '';
+  let overallConvHint = '% das visitas que viraram venda. Vendas totais ÷ visitas totais. Precisa de dados de visita.';
+  let orgConvHint = 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.';
   if (STATE.visitsLoading) {
     visitsHint = 'Calculando...';
   } else if (visits && visits.total_visits > 0) {
     const totalVisits = visits.total_visits;
-    const orgVisits = Math.max(0, totalVisits - adsClicks);
-    orgConvNow = orgVisits > 0 ? (orgOrders / orgVisits * 100) : 0;
-    overallConvNow = totalVisits > 0 ? (totalOrders / totalVisits * 100) : 0;
-    orgConvText = fmtPct(orgConvNow, 2);
-    overallConvText = fmtPct(overallConvNow, 2);
-    visitsHint = visits.capped
-      ? `${fmtInt(totalVisits)} visitas — amostrado primeiros 200 de ${fmtInt(visits.total_items_account)} anúncios`
-      : `${fmtInt(totalVisits)} visitas em ${visits.sampled_items} anúncios ativos`;
+    if (visits.capped || visits.incomplete) {
+      // Visitas cobrem só parte dos anúncios: dividir as vendas da conta INTEIRA
+      // por visitas parciais infla a conversão (ex.: 61% impossível). Não mostra.
+      visitsHint = visits.capped
+        ? `${fmtInt(totalVisits)} visitas nos ${fmtInt(visits.sampled_items)} primeiros anúncios (de ${fmtInt(visits.total_items_account)}) — conversão indisponível em contas com 1.000+ anúncios`
+        : `${fmtInt(totalVisits)} visitas (coleta parcial agora) — atualize a página pra calcular a conversão`;
+    } else {
+      const orgVisits = totalVisits - adsClicks;
+      // Numerador da conversão total: PEDIDOS (vendas brutas) quando disponível —
+      // mesma métrica do card "Conversão de visitas" do Seller Central. Unidades
+      // (1 pedido pode ter N) inflavam o número vs o painel do ML (10,4% vs 14,9%).
+      const grossOrders = (STATE.ordersData && typeof STATE.ordersData.total_orders === 'number')
+        ? STATE.ordersData.total_orders : null;
+      const totalConvCalc = (grossOrders != null ? grossOrders : totalOrders) / totalVisits * 100;
+      // Orgânico = total − Ads, na MESMA base da conversão total: as três conversões
+      // precisam fechar entre si pro usuário (orgânico ≤/≥ total ≤/≥ Ads, média
+      // ponderada bate) — base mista (pedidos no total, unidades no orgânico)
+      // deixava orgânico "maior" que o total e parecia bug.
+      const orgSalesConv = grossOrders != null ? Math.max(0, grossOrders - adsOrders) : orgOrders;
+      const orgConvCalc = orgVisits > 0 ? (orgSalesConv / orgVisits * 100) : Infinity;
+      if (orgVisits <= 0 || totalConvCalc > 100 || orgConvCalc > 100) {
+        // Visitas reportadas não cobrem nem os cliques de Ads (anúncio de catálogo
+        // conta a visita na página do catálogo, não no item) — qualquer conversão
+        // calculada daqui sairia inflada/absurda. Melhor não mostrar.
+        visitsHint = `${fmtInt(totalVisits)} visitas registradas pra ${fmtInt(adsClicks)} cliques de Ads — visitas de catálogo não contam no anúncio; conversão indisponível`;
+      } else {
+        overallConvNow = totalConvCalc;
+        overallConvText = fmtPct(overallConvNow, 2);
+        orgConvNow = orgConvCalc;
+        orgConvText = fmtPct(orgConvNow, 2);
+        visitsHint = visits.accountWide
+          ? `${fmtInt(totalVisits)} visitas na conta inteira no período`
+          : `${fmtInt(totalVisits)} visitas em ${fmtInt(visits.sampled_items)} ${visits.sampled_items === 1 ? 'anúncio ativo' : 'anúncios ativos'}`;
+
+        // Delta só compara bases iguais: pedidos vs pedidos (snapshot.orders) ou
+        // unidades vs unidades (fallback antigo) — nunca mistura
+        const prevOrders = Number(prev.orders) || 0;
+        const prevConvSameBase = (grossOrders != null)
+          ? ((prevOrders > 0 && prevVisits > 0) ? (prevOrders / prevVisits * 100) : 0)
+          : prevOverallConv;
+        overallConvDelta = prevConvSameBase ? deltaBadge(overallConvNow, prevConvSameBase, { absolute: true, suffix: 'pp' }) : '';
+        if (grossOrders != null) {
+          overallConvHint = '% das visitas que viraram pedido. Pedidos ÷ visitas totais — mesmo número do card "Conversão de visitas" do Seller Central (lá são visitas únicas; pode variar um pouco).';
+          orgConvHint = 'Pedidos orgânicos (pedidos totais − vendas por Ads) ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.';
+        }
+      }
+    }
   }
 
   const pctOf = (a, b) => b > 0 ? +(a / b * 100).toFixed(1) : 0;
@@ -1580,11 +1719,11 @@ function renderOrganicVsAds(agg) {
   if (totalRev === 0) {
     lede = 'Sem vendas no período — quando começarem, mostro tudo aqui.';
   } else if (adsRevPct >= 70) {
-    lede = `<b>${adsRevPct}%</b> da receita vem de Ads. Você depende dele — qualquer pausa derruba o faturamento.`;
+    lede = `<b>${fmt(adsRevPct, 1)}%</b> da receita vem de Ads. Você depende dele — qualquer pausa derruba o faturamento.`;
   } else if (orgRevPct >= 70) {
-    lede = `<b>${orgRevPct}%</b> é orgânico. Ads tem espaço pra alavancar receita.`;
+    lede = `<b>${fmt(orgRevPct, 1)}%</b> é orgânico. Ads tem espaço pra alavancar receita.`;
   } else {
-    lede = `Receita balanceada: <b>${orgRevPct}%</b> orgânico + <b>${adsRevPct}%</b> Ads.`;
+    lede = `Receita balanceada: <b>${fmt(orgRevPct, 1)}%</b> orgânico + <b>${fmt(adsRevPct, 1)}%</b> Ads.`;
   }
 
   const spinnerHTML = STATE.visitsLoading ? ' <span class="mfd-vs-spinner"></span>' : '';
@@ -1608,7 +1747,7 @@ function renderOrganicVsAds(agg) {
           <div class="mfd-vs-kpi-row">
             ${kpiCell({ label: 'Vendas', hint: 'Total de unidades vendidas no período (Ads + orgânico).', value: fmtCompact(totalOrders), delta: deltaBadge(totalOrders, prevSales) })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda. Receita total ÷ vendas totais.', value: fmtMoneyCompact(totalTicket), valueTitle: fmtMoney(totalTicket), delta: deltaBadge(totalTicket, prevTotalTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: '% das visitas que viraram venda. Vendas totais ÷ visitas totais. Precisa de dados de visita.', value: `${overallConvText}${spinnerHTML}`, delta: (overallConvNow && prevOverallConv) ? deltaBadge(overallConvNow, prevOverallConv, { absolute: true, suffix: 'pp' }) : '' })}
+            ${kpiCell({ label: 'Conversão', hint: overallConvHint, value: `${overallConvText}${spinnerHTML}`, delta: overallConvDelta })}
             ${kpiCell({ label: 'Custo Ads', hint: 'Quanto você gastou em Ads no período (cliques × CPC médio).', value: fmtMoneyCompact(adsCost), valueTitle: fmtMoney(adsCost), delta: deltaBadge(adsCost, prevCost, { inverted: true }) })}
           </div>
         </div>
@@ -1618,12 +1757,12 @@ function renderOrganicVsAds(agg) {
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Receita das vendas que aconteceram SEM impulsionamento de Ads — vieram de busca natural, listagem, catálogo.')}</span>
             <span class="mfd-vs-value" title="${fmtMoney(orgRev)}">${fmtMoneyCompact(orgRev)}</span>
             <div class="mfd-vs-bar"><div class="mfd-vs-bar-fill organic" style="width:${orgRevPct}%"></div></div>
-            <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${orgRevPct}% do total</span>${deltaBadge(orgRev, prevOrgRev)}</div>
+            <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${fmt(orgRevPct, 1)}% do total</span>${deltaBadge(orgRev, prevOrgRev)}</div>
           </div>
           <div class="mfd-vs-kpi-row">
-            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas sem Ads no período.', value: fmtCompact(orgOrders), delta: deltaBadge(orgOrders, prevOrgOrders), sub: `${orgOrdPct}% do total` })}
+            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas sem Ads no período.', value: fmtCompact(orgOrders), delta: deltaBadge(orgOrders, prevOrgOrders), sub: `${fmt(orgOrdPct, 1)}% do total` })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda orgânica. Receita orgânica ÷ vendas orgânicas.', value: fmtMoneyCompact(orgTicket), valueTitle: fmtMoney(orgTicket), delta: deltaBadge(orgTicket, prevOrgTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.', value: `${orgConvText}${spinnerHTML}`, delta: (orgConvNow && prevOrgConv) ? deltaBadge(orgConvNow, prevOrgConv, { absolute: true, suffix: 'pp' }) : '' })}
+            ${kpiCell({ label: 'Conversão', hint: orgConvHint, value: `${orgConvText}${spinnerHTML}`, delta: (orgConvNow && prevOrgConv) ? deltaBadge(orgConvNow, prevOrgConv, { absolute: true, suffix: 'pp' }) : '' })}
           </div>
         </div>
         <div class="mfd-vs-col mfd-vs-ads">
@@ -1632,14 +1771,14 @@ function renderOrganicVsAds(agg) {
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Receita das vendas que vieram de Ads — Mercado Livre marca a venda como impulsionada quando o cliente clicou no anúncio pago.')}</span>
             <span class="mfd-vs-value" title="${fmtMoney(adsRev)}">${fmtMoneyCompact(adsRev)}</span>
             <div class="mfd-vs-bar"><div class="mfd-vs-bar-fill ads" style="width:${adsRevPct}%"></div></div>
-            <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${adsRevPct}% do total</span>${deltaBadge(adsRev, prevAdsRev)}</div>
+            <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${fmt(adsRevPct, 1)}% do total</span>${deltaBadge(adsRev, prevAdsRev)}</div>
           </div>
           <div class="mfd-vs-kpi-row mfd-vs-kpi-row-ads">
-            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas via Ads.', value: fmtCompact(adsOrders), delta: deltaBadge(adsOrders, prevAdsOrders), sub: `${adsOrdPct}% do total` })}
+            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas via Ads.', value: fmtCompact(adsOrders), delta: deltaBadge(adsOrders, prevAdsOrders), sub: `${fmt(adsOrdPct, 1)}% do total` })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda via Ads.', value: fmtMoneyCompact(adsTicket), valueTitle: fmtMoney(adsTicket), delta: deltaBadge(adsTicket, prevAdsTicket) })}
             ${kpiCell({ label: 'Conversão', hint: 'Cliques que viraram venda. Vendas Ads ÷ cliques Ads.', value: fmtPct(adsCvr, 2), delta: deltaBadge(adsCvr, prevCvr, { absolute: true, suffix: 'pp' }) })}
             ${kpiCell({ label: 'CTR', hint: 'Click-through rate: % das pessoas que viram o anúncio e clicaram. Cliques ÷ impressões.', value: fmtPct(Number(agg.avg_ctr) || 0, 2), delta: deltaBadge(Number(agg.avg_ctr) || 0, prevCtr, { absolute: true, suffix: 'pp' }) })}
-            ${kpiCell({ label: 'ROAS', hint: 'Return on Ad Spend: pra cada R$1 gasto em Ads, quanto retornou em receita. R$ Ads ÷ Custo Ads.', value: `${fmt(adsRoas, 2)}x`, delta: deltaBadge(adsRoas, prevRoas, { absolute: true, suffix: 'x' }) })}
+            ${kpiCell({ label: 'ROAS', hint: 'Return on Ad Spend: pra cada R$ 1 gasto em Ads, quanto retornou em receita. Receita Ads ÷ Custo Ads.', value: `${fmt(adsRoas, 2)}x`, delta: deltaBadge(adsRoas, prevRoas, { absolute: true, suffix: 'x' }) })}
             ${kpiCell({ label: 'TACOS', hint: 'Total Advertising Cost of Sales: % do faturamento total (Ads + orgânico) que vai pra Ads. Custo Ads ÷ Receita total.', value: fmtPct(tacos, 2), delta: deltaBadge(tacos, prevTacos, { absolute: true, suffix: 'pp', inverted: true }) })}
           </div>
         </div>
@@ -1650,7 +1789,7 @@ function renderOrganicVsAds(agg) {
 
 function pulseStatus(agg, totals) {
   if ((agg.overall_roas || 0) < 1 && (agg.total_cost || 0) > 100) return 'pedindo atenção';
-  if (totals.pausedItems > 3) return 'precisa de revisão';
+  if (totals.pausedItems >= 3) return 'precisando de revisão';
   if ((agg.overall_roas || 0) >= 4) return 'voando';
   if ((agg.total_revenue || 0) + (agg.organic_revenue || 0) > 0) return 'em movimento';
   return 'aguardando dados';
@@ -1752,13 +1891,13 @@ function renderSecondaryKpis(agg) {
     {
       label: 'Conversão (CVR)', ico: '🎯',
       value: cvr > 0 ? fmtPct(cvr, 2) : '—',
-      help: 'Taxa de conversão de Product Ads — % dos cliques que viram venda. Acima de 3% costuma ser saudável; abaixo de 1% precisa de atenção.',
+      help: 'Taxa de conversão de Product Ads — % dos cliques que viram venda. O nível bom varia por categoria e faixa de preço.',
       tone: cvrTone, deltaText: cvrLabel, isHealth: true
     },
     {
       label: 'CTR', ico: '👁️',
       value: ctr > 0 ? fmtPct(ctr, 2) : '—',
-      help: 'Click-through rate dos seus ads — % das pessoas que viram seu anúncio e clicaram. Mede atratividade do título e da imagem. Acima de 2% é forte; abaixo de 0,5% indica criativo fraco.',
+      help: 'Click-through rate dos seus ads — % das pessoas que viram seu anúncio e clicaram. Mede atratividade do título e da imagem.',
       tone: ctrTone, deltaText: ctrLabel, isHealth: true
     },
     {
@@ -1769,7 +1908,7 @@ function renderSecondaryKpis(agg) {
     {
       label: '% via ads', ico: '📊',
       value: adsPct > 0 ? fmtPct(adsPct, 0) : '—',
-      help: 'Que parte da sua receita veio de Product Ads. Entre 30% e 60% costuma ser saudável — abaixo disso ads tá subutilizado, acima implica forte dependência.',
+      help: 'Que parte da sua receita veio de Product Ads. Quanto maior, mais o faturamento depende de impulso pago.',
       tone: adsTone, deltaText: adsLabel, isHealth: true
     }
   ];
@@ -1824,7 +1963,7 @@ function renderKpiBar(agg, totals, prevSnap, healthScore) {
       label: 'TACOS',
       ico: '⚖️',
       value: fmtPct(tacos, 1),
-      help: 'Total ACOS — quanto da sua receita TOTAL (ads + orgânica) foi gasto em ads. Quanto menor, melhor. Acima de 15% começa a apertar a margem.',
+      help: 'Total ACOS — quanto da sua receita TOTAL (ads + orgânica) foi gasto em ads. Quanto menor, melhor.',
       delta: tacosDelta,
       deltaText: tacosDelta != null ? `${deltaArrow(tacosDelta)} ${fmt(Math.abs(tacosDelta), 2)}pp` : null,
       deltaInverted: true,
@@ -1928,14 +2067,19 @@ function renderTrafficChartCard() {
 
 function drawTrafficChart(daily) {
   const canvas = document.getElementById('mfd-traffic-chart');
-  if (!canvas || !window.Chart || !Array.isArray(daily) || !daily.length) return;
+  if (!canvas) return;
+  if (!window.Chart || !Array.isArray(daily) || !daily.length) {
+    const wrap = canvas.closest('.mfd-chart-wrap');
+    if (wrap) wrap.innerHTML = '<div class="mfd-empty">Sem dados no período ainda — o gráfico aparece com as primeiras visitas.</div>';
+    return;
+  }
   const ctx = canvas.getContext('2d');
   if (_mfdTrafficChartInstance) { _mfdTrafficChartInstance.destroy(); _mfdTrafficChartInstance = null; }
 
   const data = [...daily].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   // Normaliza datas pra YYYY-MM-DD (proxy retorna ISO; fetch-visits também).
   const dateKeys = data.map(d => (d.date || '').slice(0, 10));
-  const labels = dateKeys;
+  const labels = dateKeys.map(s => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : '');
   const impressions = data.map(d => +(d.prints || 0));
   const clicks      = data.map(d => +(d.clicks || 0));
   const dailyVisits = (STATE.visitsDaily && STATE.visitsDaily.daily) || {};
@@ -2049,12 +2193,17 @@ function renderSalesChartCard() {
 
 function drawSalesChart(daily) {
   const canvas = document.getElementById('mfd-sales-chart');
-  if (!canvas || !window.Chart || !Array.isArray(daily) || !daily.length) return;
+  if (!canvas) return;
+  if (!window.Chart || !Array.isArray(daily) || !daily.length) {
+    const wrap = canvas.closest('.mfd-chart-wrap');
+    if (wrap) wrap.innerHTML = '<div class="mfd-empty">Sem dados no período ainda — o gráfico aparece com as primeiras vendas.</div>';
+    return;
+  }
   const ctx = canvas.getContext('2d');
   if (_mfdSalesChartInstance) { _mfdSalesChartInstance.destroy(); _mfdSalesChartInstance = null; }
 
   const data = [...daily].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  const labels = data.map(d => d.date);
+  const labels = data.map(d => { const s = String(d.date || '').slice(0, 10); return s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : ''; });
   const adsSales = data.map(d => +(d.units_quantity || 0));
   const orgSales = data.map(d => +(d.organic_units_quantity || 0));
 
@@ -2119,7 +2268,7 @@ function renderSpendDonutCard() {
   return `
     <div class="mfd-card mfd-chart-card">
       <div class="mfd-card-header">
-        <div class="mfd-card-title"><span class="ico">🎯</span>Onde tá indo seu gasto em ads</div>
+        <div class="mfd-card-title"><span class="ico">🎯</span>Pra onde vai seu gasto em Ads</div>
       </div>
       <div class="mfd-spend-donut-wrap">
         <div class="mfd-donut-container"><canvas id="mfd-spend-donut"></canvas></div>
@@ -2222,7 +2371,7 @@ function renderCampaignsCard(campaigns) {
   const row = (c) => {
     const isActive = (c.status || '').toLowerCase() === 'active';
     const stratMap = { 'profitability': 'rentabilidade', 'visibility': 'visibilidade', 'increase_traffic': 'tráfego' };
-    const strat = stratMap[c.strategy] || c.strategy || '—';
+    const strat = stratMap[String(c.strategy || '').toLowerCase()] || c.strategy || '—';
     const targets = [];
     if (c.acos_target) targets.push(`ACOS alvo ${fmt(c.acos_target, 0)}%`);
     if (c.roas_target) targets.push(`ROAS alvo ${fmt(c.roas_target, 1)}x`);
@@ -2232,7 +2381,7 @@ function renderCampaignsCard(campaigns) {
     }
     return `
       <div class="mfd-camp-item ${isActive ? 'active' : 'paused'}">
-        <div class="mfd-camp-status">${isActive ? '<span class="dot active"></span>ativa' : '<span class="dot paused"></span>' + escapeHtml(c.status || 'pausada')}</div>
+        <div class="mfd-camp-status">${isActive ? '<span class="dot active"></span>ativa' : '<span class="dot paused"></span>' + escapeHtml(({ paused: 'pausada', hold: 'em espera', idle: 'inativa', pending: 'pendente' })[String(c.status || '').toLowerCase()] || 'pausada')}</div>
         <div class="mfd-camp-body">
           <div class="mfd-camp-name" title="${escapeHtml(c.name || '')}">${escapeHtml(c.name || ('Campanha ' + c.campaign_id))}</div>
           <div class="mfd-camp-meta">${escapeHtml(strat)}${targets.length ? ' · ' + targets.map(escapeHtml).join(' · ') : ''}</div>
@@ -2258,7 +2407,12 @@ function renderCampaignsCard(campaigns) {
 let _mfdChartInstance = null;
 function drawRevenueChart(daily) {
   const canvas = document.getElementById('mfd-revenue-chart');
-  if (!canvas || !window.Chart || !Array.isArray(daily) || !daily.length) return;
+  if (!canvas) return;
+  if (!window.Chart || !Array.isArray(daily) || !daily.length) {
+    const wrap = canvas.closest('.mfd-chart-wrap');
+    if (wrap) wrap.innerHTML = '<div class="mfd-empty">Sem dados no período ainda — o gráfico aparece com as primeiras vendas.</div>';
+    return;
+  }
   const ctx = canvas.getContext('2d');
 
   // Cleanup
@@ -2266,7 +2420,7 @@ function drawRevenueChart(daily) {
 
   // Sort by date asc
   const data = [...daily].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  const labels = data.map(d => d.date);
+  const labels = data.map(d => { const s = String(d.date || '').slice(0, 10); return s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : ''; });
 
   const adsRev    = data.map(d => +(d.total_amount || 0));
   const orgRev    = data.map(d => +(d.organic_units_amount || d.organic_revenue || 0));
@@ -2431,7 +2585,7 @@ function buildHealthAdvice(score, breakdown) {
   const map = {
     'ads':  'Resolva os anúncios com problema de saúde — veja a lista abaixo no painel.',
     'rep':  'Reputação ML caindo — atenção a reclamações, atrasos e cancelamentos.',
-    'div':  'Você depende demais de Ads. Investe no orgânico (palavras-chave, ficha técnica, fotos).',
+    'div':  'Você depende demais de Ads. Invista no orgânico (palavras-chave, ficha técnica, fotos).',
     'trac': 'Tração orgânica caiu — produtos perdendo exposição ou conversão. Olhe os top anúncios.'
   };
   return map[weakest.id] || 'Veja qual componente está mais baixo e ataque ele primeiro.';
@@ -2546,16 +2700,21 @@ function buildPlainSummary(agg, totals, daily, prevSnap, period, seller) {
     };
   }
 
-  // singular/plural do período
-  const periodSing = period === 7 || period === 30; // "semana", "mês"
-  const periodWord = period === 7 ? 'semana' : period === 30 ? 'mês' : period === 60 ? '2 meses' : period === 90 ? 'trimestre' : `${period} dias`;
-  const periodFull = periodSing ? `nesse último ${periodWord}` : (period === 90 ? `neste ${periodWord}` : `nesses últimos ${periodWord}`);
+  // Frase do período com gênero/número certos
+  const periodFull = period === 7 ? 'nessa última semana'
+    : period === 30 ? 'nesse último mês'
+    : period === 60 ? 'nesses últimos 2 meses'
+    : period === 90 ? 'neste trimestre'
+    : `nesses últimos ${period} dias`;
   const paragraphs = [];
 
   // Parágrafo 1 — receita total
   if (totalRev > 0) {
     const tierPrefix = tier ? `Como ${tier.label.replace(/^\S+\s/, '')}, você ` : 'Você ';
-    paragraphs.push(`${tierPrefix}faturou <b>${fmtMoney(totalRev)}</b> ${periodFull} — ${fmtInt(sales)} ${sales === 1 ? 'unidade' : 'unidades'} vendidas em ${totals.activeItems || '?'} ${totals.activeItems === 1 ? 'anúncio' : 'anúncios'} ativos.`);
+    const itemsPart = (totals.activeItems > 0)
+      ? ` em ${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}`
+      : '';
+    paragraphs.push(`${tierPrefix}faturou <b>${fmtMoney(totalRev)}</b> ${periodFull} — ${fmtInt(sales)} ${sales === 1 ? 'unidade vendida' : 'unidades vendidas'}${itemsPart}.`);
   } else {
     paragraphs.push(`Você tem <b>${totals.activeItems}</b> ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}, mas não vendeu nada ${periodFull}. Vale dar uma olhada na exposição: visitas tão chegando? O preço tá competitivo? O título prende a busca?`);
   }
@@ -2690,7 +2849,7 @@ function renderReputationCard(seller) {
   else if (lvl.tone === 'neutral') summary = `Sua reputação tá no meio do caminho — dá pra subir cuidando das métricas abaixo.`;
   else if (lvl.tone === 'warn') summary = `Atenção: sua reputação caiu pra zona de risco. Cuide do que está em vermelho.`;
   else if (lvl.tone === 'crit') summary = `Reputação crítica. Foco máximo em reduzir reclamações e cancelamentos.`;
-  else if (total > 0 && total < 10) summary = `Você tem ${total} avaliação${total>1?'ões':''} — o Mercado Livre só calcula nível depois de mais vendas. Continue acumulando.`;
+  else if (total > 0 && total < 10) summary = `Você tem ${total} ${total > 1 ? 'avaliações' : 'avaliação'} — o Mercado Livre só calcula nível depois de mais vendas. Continue acumulando.`;
   else summary = `Volume insuficiente pro Mercado Livre calcular um nível ainda. Continue vendendo pra começar a aparecer.`;
 
   // Substitui o nome quando ML não tem level (conta nova)
@@ -2725,7 +2884,7 @@ function renderReputationCard(seller) {
         </div>
         <div class="mfd-rep-stars">
           <div class="mfd-rep-stars-num">${completionPct}%</div>
-          <div class="mfd-rep-stars-meta">vendas completadas<br><b>${fmtInt(completed)}</b> de ${fmtInt(total)} (${fmtInt(canceled)} canceladas)</div>
+          <div class="mfd-rep-stars-meta">vendas completadas<br><b>${fmtInt(completed)}</b> de ${fmtInt(total)} (${fmtInt(canceled)} cancelada${canceled === 1 ? '' : 's'})</div>
         </div>
       </div>
 
@@ -2799,7 +2958,7 @@ function buildAchievements(agg, totals, history, streak, seller) {
     { id: 'rep_green',   ico: '🛡️', title: 'Reputação verde',           desc: 'Atingir nível verde no Mercado Livre',    hit: lvlId.startsWith('5_') || lvlId.startsWith('4_'), target: 1, actual: lvlId.startsWith('5_') ? 1 : lvlId.startsWith('4_') ? 0.7 : 0, unit: 'level', kind: 'binary' },
     { id: 'mercadolider', ico: '🥇', title: 'MercadoLíder',              desc: 'Bater status MercadoLíder',              hit: !!tier,                target: 1, actual: tier ? 1 : 0, unit: 'status', kind: 'binary' },
     { id: 'platinum',    ico: '💠', title: 'MercadoLíder Platinum',     desc: 'Topo absoluto da plataforma',             hit: tier === 'platinum',   target: 1, actual: tier === 'platinum' ? 1 : tier === 'gold' ? 0.7 : tier === 'silver' ? 0.4 : 0, unit: 'status', kind: 'binary' },
-    { id: 'positive95',  ico: '⭐', title: '95%+ avaliações positivas', desc: 'Manter 95%+ aprovação com pelo menos 10 avaliações', hit: repPositive >= 0.95 && repTotal >= 10, target: 10, actual: repTotal, unit: 'venda', subtitle: 'avaliações pra qualificar' },
+    { id: 'positive95',  ico: '⭐', title: '95%+ avaliações positivas', desc: 'Manter 95%+ de aprovação com pelo menos 10 vendas avaliadas', hit: repPositive >= 0.95 && repTotal >= 10, target: 1, actual: (repPositive >= 0.95 && repTotal >= 10) ? 1 : Math.min(0.9, repPositive || 0), unit: 'status', kind: 'binary' },
     { id: 'official',    ico: '🏬', title: 'Loja Oficial',              desc: 'Sua conta é Loja Oficial registrada no Mercado Livre', hit: !!(STATE.brandInfo && STATE.brandInfo.isOfficial), target: 1, actual: STATE.brandInfo?.isOfficial ? 1 : 0, unit: 'status', kind: 'binary' }
   ];
 
@@ -2964,9 +3123,10 @@ function renderWeekdayPatternCard(daily) {
   if (best && worst && best !== worst) {
     const ratio = worst.avgRev > 0 ? best.avgRev / worst.avgRev : Infinity;
     const dayMap = { 'Dom': 'domingo', 'Seg': 'segunda', 'Ter': 'terça', 'Qua': 'quarta', 'Qui': 'quinta', 'Sex': 'sexta', 'Sáb': 'sábado' };
-    insight = `Em média, sua <b>${dayMap[best.label]}</b> rende <b>${fmtMoneyCompact(best.avgRev)}</b> — esse é o dia mais forte.`;
+    const dayPoss = { 'Dom': 'seu domingo', 'Seg': 'sua segunda', 'Ter': 'sua terça', 'Qua': 'sua quarta', 'Qui': 'sua quinta', 'Sex': 'sua sexta', 'Sáb': 'seu sábado' };
+    insight = `Em média, <b>${dayPoss[best.label]}</b> rende <b>${fmtMoneyCompact(best.avgRev)}</b> — esse é o dia mais forte.`;
     if (isFinite(ratio) && ratio >= 2) {
-      insight += ` Vende <b>${fmt(ratio, 1)}x mais</b> que ${dayMap[worst.label]}, o mais fraco.`;
+      insight += ` Vende <b>${fmt(ratio, 1)}x mais</b> que ${dayMap[worst.label]}, o dia mais fraco.`;
     }
   } else if (best) {
     insight = `<b>${best.label}</b> é o único dia com vendas registradas até agora.`;
@@ -3013,7 +3173,7 @@ function renderTopAdsCard(items, agg) {
     <div class="mfd-card">
       <div class="mfd-card-header">
         <div class="mfd-card-title"><span class="ico">📦</span>Melhores anúncios em campanha</div>
-        <span style="font-size:.72rem;color:var(--text-muted);font-weight:600;">${items.length} ${items.length === 1 ? 'anúncio' : 'anúncios'} · ordenado por receita</span>
+        <span style="font-size:.72rem;color:var(--text-muted);font-weight:600;">${items.length} ${items.length === 1 ? 'anúncio' : 'anúncios'} · ordem: maior receita</span>
       </div>
       <div class="mfd-topads-list">
         ${items.map((it, i) => renderTopAdsItem(it, i, agg)).join('')}
@@ -3053,11 +3213,11 @@ function diagnoseTopAd(it, agg) {
   // CTR baixo: <50% da média da conta com volume mínimo de exposição
   const avgCtr = Number(agg?.avg_ctr) || 0;
   if (impressions >= 100 && ctr > 0 && avgCtr > 0 && ctr < avgCtr * 0.5) {
-    return { tone: 'warn', text: '👁 CTR baixo (' + fmt(ctr, 2) + '%) — menos da metade da média da sua conta (' + fmt(avgCtr, 2) + '%). Costuma ser título sem palavra-chave forte ou imagem capa pouco atrativa.' };
+    return { tone: 'warn', text: '👁 CTR baixo (' + fmt(ctr, 2) + '%) — menos da metade da média da sua conta (' + fmt(avgCtr, 2) + '%). Costuma ser título sem palavra-chave forte ou imagem de capa pouco atrativa.' };
   }
   // CTR baixo (fallback sem média da conta disponível)
   if (impressions >= 100 && ctr > 0 && avgCtr === 0 && ctr < 0.5) {
-    return { tone: 'warn', text: '👁 CTR baixo (' + fmt(ctr, 2) + '%) — muita gente vendo, pouca clicando. Costuma ser título sem palavra-chave forte ou imagem capa pouco atrativa.' };
+    return { tone: 'warn', text: '👁 CTR baixo (' + fmt(ctr, 2) + '%) — muita gente vendo, pouca clicando. Costuma ser título sem palavra-chave forte ou imagem de capa pouco atrativa.' };
   }
   // Vencedores — relativo à média da conta
   const accRoasDiag = Number(agg?.overall_roas) || 0;
@@ -3106,7 +3266,7 @@ function renderTopAdsItem(it, idx, agg) {
   let tacosTone = '', tacosToneTxt = '';
   if (tacosTarget > 0 && tacos > 0) {
     const baselineLabel = (window._mfdTacosTarget && Number(window._mfdTacosTarget) > 0) ? 'da sua meta' : 'da média';
-    if (tacos <= tacosTarget * 0.8)      { tacosTone = 'good';    tacosToneTxt = `melhor que ${baselineLabel} (${fmt(tacosTarget, 1)}%)`; }
+    if (tacos <= tacosTarget * 0.8)      { tacosTone = 'good';    tacosToneTxt = `melhor que ${baselineLabel.replace('da ', 'a ')} (${fmt(tacosTarget, 1)}%)`; }
     else if (tacos <= tacosTarget * 1.2) { tacosTone = 'neutral'; tacosToneTxt = `${baselineLabel.replace('da ', 'na ')} (${fmt(tacosTarget, 1)}%)`; }
     else                                 { tacosTone = 'crit';    tacosToneTxt = `acima ${baselineLabel} (${fmt(tacosTarget, 1)}%)`; }
   }
@@ -3241,7 +3401,7 @@ function renderReviewItem(item, rev) {
         <div class="mfd-review-rating">
           <span class="mfd-review-stars">${stars}</span>
           <b class="mfd-review-avg">${fmt(rev.rating_average, 1)}</b>
-          <span class="mfd-review-total">· ${fmtInt(rev.total)} avaliação${rev.total === 1 ? '' : 'ões'}</span>
+          <span class="mfd-review-total">· ${fmtInt(rev.total)} ${rev.total === 1 ? 'avaliação' : 'avaliações'}</span>
         </div>
         ${latest ? `
           <div class="mfd-review-latest">
@@ -3304,10 +3464,24 @@ function renderPerformers(perf) {
             </div>
             <div class="mfd-perf-vl ${p.valueClass || ''}">${p.value}</div>
           </div>
-        `).join('') : '<div class="mfd-empty">Sem dias suficientes ainda — volta amanhã.</div>'}
+        `).join('') : '<div class="mfd-empty">Sem dias suficientes ainda — volte amanhã.</div>'}
       </div>
     </div>
   `;
+}
+
+// Pills visíveis com a lista colapsada (moderações + saúde) — o resto fica
+// atrás do "ver todos (+N)" pra não dominar a página em conta problemática.
+const PILLS_VISIBLE = 12;
+
+// Nome técnico da moderação (enum da API ML) → rótulo amigável pt-BR.
+// Desconhecidos caem no genérico — o motivo/solução abaixo já vem em pt-BR do ML.
+function friendlyModerationName(name) {
+  const map = {
+    'EXACT_DUPLICATE_INTRA_UP': 'Anúncio duplicado',
+    'POOR_QUALITY_THUMBNAIL': 'Foto principal de baixa qualidade'
+  };
+  return map[String(name || '').toUpperCase()] || 'Moderação ativa';
 }
 
 function renderModerations() {
@@ -3315,28 +3489,33 @@ function renderModerations() {
   const loading = STATE.moderationsLoading;
 
   let body;
-  if (loading) {
+  if (loading || data === undefined) {
     body = '<div class="mfd-empty">Verificando moderações ativas no Mercado Livre...</div>';
-  } else if (!data || !data.items || data.items.length === 0) {
+  } else if (data === null) {
+    body = '<div class="mfd-empty">Não conseguimos checar moderações agora. Atualize a página pra tentar de novo.</div>';
+  } else if (!data.items || data.items.length === 0) {
     body = '<div class="mfd-empty">🎉 Nenhuma moderação ativa no momento — sua conta está limpa.</div>';
   } else {
     const r = data.featured || {};
     const featured = r.item_id ? `
       <a class="mfd-issue-featured bad" href="${escapeHtml(r.url || '#')}" target="_blank">
-        <div class="mfd-issue-tag">${escapeHtml(r.name || 'Moderação ativa')}</div>
+        <div class="mfd-issue-tag">${escapeHtml(friendlyModerationName(r.name))}</div>
         <div class="mfd-issue-title">${escapeHtml(r.item_id)}</div>
         ${r.reason ? `<div class="mfd-issue-problem"><b>Motivo:</b> ${escapeHtml(r.reason)}</div>` : ''}
         ${r.remedy ? `<div class="mfd-issue-solution"><b>Como resolver:</b> ${escapeHtml(r.remedy)}</div>` : ''}
         <div class="mfd-issue-cta">Abrir análise do anúncio →</div>
       </a>
     ` : '';
-    const others = data.items.slice(0, 12).filter(id => id !== r.item_id);
+    const others = data.items.filter(id => id !== r.item_id);
+    const hiddenCount = Math.max(0, others.length - PILLS_VISIBLE);
+    const missingNote = data.total > data.items.length ? ` — carregamos os primeiros ${data.items.length}` : '';
     const otherList = others.length ? `
       <div class="mfd-issue-others">
-        <small class="mfd-issue-others-label">Outros ${others.length}${others.length < data.total - 1 ? ` (de ${data.total - 1})` : ''} também com moderação:</small>
-        <div class="mfd-issue-others-pills">
-          ${others.map(id => `<a class="mfd-issue-pill" href="https://app.marketfacil.com.br/analise-anuncio?input-url=${escapeHtml(id)}" target="_blank">${escapeHtml(id)}</a>`).join('')}
+        <small class="mfd-issue-others-label">Outros ${others.length} também com moderação${missingNote}:</small>
+        <div class="mfd-issue-others-pills${hiddenCount ? ' collapsed' : ''}">
+          ${others.map(id => `<a class="mfd-issue-pill" href="https://app.marketfacil.com.br/analise-anuncio?item=${escapeHtml(id)}" target="_blank">${escapeHtml(id)}</a>`).join('')}
         </div>
+        ${hiddenCount ? `<button class="mfd-issue-expand" data-mfd-action="toggle-pills" data-more="ver todos (+${hiddenCount})">ver todos (+${hiddenCount})</button>` : ''}
       </div>
     ` : '';
     body = featured + otherList;
@@ -3379,17 +3558,24 @@ function renderAdsWithIssues() {
   const loading = STATE.issuesLoading;
 
   let body;
-  if (loading) {
-    body = '<div class="mfd-empty">Verificando anúncios na saúde da conta...</div>';
-  } else if (!data || !data.slots || data.slots.length === 0) {
+  if (loading || data === undefined) {
+    body = '<div class="mfd-empty">Verificando a saúde dos seus anúncios...</div>';
+  } else if (data === null) {
+    // Fetch falhou — NÃO afirmar que está tudo limpo
+    body = '<div class="mfd-empty">Não conseguimos verificar a saúde dos anúncios agora. Atualize a página pra tentar de novo.</div>';
+  } else if (!data.slots || data.slots.length === 0) {
     body = '<div class="mfd-empty">🎉 Nenhum anúncio com problema de saúde detectado.</div>';
   } else {
     const r = data.result || {};
     const totalCount = data.slots.length;
     const statusLabel = r.status === 'unhealthy' ? 'Crítico' : 'Atenção';
     const statusClass = r.status === 'unhealthy' ? 'bad' : 'warn';
+    // Monta o link da Análise com ?item= (abre já preenchido) em vez da URL do proxy
+    const featHref = r.id
+      ? `https://app.marketfacil.com.br/analise-anuncio?item=${encodeURIComponent(r.id)}`
+      : (r.url || '#');
     const featured = r.id ? `
-      <a class="mfd-issue-featured ${statusClass}" href="${escapeHtml(r.url || '#')}" target="_blank">
+      <a class="mfd-issue-featured ${statusClass}" href="${escapeHtml(featHref)}" target="_blank">
         <div class="mfd-issue-tag">${statusLabel}</div>
         <div class="mfd-issue-title">${escapeHtml(r.name || r.id)}</div>
         ${r.problem ? `<div class="mfd-issue-problem"><b>Problema:</b> ${escapeHtml(r.problem)}</div>` : ''}
@@ -3397,13 +3583,15 @@ function renderAdsWithIssues() {
         <div class="mfd-issue-cta">Abrir análise do anúncio →</div>
       </a>
     ` : '';
-    const others = data.slots.slice(0, 8).filter(id => id !== r.id);
+    const others = data.slots.filter(id => id !== r.id);
+    const hiddenCount = Math.max(0, others.length - PILLS_VISIBLE);
     const otherList = others.length ? `
       <div class="mfd-issue-others">
-        <small class="mfd-issue-others-label">Outros ${others.length}${others.length < totalCount - 1 ? ` (de ${totalCount - 1})` : ''} com sintoma parecido:</small>
-        <div class="mfd-issue-others-pills">
-          ${others.map(id => `<a class="mfd-issue-pill" href="https://app.marketfacil.com.br/analise-anuncio?input-url=${escapeHtml(id)}" target="_blank">${escapeHtml(id)}</a>`).join('')}
+        <small class="mfd-issue-others-label">Outros ${others.length} com sintoma parecido:</small>
+        <div class="mfd-issue-others-pills${hiddenCount ? ' collapsed' : ''}">
+          ${others.map(id => `<a class="mfd-issue-pill" href="https://app.marketfacil.com.br/analise-anuncio?item=${escapeHtml(id)}" target="_blank">${escapeHtml(id)}</a>`).join('')}
         </div>
+        ${hiddenCount ? `<button class="mfd-issue-expand" data-mfd-action="toggle-pills" data-more="ver todos (+${hiddenCount})">ver todos (+${hiddenCount})</button>` : ''}
       </div>
     ` : '';
     body = featured + otherList;
@@ -3488,7 +3676,7 @@ function renderHeatmap(history) {
         `).join('')}
       </div>
       <div class="mfd-heat-meta">
-        <span><b>${visited30}</b> dias ativos no último mês ${visited30 >= 18 ? '· top 10% dos vendedores 💪' : ''}</span>
+        <span><b>${visited30}</b> dias ativos no último mês ${visited30 >= 18 ? '· consistência de elite 💪' : ''}</span>
         <div class="mfd-heat-legend">
           <span>menos</span>
           <span class="lvl mfd-heat-cell"></span>
@@ -3545,10 +3733,12 @@ function renderChecklist(items) {
       </div>
       <div class="mfd-checklist-list">
         ${items.map(i => `
-          <div class="mfd-check-item ${i.done ? 'done' : ''}" data-check-id="${escapeHtml(i.id)}" ${i.tool ? `data-tool="${escapeHtml(i.tool)}"` : ''}>
+          <div class="mfd-check-item ${i.done ? 'done' : ''}" data-check-id="${escapeHtml(i.id)}">
             <div class="mfd-check-box">${i.done ? '✓' : ''}</div>
             <div class="mfd-check-text">${escapeHtml(i.text)}</div>
-            <div class="mfd-check-meta">${i.meta || (i.tool ? '→ abrir' : '')}</div>
+            ${i.tool
+              ? `<button class="mfd-check-meta mfd-check-open" data-tool="${escapeHtml(i.tool)}" data-check-done="${escapeHtml(i.id)}">${i.meta || '→ abrir'}</button>`
+              : `<div class="mfd-check-meta">${i.meta || ''}</div>`}
           </div>
         `).join('')}
       </div>
@@ -3561,18 +3751,18 @@ function renderChecklist(items) {
 // ══════════════════════════════════════════════════════════════════════
 
 const TOOLS = [
-  { id: 'analyzer',    name: 'Análise de Anúncio',       desc: 'Diagnóstico completo: MLB, MLBU e catálogo',           ico: '🔍', tone: '',       href: '/analise-de-anuncios' },
-  { id: 'tags',        name: 'Auditoria de Tags',        desc: 'Escaneia a conta toda em busca de tags negativas',     ico: '🚨', tone: 'red',    href: '/auditoria-de-tags' },
-  { id: 'keyword',     name: 'Agente de Palavras-Chave', desc: 'Palavras pra preencher ficha técnica do anúncio',      ico: '🔑', tone: 'yellow', href: '/agente-de-palavras-chave' },
-  { id: 'description', name: 'Agente de Descrições',     desc: 'Gera descrições otimizadas pro anúncio',               ico: '📝', tone: 'yellow', href: '/agente-de-descricoes' },
-  { id: 'planner',     name: 'Planejador de Ads',        desc: 'TACOS, ROAS e auditoria de campanhas',                 ico: '🎯', tone: 'green',  href: '/planejador-de-ads' },
-  { id: 'catalog',     name: 'Concorrência de Catálogo', desc: 'Quem está acima e abaixo do seu produto',              ico: '⚔️', tone: 'red',    href: '/concorrencia-de-catalogo' },
-  { id: 'finder',      name: 'Buscador de Catálogos',    desc: 'Catálogos abertos com demanda real',                   ico: '💎', tone: 'purple', href: '/busca-de-catalogos' },
+  { id: 'analyzer',    name: 'Análise de Anúncio',       desc: 'Diagnóstico completo: MLB, MLBU e catálogo',           ico: '🔍', tone: '',       href: '/analise-anuncio' },
+  { id: 'tags',        name: 'Auditoria de Tags',        desc: 'Escaneia a conta toda em busca de tags negativas',     ico: '🚨', tone: 'red',    href: '/auditoria-tags' },
+  { id: 'keyword',     name: 'Agente de Palavras-Chave', desc: 'Palavras pra preencher ficha técnica do anúncio',      ico: '🔑', tone: 'yellow', href: '/agente-palavras-chave' },
+  { id: 'description', name: 'Agente de Descrições',     desc: 'Gera descrições otimizadas pro anúncio',               ico: '📝', tone: 'yellow', href: 'https://chatgpt.com/g/g-6789d6382c7481918a477d7dc829a0bd-agente-de-descricoes-otimizadas' },
+  { id: 'planner',     name: 'Planejador de Ads',        desc: 'TACOS, ROAS e auditoria de campanhas',                 ico: '🎯', tone: 'green',  href: '/planejador-ads' },
+  { id: 'catalog',     name: 'Concorrência de Catálogo', desc: 'Quem está acima e abaixo do seu produto',              ico: '⚔️', tone: 'red',    href: '/concorrencia-catalogo' },
+  { id: 'finder',      name: 'Buscador de Catálogos',    desc: 'Catálogos abertos com demanda real',                   ico: '💎', tone: 'purple', href: '/buscador-catalogos' },
   { id: 'resize',      name: 'Redimensionar Imagens',    desc: 'Adequa imagens ao padrão ML — remove penalidades',     ico: '🖼️', tone: '',       href: '/redimensionar-imagem' },
-  { id: 'autocomplete',name: 'Palavras-Chave Autocompletar', desc: 'Termos reais que compradores digitam',             ico: '⌨️', tone: 'yellow', href: '/palavras-chave-autocompletar' },
-  { id: 'category-kw', name: 'Palavras-Chave da Categoria',  desc: 'Tendências em alta no seu nicho',                  ico: '📈', tone: 'yellow', href: '/palavras-chave-categoria' },
-  { id: 'inpi',        name: 'Busca INPI',               desc: 'Verifica risco de marca antes de criar produto',       ico: '🏷', tone: '',        href: '/analise-de-marca' },
-  { id: 'ean',         name: 'Gerador de EAN',           desc: 'Cria códigos EAN pra novos catálogos',                 ico: '🔢', tone: '',        href: '/gerador-de-ean' }
+  { id: 'autocomplete',name: 'Palavras-Chave Autocompletar', desc: 'Termos reais que compradores digitam',             ico: '⌨️', tone: 'yellow', href: '/palavras-autocompletar' },
+  { id: 'category-kw', name: 'Palavras-Chave da Categoria',  desc: 'Tendências em alta no seu nicho',                  ico: '📈', tone: 'yellow', href: '/palavras-categoria' },
+  { id: 'inpi',        name: 'Busca INPI',               desc: 'Verifica risco de marca antes de criar produto',       ico: '🏷', tone: '',        href: '/busca-inpi' },
+  { id: 'ean',         name: 'Gerador de EAN',           desc: 'Cria códigos EAN pra novos catálogos',                 ico: '🔢', tone: '',        href: '/gerador-ean' }
 ];
 
 function renderToolsGrid(state) {
@@ -3588,7 +3778,8 @@ function renderToolsGrid(state) {
         ${TOOLS.map(t => {
           const badge = badges[t.id] || (t.badge ? { type: t.badge, label: t.badge } : null);
           const tag = t.href ? 'a' : 'button';
-          const linkAttr = t.href ? `href="${escapeHtml(t.href)}"` : '';
+          const isExternal = !!t.href && /^https?:/i.test(t.href);
+          const linkAttr = t.href ? `href="${escapeHtml(t.href)}"${isExternal ? ' target="_blank" rel="noopener"' : ''}` : '';
           return `
             <${tag} class="mfd-tool" data-tool="${t.id}" ${linkAttr}>
               <div class="mfd-tool-top">
@@ -3668,10 +3859,18 @@ function renderError(err) {
       </div>
     `;
   }
+  // Nunca mostrar err.message cru (endpoint interno / inglês do browser)
+  const friendly = status === 429
+    ? 'Muitas atualizações em pouco tempo. Espere um minutinho e tente de novo.'
+    : (status >= 500
+      ? 'Nossos servidores tiveram um soluço. Tente de novo em instantes.'
+      : (err && /failed to fetch|networkerror|load failed/i.test(err.message || '')
+        ? 'Sem conexão com o servidor — verifique sua internet e tente de novo.'
+        : 'Algo deu errado ao carregar seus dados. Tente de novo em instantes.'));
   return `
     <div class="mfd-error">
       <span style="font-size:1.2rem;">⚠️</span>
-      <div><b>Não foi possível carregar:</b> ${escapeHtml(err && err.message || 'Erro desconhecido')}</div>
+      <div><b>Não foi possível carregar.</b> ${escapeHtml(friendly)}</div>
       <button class="mfd-error-retry" id="mfd-retry">Tentar de novo</button>
     </div>
   `;
@@ -3694,15 +3893,15 @@ function renderOnboardingBanner(mode) {
   const steps = noToken
     ? [
         { title: 'Conectar Mercado Livre', cta: 'Conectar agora', href: '/minha-conta', primary: true },
-        { title: 'Analisar 1 anúncio', cta: 'Análise', href: '/analise-de-anuncios' },
-        { title: 'Verificar tags negativas', cta: 'Auditoria', href: '/auditoria-de-tags' },
-        { title: 'Encontrar palavras pra ficha técnica', cta: 'Agente', href: '/agente-de-palavras-chave' }
+        { title: 'Analisar 1 anúncio', cta: 'Análise', href: '/analise-anuncio' },
+        { title: 'Verificar tags negativas', cta: 'Auditoria', href: '/auditoria-tags' },
+        { title: 'Encontrar palavras pra ficha técnica', cta: 'Agente', href: '/agente-palavras-chave' }
       ]
     : [
         { title: '✓ Mercado Livre conectado', done: true },
-        { title: 'Analisar 1 anúncio', cta: 'Análise', href: '/analise-de-anuncios', primary: true },
-        { title: 'Verificar tags negativas', cta: 'Auditoria', href: '/auditoria-de-tags' },
-        { title: 'Buscar catálogos', cta: 'Buscar', href: '/busca-de-catalogos' }
+        { title: 'Analisar 1 anúncio', cta: 'Análise', href: '/analise-anuncio', primary: true },
+        { title: 'Verificar tags negativas', cta: 'Auditoria', href: '/auditoria-tags' },
+        { title: 'Buscar catálogos', cta: 'Buscar', href: '/buscador-catalogos' }
       ];
 
   const stepsHtml = steps.map(s => `
@@ -3728,7 +3927,7 @@ function renderOnboardingBanner(mode) {
 function renderNoTokenPreview() {
   const features = [
     { icon: '📊', title: 'Visão Geral do Período', desc: 'Receita, vendas, ROAS, TACOS — total, orgânico e ads em colunas.' },
-    { icon: '💚', title: 'Saúde da Conta', desc: 'Score com 5 indicadores reais do Mercado Livre e tendência diária.' },
+    { icon: '💚', title: 'Saúde da Conta', desc: 'Score 0–100 com 4 indicadores reais da sua conta no Mercado Livre.' },
     { icon: '⭐', title: 'Reputação + Loja Oficial', desc: 'Vermelho/amarelo/verde, MercadoLíder, selos da sua conta.' },
     { icon: '📈', title: 'Tráfego e Vendas Diárias', desc: 'Gráficos separando orgânico de Ads, dia a dia.' },
     { icon: '⚠️', title: 'Anúncios com Problema', desc: 'Pausados, com tags negativas, moderações ativas — tudo no mesmo lugar.' },
@@ -3803,11 +4002,14 @@ function renderDashboard() {
     return;
   }
 
-  // Conta com ML conectado mas sem anúncios → banner de "primeiros passos" no topo do dashboard
+  // Conta com ML conectado mas sem anúncios → banner de "primeiros passos" no topo do dashboard.
+  // countsUnknown = a contagem FALHOU; não mostrar onboarding pra vendedor estabelecido.
   const _activeTot = data.totals?.activeItems || 0;
   const _pausedTot = data.totals?.pausedItems || 0;
-  if (STATE.token && (_activeTot + _pausedTot === 0)) {
+  if (STATE.token && (_activeTot + _pausedTot === 0) && !data.totals?.countsUnknown) {
     STATE._onbBanner = 'no-ads';
+  } else if (STATE._onbBanner === 'no-ads') {
+    delete STATE._onbBanner;
   }
 
   const sid = STATE.sellerId;
@@ -3815,7 +4017,8 @@ function renderDashboard() {
   const totals = {
     activeItems: data.totals?.activeItems || 0,
     pausedItems: data.totals?.pausedItems || 0,
-    itemsWithAds: data.totals?.itemsWithAds || 0
+    itemsWithAds: data.totals?.itemsWithAds || 0,
+    countsUnknown: !!data.totals?.countsUnknown
   };
   const prevSnap = STATE.prevSnapshot;
   const streak = rtGetStreak(sid);
@@ -3886,7 +4089,6 @@ function renderDashboard() {
     drawTrafficChart(data.daily_aggregated);
     drawSalesChart(data.daily_aggregated);
   }
-  if (window.Chart) drawSpendDonut(STATE.topAdsItems || []);
   wireListeners(root);
 }
 
@@ -3928,6 +4130,13 @@ function wireListeners(root) {
     el.addEventListener('click', (e) => {
       // Não dispara se for o botão x
       if (e.target.closest('.mfd-alert-x')) return;
+      // Item do checklist com tool: marca como feito antes de navegar
+      const checkId = el.dataset.checkDone;
+      if (checkId && STATE.sellerId) {
+        const stored = rtGetChecklist(STATE.sellerId);
+        const t = stored && stored.items.find(x => x.id === checkId);
+        if (t && !t.done) { t.done = true; rtSetChecklist(STATE.sellerId, stored.items); }
+      }
       const tool = el.dataset.tool;
       if (tool) handleToolClick(tool, el);
     });
@@ -3948,7 +4157,7 @@ function wireListeners(root) {
   // Checklist toggle
   root.querySelectorAll('[data-check-id]').forEach(item => {
     item.addEventListener('click', (e) => {
-      // Permitir CTA tool (click no item todo abre tool, mas cabeçalho marca)
+      // O botão "→ abrir" (data-tool) tem handler próprio — aqui só o toggle
       if (e.target.closest('[data-tool]')) return;
       const id = item.dataset.checkId;
       const sid = STATE.sellerId;
@@ -3962,6 +4171,17 @@ function wireListeners(root) {
       renderDashboard();
     });
   });
+
+  // Tooltips ⓘ: alinha pela borda quando perto do limite direito da tela
+  root.querySelectorAll('.mfd-tip').forEach(tip => {
+    const alignTip = () => {
+      const r = tip.getBoundingClientRect();
+      if (r.right + 150 > window.innerWidth) tip.setAttribute('data-tip-align', 'right');
+      else tip.removeAttribute('data-tip-align');
+    };
+    tip.addEventListener('mouseenter', alignTip);
+    tip.addEventListener('focusin', alignTip);
+  });
 }
 
 function handleToolClick(tool, el) {
@@ -3969,21 +4189,24 @@ function handleToolClick(tool, el) {
   if (typeof window.MFD_onToolClick === 'function') {
     try { window.MFD_onToolClick(tool, { el, state: STATE }); return; } catch (_) {}
   }
-  // Fallback: navegação relativa (permite override por path map)
-  const map = (window.MFD_TOOL_PATHS) || {
-    analyzer:  '/analise-anuncio',
-    planner:   '/planejador-ads',
-    catalog:   '/concorrencia-catalogo',
-    finder:    '/buscador-catalogos',
-    keyword:   '/agente-palavras',
-    inpi:      '/busca-inpi',
-    image:     '/gerar-imagem',
-    reconnect: '/minha-conta'
-  };
+  // Link externo (ex.: Agente de Descrições): o <a target=_blank> já navega
+  const toolDef = TOOLS.find(t => t.id === tool);
+  if (toolDef && toolDef.href && /^https?:/i.test(toolDef.href)) return;
+  // Fallback: deriva o mapa do array TOOLS (fonte única de verdade dos paths)
+  // + extras que não aparecem no grid. window.MFD_TOOL_PATHS sobrescreve tudo.
+  const derived = {};
+  TOOLS.forEach(t => { if (t.href && t.href.startsWith('/')) derived[t.id] = t.href; });
+  derived.image = '/gerar-imagem';
+  derived.reconnect = '/minha-conta';
+  const map = window.MFD_TOOL_PATHS || derived;
   const path = map[tool];
   if (path && typeof window !== 'undefined' && window.location) {
-    window.location.href = path;
-  } else {
+    // CTA vinculado a um anúncio específico → abre a ferramenta já preenchida (?item=MLB...)
+    const itemId = el && el.dataset ? (el.dataset.itemId || '') : '';
+    window.location.href = itemId
+      ? `${path}${path.includes('?') ? '&' : '?'}item=${encodeURIComponent(itemId)}`
+      : path;
+  } else if (window.MFD_DEBUG) {
     console.log('[MFD] Tool click sem handler configurado:', tool);
   }
 }
@@ -4006,7 +4229,7 @@ async function waitForFreshToken(oldToken, deadlineMs = 8000) {
     // 1) Checa se Bubble setou em window.MFD_TOKEN externamente
     if (window.MFD_TOKEN && window.MFD_TOKEN.length >= 50 && window.MFD_TOKEN !== oldToken) {
       STATE.token = window.MFD_TOKEN;
-      console.log(`[MFD] token MUDOU via window.MFD_TOKEN após ${Date.now()-start}ms`);
+      if (window.MFD_DEBUG) console.log(`[MFD] token MUDOU via window.MFD_TOKEN após ${Date.now()-start}ms`);
       return true;
     }
     // 2) Re-puxa via workflow Bubble (pode ter sido refreshado server-side)
@@ -4014,13 +4237,13 @@ async function waitForFreshToken(oldToken, deadlineMs = 8000) {
     if (fresh && fresh.length >= 50 && fresh !== oldToken) {
       STATE.token = fresh;
       window.MFD_TOKEN = fresh;
-      console.log(`[MFD] token MUDOU via fetchTokenFromBubble após ${Date.now()-start}ms`);
+      if (window.MFD_DEBUG) console.log(`[MFD] token MUDOU via fetchTokenFromBubble após ${Date.now()-start}ms`);
       return true;
     }
     lastSeen = fresh || window.MFD_TOKEN || null;
     await new Promise(r => setTimeout(r, 1000));
   }
-  console.warn(`[MFD] token NÃO mudou em ${deadlineMs}ms — Bubble não está refrescando server-side. Token ainda: ${(lastSeen||'').substring(0,30)}...`);
+  console.warn(`[MFD] token NÃO mudou em ${deadlineMs}ms — Bubble não está refrescando server-side (len=${(lastSeen || '').length}).`);
   return false;
 }
 
@@ -4028,6 +4251,20 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
   STATE.period = period;
   STATE.loading = true;
   STATE.error = null;
+  // Token de requisição: invalida .then de períodos antigos (troca rápida de aba)
+  STATE._reqSeq = (STATE._reqSeq || 0) + 1;
+  const reqId = STATE._reqSeq;
+  // Zera estados derivados do período anterior (senão renderizam dados velhos)
+  STATE.visitsLoading = false;
+  STATE.visitsData = null;
+  STATE.visitsDaily = null;
+  STATE.ordersLoading = false;
+  STATE.ordersData = undefined;
+  STATE.issuesLoading = false;
+  STATE.issuesData = undefined;
+  STATE.issuesError = false;
+  STATE.moderationsLoading = false;
+  STATE.moderationsData = undefined;
   renderDashboard();
 
   try {
@@ -4069,10 +4306,13 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
     // /ads-aggregated não retorna items_with_ads; pode ser 0 — derivamos
     // a partir de presença de campanhas + custo > 0 (proxy razoável).
     const hasActiveAds = (aggData.campaigns || []).some(c => c.status === 'active') || (aggData.aggregated?.total_cost || 0) > 0;
+    // null = contagem FALHOU (≠ conta sem anúncios) — não disparar onboarding nesse caso
+    const countsUnknown = activeCount == null && pausedCount == null;
     const totals = {
-      activeItems: activeCount || aggData.total_items_account || 0,
-      pausedItems: pausedCount || 0,
-      itemsWithAds: hasActiveAds ? 1 : 0  // marcador — é "tem ads ou não"
+      activeItems: (activeCount != null ? activeCount : 0) || aggData.total_items_account || 0,
+      pausedItems: pausedCount != null ? pausedCount : 0,
+      itemsWithAds: hasActiveAds ? 1 : 0,  // marcador — é "tem ads ou não"
+      countsUnknown
     };
 
     // Snapshot anterior (antes de salvar hoje)
@@ -4113,38 +4353,81 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
 
     // Em paralelo (não bloqueia): busca visitas pra calcular conversão orgânica
     if (sidLocal && (totals.activeItems || 0) > 0) {
+      const reqSnap = STATE._currentSnap; // snapshot DESTA requisição (não o global)
       STATE.visitsLoading = true;
       patchOrganicVsCard();
       fetchOrganicVisits(sidLocal, period).then(v => {
+        if (reqId !== STATE._reqSeq) return; // período mudou no meio — descarta
         STATE.visitsLoading = false;
         STATE.visitsData = v;
-        // Atualiza snapshot com visits + org conversion
-        if (STATE._currentSnap && v) {
+        // Atualiza snapshot com visits + org conversion (não confiável com amostra parcial)
+        if (reqSnap && v) {
           const adsClicks = aggData.aggregated?.total_clicks || 0;
-          const orgVisits = Math.max(0, v.total_visits - adsClicks);
-          const orgOrders = aggData.aggregated?.organic_orders || 0;
-          STATE._currentSnap.visits = v.total_visits;
-          STATE._currentSnap.organic_conversion = orgVisits > 0 ? (orgOrders / orgVisits * 100) : 0;
-          rtSaveSnapshot(sidLocal, period, STATE._currentSnap);
+          const orgVisits = (v.capped || v.incomplete) ? 0 : Math.max(0, v.total_visits - adsClicks);
+          // Mesma base do render: pedidos (total − vendas Ads) quando disponível,
+          // senão unidades orgânicas — histórico coerente com o que o card mostra
+          const gross = (STATE.ordersData && typeof STATE.ordersData.total_orders === 'number')
+            ? STATE.ordersData.total_orders : null;
+          const adsOrd = aggData.aggregated?.total_orders || 0;
+          const orgSales = gross != null ? Math.max(0, gross - adsOrd) : (aggData.aggregated?.organic_orders || 0);
+          const orgConvSnap = orgVisits > 0 ? (orgSales / orgVisits * 100) : 0;
+          reqSnap.visits = v.total_visits;
+          // >100% = visitas subcontadas (catálogo) — não polui o histórico
+          reqSnap.organic_conversion = orgConvSnap > 100 ? 0 : orgConvSnap;
+          rtSaveSnapshot(sidLocal, period, reqSnap);
         }
         patchOrganicVsCard();
         patchHealthCard();
       }).catch(() => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.visitsLoading = false;
         patchOrganicVsCard();
         patchHealthCard();
+      });
+
+      // Em paralelo: conta pedidos (vendas brutas) pro funil de conversão estilo Seller Central
+      STATE.ordersLoading = true;
+      fetchOrdersCount(sidLocal, period).then(d => {
+        if (reqId !== STATE._reqSeq) return;
+        STATE.ordersLoading = false;
+        STATE.ordersData = d; // null = indisponível (conversões caem pro cálculo por unidades)
+        if (reqSnap && d && typeof d.total_orders === 'number') {
+          reqSnap.orders = d.total_orders;
+          // Se as visitas já chegaram, refaz a conversão orgânica do snapshot na
+          // base de pedidos (total − Ads) — quem resolve por último consolida
+          const v = STATE.visitsData;
+          if (v && v.total_visits > 0 && !v.capped && !v.incomplete) {
+            const adsClicks = aggData.aggregated?.total_clicks || 0;
+            const adsOrd = aggData.aggregated?.total_orders || 0;
+            const orgVisits = Math.max(0, v.total_visits - adsClicks);
+            const orgConvSnap = orgVisits > 0 ? (Math.max(0, d.total_orders - adsOrd) / orgVisits * 100) : 0;
+            reqSnap.organic_conversion = orgConvSnap > 100 ? 0 : orgConvSnap;
+          }
+          rtSaveSnapshot(sidLocal, period, reqSnap);
+        }
+        patchOrganicVsCard();
+      }).catch(() => {
+        if (reqId !== STATE._reqSeq) return;
+        STATE.ordersLoading = false;
+        STATE.ordersData = null;
+        patchOrganicVsCard();
       });
 
       // Em paralelo: busca anúncios com problema (saúde unhealthy/warning)
       STATE.issuesLoading = true;
       patchAdsWithIssues();
       fetchAdsWithIssues(sidLocal).then(d => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.issuesLoading = false;
-        STATE.issuesData = d;
+        STATE.issuesData = d; // null = erro (renderAdsWithIssues trata)
+        STATE.issuesError = d == null;
         patchAdsWithIssues();
         patchHealthCard();
       }).catch(() => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.issuesLoading = false;
+        STATE.issuesData = null;
+        STATE.issuesError = true;
         patchAdsWithIssues();
         patchHealthCard();
       });
@@ -4153,22 +4436,39 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       STATE.moderationsLoading = true;
       patchModerationsCard();
       fetchModerations(sidLocal).then(d => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.moderationsLoading = false;
-        STATE.moderationsData = d;
+        STATE.moderationsData = d; // null = erro (renderModerations trata)
         patchModerationsCard();
       }).catch(() => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.moderationsLoading = false;
+        STATE.moderationsData = null;
         patchModerationsCard();
       });
 
       // Em paralelo: busca visitas diárias por anúncio pra plotar série orgânica no chart
       fetchOrganicVisitsDaily(sidLocal, period).then(d => {
+        if (reqId !== STATE._reqSeq) return;
         STATE.visitsDaily = d;
         // Re-desenha o chart de tráfego com a 3ª série
         if (window.Chart && STATE.data?.daily_aggregated) {
           drawTrafficChart(STATE.data.daily_aggregated);
         }
       }).catch(() => {});
+    } else if (sidLocal && totals.countsUnknown) {
+      // Contagem de anúncios falhou: não dá pra afirmar nada — marca erro de verificação
+      STATE.issuesError = true;
+      patchHealthCard();
+    } else {
+      // Sem anúncios ativos: nada pra checar — estados explícitos (não "carregando" eterno)
+      STATE.visitsData = { total_visits: 0, sampled_items: 0, capped: false };
+      STATE.issuesData = { slots: [] };
+      STATE.moderationsData = { items: [], total: 0, featured: null };
+      patchOrganicVsCard();
+      patchAdsWithIssues();
+      patchModerationsCard();
+      patchHealthCard();
     }
   } catch (err) {
     const status = err && err.status;
@@ -4210,7 +4510,7 @@ function autoDiscoverToken() {
     const v = window[k];
     if (typeof v === 'string' && v.length >= 50) {
       STATE.token = v;
-      console.log('[MFD] token auto-detectado em window.' + k);
+      if (window.MFD_DEBUG) console.log('[MFD] token auto-detectado em window.' + k);
       return true;
     }
   }
@@ -4220,7 +4520,7 @@ function autoDiscoverToken() {
       const v = window[k];
       if (typeof v === 'string' && v.startsWith('APP_USR-') && v.length >= 50) {
         STATE.token = v;
-        console.log('[MFD] token auto-detectado (APP_USR-) em window.' + k);
+        if (window.MFD_DEBUG) console.log('[MFD] token auto-detectado (APP_USR-) em window.' + k);
         return true;
       }
     }
@@ -4267,10 +4567,14 @@ window.MFD_init = async function MFD_init(opts) {
 
   // 2) Async fallback via Bubble workflow (mesmo padrão analyzer/planner)
   if (!STATE.token) {
+    // Loading (e não onboarding) enquanto a descoberta roda — evita o flash de
+    // "Conecte sua conta" pra quem JÁ está conectado e só espera o workflow
+    STATE.loading = true;
     renderDashboard();
     const [tk, sid] = await Promise.all([fetchTokenFromBubble(), fetchSellerIdFromBubble()]);
     if (tk) STATE.token = tk;
     if (sid && !STATE.sellerId) STATE.sellerId = sid;
+    if (STATE.token) STATE.loading = false;
   } else if (!STATE.sellerId) {
     // Token veio mas seller_id não — busca async sem bloquear UI
     fetchSellerIdFromBubble().then(s => { if (s && !STATE.sellerId) STATE.sellerId = s; });
@@ -4286,6 +4590,7 @@ window.MFD_init = async function MFD_init(opts) {
         loadAndRender(STATE.period);
       } else if (tries >= 10) {
         clearInterval(poll);
+        STATE.loading = false; // esgotou a descoberta — agora sim onboarding
         renderDashboard();
       }
     }, 1000);

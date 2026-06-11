@@ -1,4 +1,4 @@
-/* === DASHBOARD MARKETFÁCIL — Proposta U (Light Trading) ===
+/* === DASHBOARD MARKETFACIL — Proposta U (Light Trading) ===
    Wrapper: .mfd-wrapper
    Sincronizado com analyzer.css / ads-planner.css (mesmos tokens) */
 
@@ -732,10 +732,13 @@
   gap: 16px;
   margin-bottom: 20px;
 }
+/* Itens de grid encolhem junto com o container (sem isso o canvas dos charts
+   trava o shrink e gera scroll horizontal) */
+.mfd-row > * { min-width: 0; }
 
 @media (min-width: 900px) {
   .mfd-row.split { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
-  .mfd-row.split-even { grid-template-columns: 1fr 1fr; }
+  .mfd-row.split-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
 /* ───────────────────── REVENUE CHART ───────────────────── */
@@ -744,8 +747,10 @@
   position: relative;
   height: 220px;
   width: 100%;
+  min-width: 0;
   margin-top: 4px;
 }
+.mfd-chart-wrap canvas { max-width: 100%; }
 
 .mfd-chart-legend {
   display: flex;
@@ -1165,7 +1170,7 @@
   border-bottom: 1px dashed var(--border);
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1440px) {
   .mfd-rep-top { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: center; }
 }
 
@@ -1205,7 +1210,7 @@
   font-size: 0.78rem;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1440px) {
   .mfd-rep-stars { align-items: flex-end; }
 }
 
@@ -1225,7 +1230,7 @@
   line-height: 1.4;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1440px) {
   .mfd-rep-stars-meta { text-align: right; }
 }
 
@@ -1907,7 +1912,7 @@
   border-color: var(--blue);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1199px) {
   .mfd-topads-item {
     grid-template-columns: 28px 56px 1fr auto;
     grid-template-rows: auto auto;
@@ -2770,12 +2775,14 @@
   letter-spacing: 0.02em;
   color: #94a3b8;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: visible; /* permite ⓘ ficar visível mesmo absolute */
+  /* Quebra em 2 linhas quando a célula aperta — nowrap fazia o rótulo vazar
+     por cima da célula vizinha em telas de notebook */
+  white-space: normal;
+  overflow: visible;
 }
-/* Tooltip ⓘ no label do KPI vira position absolute pra não consumir largura */
+/* Tooltip ⓘ no label do KPI — relative pra o balão ancorar no próprio ícone */
 .mfd-vs-kpi-label .mfd-tip {
-  position: static;
+  position: relative;
   background: transparent;
   width: auto; height: auto;
   margin-left: 2px;
@@ -3062,7 +3069,7 @@
 
 .mfd-vs-bar-fill.total { background: linear-gradient(90deg, #2d60c6, #1f4ba8); }
 
-@media (max-width: 980px) {
+@media (max-width: 1280px) {
   .mfd-vs-grid-3 { grid-template-columns: 1fr 1fr; }
   .mfd-vs-total { grid-column: 1 / -1; }
 }
@@ -3316,4 +3323,89 @@
 @media (max-width: 720px) {
   .mfd-ntp { padding: 20px; }
   .mfd-ntp-grid { grid-template-columns: 1fr; }
+}
+
+/* Botão "→ abrir" do checklist (separado da área de toggle) */
+.mfd-check-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ═══════════ EXPANDER DAS PILLS (moderações + saúde) ═══════════ */
+.mfd-issue-others-pills.collapsed .mfd-issue-pill:nth-child(n+13) { display: none; }
+.mfd-issue-expand {
+  background: none;
+  border: 0;
+  padding: 6px 0 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #2d60c6;
+}
+.mfd-issue-expand:hover { text-decoration: underline; }
+
+/* ═══════════════ CONTAINER QUERIES — widget responde à PRÓPRIA largura ═══════════════
+   O dashboard vive num HTML element do Bubble com menu lateral (~270px): media queries
+   de viewport "enxergam" mais espaço do que o widget realmente tem, e os layouts de
+   desktop ficavam espremidos em notebooks <15". #mfd-root vira container e os colapsos
+   acontecem pela largura útil REAL. Browsers sem suporte a @container (raros em 2026)
+   continuam com os @media de viewport acima — nada quebra. */
+
+#mfd-root { container-type: inline-size; }
+
+/* Widget em largura de notebook (≤1180px úteis): densidade + grids enxutos */
+@container (min-width: 760px) and (max-width: 1180px) {
+  .mfd-wrapper { padding: 18px; }
+  .mfd-hero { padding: 22px 24px; }
+  .mfd-hero-title { font-size: 1.4rem; }
+  .mfd-card { padding: 18px 20px; }
+  .mfd-row { gap: 14px; margin-bottom: 16px; }
+}
+
+/* Visão Geral: 2 colunas com Total em cima quando o widget aperta */
+@container (min-width: 680px) and (max-width: 1180px) {
+  .mfd-vs-grid-3 { grid-template-columns: 1fr 1fr; }
+  .mfd-vs-total { grid-column: 1 / -1; }
+}
+
+/* Reputação: topo em 1 coluna (em 2 colunas internas o card espremia nome + %) */
+@container (max-width: 1180px) {
+  .mfd-rep-top { grid-template-columns: 1fr; }
+  .mfd-rep-stars { align-items: flex-start; }
+  .mfd-rep-stars-meta { text-align: left; }
+}
+
+/* Top anúncios: layout de 2 linhas (métricas em linha própria com 4 colunas) */
+@container (min-width: 600px) and (max-width: 1180px) {
+  .mfd-topads-item {
+    grid-template-columns: 28px 56px 1fr auto;
+    grid-template-rows: auto auto;
+  }
+  .mfd-topads-metrics {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .mfd-topads-actions { grid-column: 4; grid-row: 1; }
+}
+
+/* Widget estreito (<880px úteis): pares de cards viram coluna única */
+@container (max-width: 879px) {
+  .mfd-hero-checklist-row,
+  .mfd-health-rep-row,
+  .mfd-pair-row,
+  .mfd-row.split,
+  .mfd-row.split-even,
+  .mfd-checklist-tools-row { grid-template-columns: 1fr; }
+}
+
+/* Widget muito estreito (<680px úteis) */
+@container (max-width: 679px) {
+  .mfd-vs-grid, .mfd-vs-grid-3 { grid-template-columns: 1fr; }
+  .mfd-vs-total { grid-column: auto; }
+  .mfd-vs-kpi-row-ads { grid-template-columns: 1fr 1fr; }
+  .mfd-tools-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }

@@ -36,7 +36,7 @@ const html = `${fontsImport}
 ${css}
 </style>
 
-<!-- DASHBOARD MARKETFÁCIL · injetado pelo build em ${new Date().toISOString()} -->
+<!-- DASHBOARD MARKETFACIL · injetado pelo build em ${new Date().toISOString()} -->
 <div id="mfd-root">
     <div class="mfd-wrapper">
         <div class="mfd-loading">
