@@ -1511,6 +1511,10 @@ function renderHero(seller, agg, totals, streak, history) {
   const adsRoas = (Number(agg.total_revenue) || 0) > 0 && (Number(agg.total_cost) || 0) > 0
     ? Number(agg.total_revenue) / Number(agg.total_cost) : 0;
   const heroTacos = totalRev > 0 ? ((Number(agg.total_cost) || 0) / totalRev * 100) : 0;
+  // TACOS no hero só quando há receita ATRIBUÍDA a Ads: com gasto e zero conversão,
+  // um TACOS baixinho parece saúde quando na verdade é custo sem retorno
+  const showHeroTacos = heroTacos > 0 && (Number(agg.total_revenue) || 0) > 0;
+  const heroAdsSpendNoReturn = (Number(agg.total_cost) || 0) > 0 && (Number(agg.total_revenue) || 0) === 0;
   const hasData = totalRev > 0 || totalOrders > 0;
   // Receita por pedidos com paginação no cap (conta orgânica gigante): valor é piso, não total
   const revSuffix = agg.revenue_complete === false ? '+' : '';
@@ -1541,10 +1545,16 @@ function renderHero(seller, agg, totals, streak, history) {
             <span class="mfd-hero-stat-value">${fmt(adsRoas, 1)}x</span>
           </div>
           ` : ''}
-          ${heroTacos > 0 ? `
+          ${showHeroTacos ? `
           <div class="mfd-hero-stat">
             <span class="mfd-hero-stat-label">TACOS</span>
             <span class="mfd-hero-stat-value">${fmt(heroTacos, 1)}%</span>
+          </div>
+          ` : ''}
+          ${heroAdsSpendNoReturn ? `
+          <div class="mfd-hero-stat">
+            <span class="mfd-hero-stat-label">investido em Ads</span>
+            <span class="mfd-hero-stat-value">${fmtMoneyCompact(Number(agg.total_cost) || 0)}</span>
           </div>
           ` : ''}
         </div>
@@ -4450,15 +4460,12 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       });
 
       // Em paralelo: conta pedidos (vendas brutas) pro funil de conversão estilo Seller Central.
-      // A receita por pedidos vira a fonte orgânica em DOIS cenários:
-      //  - organicFallback: ML não devolve metrics_summary (seller sem campanha)
-      //  - aggRevZero: summary existe mas com receita TOTAL zerada — o
-      //    organic_units_amount do ML Ads não cobre as vendas orgânicas reais
-      //    de contas com campanha sem conversão (gasto sem venda atribuída)
+      // A receita por pedidos é SEMPRE pedida junto: ela é a única fonte exata do
+      // total da conta. O organic_units_amount do ML Ads cobre só itens ANUNCIADOS
+      // (itens fora de campanha ficam invisíveis), e o agregado por campanha perde
+      // histórico de campanhas deletadas/recriadas. Cache de 10min no proxy segura o custo.
       const organicFallback = !aggData.aggregated;
-      const aggRevZero = !!aggData.aggregated &&
-        ((aggData.aggregated.total_revenue || 0) + (aggData.aggregated.organic_revenue || 0)) === 0;
-      const needsOrdersRevenue = organicFallback || aggRevZero;
+      const needsOrdersRevenue = true;
       STATE.ordersLoading = true;
       fetchOrdersCount(sidLocal, period, needsOrdersRevenue).then(d => {
         if (reqId !== STATE._reqSeq) return;
@@ -4478,7 +4485,8 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
           }
           rtSaveSnapshot(sidLocal, period, reqSnap);
         }
-        if (needsOrdersRevenue && d && d.revenue && typeof d.revenue.amount === 'number' &&
+        let revenueApplied = false;
+        if (d && d.revenue && typeof d.revenue.amount === 'number' &&
             (organicFallback || d.revenue.amount > 0)) {
           if (organicFallback) {
             // Sintetiza o agregado 100% orgânico no MESMO shape do /ads-aggregated:
@@ -4503,46 +4511,58 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
               units_quantity: 0,
               organic_units_quantity: day.units || 0
             }));
+            revenueApplied = true;
           } else {
-            // Summary de Ads existe mas zerado de receita E a conta vendeu (caso
-            // real: campanha ativa sem conversão): injeta a receita por pedidos
-            // como orgânica, preservando custo/cliques/impressões de Ads
+            // Reconciliação: orgânico real = pedidos da conta − receita atribuída a
+            // Ads. Só aplica quando AUMENTA o orgânico — em conta gigante (pedidos
+            // truncados no cap) o piso por pedidos pode ser menor que o summary
             const a = STATE.data.aggregated;
-            a.organic_revenue = d.revenue.amount;
-            a.organic_orders = d.revenue.units || 0;
-            a.avg_tacos = (a.total_cost || 0) > 0 ? (a.total_cost / d.revenue.amount) * 100 : 0;
-            a.ads_sales_pct = 0;
-            a.organic_from_orders = true;
-            a.revenue_complete = d.revenue.complete !== false;
-            const byDate = new Map((d.daily || []).map(day => [day.date, day]));
-            STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
-              const o = byDate.get(day.date);
-              if (!o) return day;
-              byDate.delete(day.date);
-              return Object.assign({}, day, {
-                organic_units_amount: o.revenue || 0,
-                organic_units_quantity: o.units || 0
+            const adsRev = a.total_revenue || 0;
+            const orgFromOrders = Math.max(0, d.revenue.amount - adsRev);
+            if (orgFromOrders > (a.organic_revenue || 0)) {
+              a.organic_revenue = orgFromOrders;
+              a.organic_orders = Math.max(0, (d.revenue.units || 0) - (a.total_orders || 0));
+              const totalRevAll = adsRev + orgFromOrders;
+              a.avg_tacos = totalRevAll > 0 ? ((a.total_cost || 0) / totalRevAll) * 100 : 0;
+              a.ads_sales_pct = totalRevAll > 0 ? (adsRev / totalRevAll) * 100 : 0;
+              a.organic_from_orders = true;
+              a.revenue_complete = d.revenue.complete !== false;
+              const byDate = new Map((d.daily || []).map(day => [day.date, day]));
+              STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
+                const o = byDate.get(day.date);
+                if (!o) return day;
+                byDate.delete(day.date);
+                const calcRev = Math.max(0, (o.revenue || 0) - (day.total_amount || 0));
+                const calcUnits = Math.max(0, (o.units || 0) - (day.units_quantity || 0));
+                return Object.assign({}, day, {
+                  organic_units_amount: Math.max(day.organic_units_amount || 0, calcRev),
+                  organic_units_quantity: Math.max(day.organic_units_quantity || 0, calcUnits)
+                });
               });
-            });
-            for (const o of byDate.values()) {
-              STATE.data.daily_aggregated.push({
-                date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
-                organic_units_amount: o.revenue || 0,
-                units_quantity: 0,
-                organic_units_quantity: o.units || 0
-              });
+              for (const o of byDate.values()) {
+                STATE.data.daily_aggregated.push({
+                  date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
+                  organic_units_amount: o.revenue || 0,
+                  units_quantity: 0,
+                  organic_units_quantity: o.units || 0
+                });
+              }
+              STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
+              revenueApplied = true;
             }
-            STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
           }
+        }
+        if (revenueApplied) {
+          const aggNow = STATE.data.aggregated;
           if (reqSnap) {
-            reqSnap.organic_revenue = d.revenue.amount;
-            reqSnap.organic_orders = d.revenue.units || 0;
-            reqSnap.sales = (reqSnap.ads_orders || 0) + (d.revenue.units || 0);
-            reqSnap.tacos = STATE.data.aggregated.avg_tacos || 0;
+            reqSnap.organic_revenue = aggNow.organic_revenue || 0;
+            reqSnap.organic_orders = aggNow.organic_orders || 0;
+            reqSnap.sales = (aggNow.total_orders || 0) + (aggNow.organic_orders || 0);
+            reqSnap.tacos = aggNow.avg_tacos || 0;
             rtSaveSnapshot(sidLocal, period, reqSnap);
             rtUpdateRecords(sidLocal, Object.assign({ date: todayStr() }, reqSnap));
           }
-          renderDashboard(); // re-render completo já com a receita orgânica
+          renderDashboard(); // re-render completo já com a receita reconciliada
         } else {
           patchOrganicVsCard();
         }
