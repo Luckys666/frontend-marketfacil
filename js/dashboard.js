@@ -4513,48 +4513,76 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
             }));
             revenueApplied = true;
           } else {
-            // Reconciliação: orgânico real = pedidos da conta − receita atribuída a
-            // Ads. Só aplica quando AUMENTA o orgânico — em conta gigante (pedidos
-            // truncados no cap) o piso por pedidos pode ser menor que o summary
+            // Reconciliação ancorada nos PEDIDOS (fato contábil da conta): os
+            // summaries do ML Ads tanto SUBreportam orgânico (cobrem só itens
+            // anunciados) quanto SUPERreportam (anúncios/campanhas recriados
+            // duplicam métricas no período). Com a soma de pedidos COMPLETA,
+            // total do dashboard = total dos pedidos; ads = min(ads, total);
+            // orgânico = total − ads. Pedidos truncados no cap = piso: só
+            // melhora o orgânico, nunca derruba o summary.
             const a = STATE.data.aggregated;
-            const adsRev = a.total_revenue || 0;
-            const orgFromOrders = Math.max(0, d.revenue.amount - adsRev);
-            if (orgFromOrders > (a.organic_revenue || 0)) {
-              a.organic_revenue = orgFromOrders;
-              a.organic_orders = Math.max(0, (d.revenue.units || 0) - (a.total_orders || 0));
-              const totalRevAll = adsRev + orgFromOrders;
-              a.avg_tacos = totalRevAll > 0 ? ((a.total_cost || 0) / totalRevAll) * 100 : 0;
-              a.ads_sales_pct = totalRevAll > 0 ? (adsRev / totalRevAll) * 100 : 0;
-              a.organic_from_orders = true;
-              a.revenue_complete = d.revenue.complete !== false;
-              const byDate = new Map((d.daily || []).map(day => [day.date, day]));
-              STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
-                const o = byDate.get(day.date);
-                if (!o) return day;
-                byDate.delete(day.date);
-                const calcRev = Math.max(0, (o.revenue || 0) - (day.total_amount || 0));
-                const calcUnits = Math.max(0, (o.units || 0) - (day.units_quantity || 0));
-                return Object.assign({}, day, {
-                  organic_units_amount: Math.max(day.organic_units_amount || 0, calcRev),
-                  organic_units_quantity: Math.max(day.organic_units_quantity || 0, calcUnits)
+            if (d.revenue.complete !== false) {
+              const totalReal = d.revenue.amount;
+              const totalUnits = d.revenue.units || 0;
+              const adsRev = Math.min(a.total_revenue || 0, totalReal);
+              const orgRev = Math.max(0, totalReal - adsRev);
+              const adsUnits = Math.min(a.total_orders || 0, totalUnits);
+              const changed = Math.abs(orgRev - (a.organic_revenue || 0)) > 0.01 ||
+                Math.abs(adsRev - (a.total_revenue || 0)) > 0.01;
+              if (changed) {
+                a.total_revenue = adsRev;
+                a.total_orders = adsUnits;
+                a.organic_revenue = orgRev;
+                a.organic_orders = Math.max(0, totalUnits - adsUnits);
+                a.avg_tacos = totalReal > 0 ? ((a.total_cost || 0) / totalReal) * 100 : 0;
+                a.ads_sales_pct = totalReal > 0 ? (adsRev / totalReal) * 100 : 0;
+                a.overall_roas = (a.total_cost || 0) > 0 ? adsRev / a.total_cost : 0;
+                a.organic_from_orders = true;
+                a.revenue_complete = true;
+                const byDate = new Map((d.daily || []).map(day => [day.date, day]));
+                STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
+                  const o = byDate.get(day.date);
+                  byDate.delete(day.date);
+                  const orderRev = o ? (o.revenue || 0) : 0;
+                  const orderUnits = o ? (o.units || 0) : 0;
+                  return Object.assign({}, day, {
+                    organic_units_amount: Math.max(0, orderRev - (day.total_amount || 0)),
+                    organic_units_quantity: Math.max(0, orderUnits - (day.units_quantity || 0))
+                  });
                 });
-              });
-              for (const o of byDate.values()) {
-                STATE.data.daily_aggregated.push({
-                  date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
-                  organic_units_amount: o.revenue || 0,
-                  units_quantity: 0,
-                  organic_units_quantity: o.units || 0
-                });
+                for (const o of byDate.values()) {
+                  STATE.data.daily_aggregated.push({
+                    date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
+                    organic_units_amount: o.revenue || 0,
+                    units_quantity: 0,
+                    organic_units_quantity: o.units || 0
+                  });
+                }
+                STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
+                revenueApplied = true;
               }
-              STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
-              revenueApplied = true;
+            } else {
+              const adsRev = a.total_revenue || 0;
+              const orgFromOrders = Math.max(0, d.revenue.amount - adsRev);
+              if (orgFromOrders > (a.organic_revenue || 0)) {
+                a.organic_revenue = orgFromOrders;
+                a.organic_orders = Math.max(0, (d.revenue.units || 0) - (a.total_orders || 0));
+                const totalRevAll = adsRev + orgFromOrders;
+                a.avg_tacos = totalRevAll > 0 ? ((a.total_cost || 0) / totalRevAll) * 100 : 0;
+                a.ads_sales_pct = totalRevAll > 0 ? (adsRev / totalRevAll) * 100 : 0;
+                a.organic_from_orders = true;
+                a.revenue_complete = false;
+                revenueApplied = true;
+              }
             }
           }
         }
         if (revenueApplied) {
           const aggNow = STATE.data.aggregated;
           if (reqSnap) {
+            reqSnap.revenue = aggNow.total_revenue || 0;
+            reqSnap.ads_orders = aggNow.total_orders || 0;
+            reqSnap.roas = aggNow.overall_roas || 0;
             reqSnap.organic_revenue = aggNow.organic_revenue || 0;
             reqSnap.organic_orders = aggNow.organic_orders || 0;
             reqSnap.sales = (aggNow.total_orders || 0) + (aggNow.organic_orders || 0);
