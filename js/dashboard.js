@@ -198,7 +198,12 @@ function rtUpdateStreak(sid) {
 }
 
 function rtGetHistory(sid) {
-  return _get('history', sid, []);
+  // Snapshots legacy do PLANNER (mf_adp_history) caem aqui pelo fallback do _get,
+  // mas medem outra coisa (só Ads: adsPct/items_with_ads, sem 'sales') — comparar
+  // a receita total do dashboard com eles gera deltas absurdos. Só entram
+  // snapshots do próprio dashboard (sempre salvos com 'sales').
+  const list = _get('history', sid, []);
+  return Array.isArray(list) ? list.filter(h => h && ('sales' in h)) : [];
 }
 
 function rtSaveSnapshot(sid, period, snap) {
@@ -4606,8 +4611,12 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       // aggregated null) — sem ele, todos os deltas viram "—". Busca os pedidos
       // do período equivalente ANTERIOR e monta um prev sintético com dados reais.
       const prevLocal = STATE.prevSnapshot;
+      // Prev local inutilizável: inexistente, zerado (histórico do bug), ou VELHO —
+      // visita anterior fora da janela do período compara janelas disjuntas e não
+      // representa "o período anterior" que o usuário espera ver
       const prevLocalEmpty = !prevLocal ||
-        (((prevLocal.revenue || 0) + (prevLocal.organic_revenue || 0) + (prevLocal.sales || 0)) === 0);
+        (((prevLocal.revenue || 0) + (prevLocal.organic_revenue || 0) + (prevLocal.sales || 0)) === 0) ||
+        (prevLocal.date && daysBetween(prevLocal.date, todayStr()) > period);
       if (needsOrdersRevenue && prevLocalEmpty) {
         const { from: curFrom } = periodToDates(period);
         const prevRange = { from: shiftYmd(curFrom, -period), to: shiftYmd(curFrom, -1) };
