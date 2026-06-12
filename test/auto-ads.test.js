@@ -280,6 +280,9 @@ const dp6 = AA.demoPlan(3, null);
 dp6.summary.balanced = false;
 AA.render(dp6);
 check('balanced=false mostra o aviso de equilíbrio (investimento × faturamento)', /segurar os aumentos/.test(byId('aa-out').innerHTML));
+dp6.summary.scalers = 4;
+AA.render(dp6);
+check('aviso de equilíbrio menciona os scalers que continuam sendo alimentados', /<b>4<\/b> anúncio\(s\) que estão vendendo mais/.test(byId('aa-out').innerHTML));
 
 // ── A2 (X-MF-Auth): mint + cache + header + retry-401 ─────────────────────────
 check('AA.MINT_WF aponta pro workflow get-user-id', /get-user-id$/.test(AA.MINT_WF));

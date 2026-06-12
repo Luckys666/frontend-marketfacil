@@ -700,9 +700,12 @@
           ? '<span>faturamento <b style="color:'+(((s.revGrowthPct||0)>=(s.costGrowthPct||0))?'var(--green)':'var(--amber)')+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b> (30d)</span>'
           : '')
       + '</div>'
-      // equilíbrio (12/06): investimento subindo sem a receita acompanhar -> avisa que a alavanca pausou
+      // equilíbrio (12/06): investimento subindo sem a receita acompanhar -> avisa que a alavanca
+      // pausou; quem PROVOU escala (scalers) continua recebendo força e o aviso deixa isso claro
       + (s.balanced === false
-          ? '<div class="aa-hint" style="margin-top:6px;">⚖️ Seu investimento cresceu mais que o faturamento neste período — vamos segurar os aumentos até as vendas acompanharem (os ajustes pra baixo continuam).</div>'
+          ? '<div class="aa-hint" style="margin-top:6px;">⚖️ Seu investimento cresceu mais que o faturamento neste período — vamos segurar os aumentos até as vendas acompanharem (os ajustes pra baixo continuam).'
+            + (s.scalers > 0 ? ' Os <b>' + s.scalers + '</b> anúncio(s) que estão vendendo mais quando recebem mais verba continuam sendo alimentados.' : '')
+            + '</div>'
           : '')
       + '</div>';
     if (score != null){
