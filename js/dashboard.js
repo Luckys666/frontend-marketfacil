@@ -497,8 +497,8 @@ function shiftYmd(ymd, days) {
   return d.toISOString().slice(0, 10);
 }
 
-async function fetchAdsAggregated(period) {
-  const { from, to } = periodToDates(period);
+async function fetchAdsAggregated(period, range) {
+  const { from, to } = range || periodToDates(period);
   const url = `${API_ADS_AGGREGATED}?date_from=${from}&date_to=${to}`;
   const res = await fetch(url, {
     headers: { 'Authorization': `Bearer ${STATE.token}` }
@@ -526,9 +526,9 @@ async function fetchUserMe() {
 // Caminho preferido: /api/user-visits (ML /users/$ID/items_visits) — UMA chamada
 // cobre a conta inteira, incluindo visitas atribuídas a anúncios de catálogo.
 // Fallback: soma por item em chunks (contas onde o agregado falhar).
-async function fetchOrganicVisits(sellerId, periodDays) {
+async function fetchOrganicVisits(sellerId, periodDays, range) {
   if (!sellerId || !STATE.token) return null;
-  const { from, to } = periodToDates(periodDays);
+  const { from, to } = range || periodToDates(periodDays);
   try {
     const r = await fetch(`${BASE_URL_PROXY}/api/user-visits?user_id=${sellerId}&date_from=${from}&date_to=${to}`, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
@@ -4620,23 +4620,52 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       if (needsOrdersRevenue && prevLocalEmpty) {
         const { from: curFrom } = periodToDates(period);
         const prevRange = { from: shiftYmd(curFrom, -period), to: shiftYmd(curFrom, -1) };
-        fetchOrdersCount(sidLocal, period, true, prevRange).then(pd => {
+        // Período anterior COMPLETO (pedidos + Ads + visitas): sem o split de Ads,
+        // toda a coluna Ads do card ficava "—" (deltaBadge sem base anterior)
+        Promise.all([
+          fetchOrdersCount(sidLocal, period, true, prevRange),
+          fetchAdsAggregated(period, prevRange).catch(() => null),
+          fetchOrganicVisits(sidLocal, period, prevRange)
+        ]).then(([pd, pAggData, pVis]) => {
           if (reqId !== STATE._reqSeq) return;
-          if (pd && pd.revenue && typeof pd.revenue.amount === 'number' && pd.revenue.amount > 0) {
-            STATE.prevSnapshot = {
-              _synthetic: true, // não é visita real — banner "desde sua última visita" ignora
-              date: prevRange.to,
-              revenue: 0,
-              organic_revenue: pd.revenue.amount,
-              cost: 0,
-              sales: pd.revenue.units || 0,
-              ads_orders: 0,
-              organic_orders: pd.revenue.units || 0,
-              tacos: 0, roas: 0, clicks: 0, impressions: 0, cvr: 0,
-              visits: 0, organic_conversion: 0
-            };
-            renderDashboard();
+          if (!(pd && pd.revenue && typeof pd.revenue.amount === 'number' && pd.revenue.amount > 0)) return;
+          // Mesma âncora do período atual: total = pedidos; ads = min(summary, total)
+          const pa = (pAggData && pAggData.aggregated) || {};
+          const totalPrev = pd.revenue.amount;
+          const totalUnitsPrev = pd.revenue.units || 0;
+          const adsRevPrev = Math.min(pa.total_revenue || 0, totalPrev);
+          const adsUnitsPrev = Math.min(pa.total_orders || 0, totalUnitsPrev);
+          const costPrev = pa.total_cost || 0;
+          const clicksPrev = pa.total_clicks || 0;
+          const visitsPrev = (pVis && !pVis.capped && !pVis.incomplete && pVis.total_visits > 0) ? pVis.total_visits : 0;
+          const grossOrdersPrev = (typeof pd.total_orders === 'number') ? pd.total_orders : 0;
+          // Conversão orgânica anterior na MESMA base do render (pedidos − Ads ÷ visitas − cliques)
+          let orgConvPrev = 0;
+          if (visitsPrev > 0 && grossOrdersPrev > 0) {
+            const orgVisitsPrev = Math.max(0, visitsPrev - clicksPrev);
+            const orgSalesPrev = Math.max(0, grossOrdersPrev - adsUnitsPrev);
+            orgConvPrev = orgVisitsPrev > 0 ? (orgSalesPrev / orgVisitsPrev * 100) : 0;
+            if (orgConvPrev > 100) orgConvPrev = 0; // visitas subcontadas (catálogo)
           }
+          STATE.prevSnapshot = {
+            _synthetic: true, // não é visita real — banner "desde sua última visita" ignora
+            date: prevRange.to,
+            revenue: adsRevPrev,
+            organic_revenue: Math.max(0, totalPrev - adsRevPrev),
+            cost: costPrev,
+            sales: totalUnitsPrev,
+            orders: grossOrdersPrev,
+            ads_orders: adsUnitsPrev,
+            organic_orders: Math.max(0, totalUnitsPrev - adsUnitsPrev),
+            tacos: totalPrev > 0 ? (costPrev / totalPrev) * 100 : 0,
+            roas: costPrev > 0 ? adsRevPrev / costPrev : 0,
+            clicks: clicksPrev,
+            impressions: pa.total_impressions || 0,
+            cvr: pa.avg_cvr || 0,
+            visits: visitsPrev,
+            organic_conversion: orgConvPrev
+          };
+          renderDashboard();
         }).catch(() => {});
       }
 
