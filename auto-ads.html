@@ -620,6 +620,22 @@
     var inv = AA.bandInv(d);
     var stages = [];   // { id, title, desc, body, warn }
 
+    // etapa: proteger anúncios com aviso (saneamento — "ou Econômico ou fora", decisão 12/06)
+    var san = d.sanitize_items || {};
+    var sanSearch = d.sanitize_search_ids || {};
+    var sanIds = Object.keys(san).filter(function(c){ return (san[c]||[]).length; });
+    var nSan = sanIds.reduce(function(t,c){ return t + san[c].length; }, 0);
+    if (nSan > 0){
+      var sanBody = '';
+      sanIds.forEach(function(cid){
+        var mlbs = san[cid] || [];
+        sanBody += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, sanSearch[cid] || mlbs);
+      });
+      stages.push({ id: 'sanitize', title: 'Proteja '+nSan+' anúncio'+(nSan===1?'':'s')+' com aviso',
+        desc: 'Esses anúncios estão com aviso no Mercado Livre (em revisão ou sem exibição) e ocupam uma faixa de investimento alto. Mova pra faixa indicada: quando o aviso cair, eles voltam a aparecer no ritmo certo, sem gastar à toa.',
+        body: sanBody });
+    }
+
     // etapa: dar mais força (anúncios parados)
     var probe = d.probe_items || {};
     var probeSearch = d.probe_search_ids || {};
@@ -666,7 +682,7 @@
 
     // ciclo persistente: preserva o "feito" entre cliques
     var stageIds = stages.map(function(st){ return st.id; });
-    var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalMlbs + nProbe }) : AA.loadCycle();
+    var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalMlbs + nProbe + nSan }) : AA.loadCycle();
     var doneMap = (cycle && cycle.done) || {};
 
     // header do artefato: score + estatísticas compactas
@@ -683,7 +699,12 @@
       + (s.revGrowthPct != null || s.costGrowthPct != null
           ? '<span>faturamento <b style="color:'+(((s.revGrowthPct||0)>=(s.costGrowthPct||0))?'var(--green)':'var(--amber)')+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b> (30d)</span>'
           : '')
-      + '</div></div>';
+      + '</div>'
+      // equilíbrio (12/06): investimento subindo sem a receita acompanhar -> avisa que a alavanca pausou
+      + (s.balanced === false
+          ? '<div class="aa-hint" style="margin-top:6px;">⚖️ Seu investimento cresceu mais que o faturamento neste período — vamos segurar os aumentos até as vendas acompanharem (os ajustes pra baixo continuam).</div>'
+          : '')
+      + '</div>';
     if (score != null){
       html += '<div class="aa-score"><div class="n" style="color:'+AA.scoreColor(score)+'">'+score+'</div><div class="l">saúde dos ads</div></div>';
     }
@@ -754,6 +775,12 @@
         });
       }
       html += '</div>';
+    }
+    // pausados por você: fora da análise (decisão 12/06) — informativo, sem call-to-action
+    if (d.paused && d.paused.count > 0){
+      html += '<div class="aa-card"><details class="aa-more"><summary>Pausados por você ('+d.paused.count+') — fora da análise</summary>'
+        + '<div class="aa-hint" style="margin:6px 0 0;">Você pausou esses anúncios na campanha, então não mexemos neles. Reative no painel do Mercado Livre quando quiser que voltem pra análise.</div>'
+        + AA.mlbDetails(d.paused.items, d.paused.count) + '</details></div>';
     }
     out(html);
   };
@@ -844,7 +871,9 @@
       plan_search_ids:{ '1001':['774884615150225','MLB2222222222'], '1003':['MLB3333333333'] },
       buybox_losers:{ count:2, items:[ { mlb:'MLB4444444444', title:'Filtro Regulador Conjunto Lubrifil' }, { mlb:'MLB5555555555', title:'Filtro De Ar Odontológico Triplo' } ] },
       probe_plan:{ '1002':['331'] }, probe_items:{ '1002':['MLB6666666666'] }, probe_search_ids:{ '1002':['MLB6666666666'] },
+      sanitize_plan:{ '1001':['441'] }, sanitize_items:{ '1001':['MLB1212121212'] }, sanitize_search_ids:{ '1001':['MLB1212121212'] },
       unservable:{ count:3, groups:{ cannot_display:{ count:2, items:[ { mlb:'MLB7777777777', title:'Produto Exemplo A' }, { mlb:'MLB8888888888', title:'Produto Exemplo B' } ] }, under_review:{ count:1, items:[ { mlb:'MLB9999999999', title:'Produto Exemplo C' } ] } } },
+      paused:{ count:1, items:[ { mlb:'MLB1313131313', title:'Produto Pausado Exemplo' } ] },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
       health_score:72,
       health_factors:[
@@ -854,7 +883,7 @@
       ],
       plan_weights:{ '1003':42.5, '1001':10.1 },
       budget_reductions:[ { key:'B2', label:'Equilibrado', campaign_id:1002, budget:30, suggested_budget:18 } ],
-      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, moves:3, toNeverActivate:1, probes:1, noReach:1 } };
+      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, balanced:true, moves:3, toNeverActivate:1, probes:1, noReach:1, sanitized:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[

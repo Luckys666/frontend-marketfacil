@@ -225,8 +225,10 @@ check('render tem details "como subir o score"', /como subir o score/.test(html4
 check('render tem etapa de reduzir orçamento (budget_reductions)', /Reduza o orçamento/.test(html4) && /R\$ 18/.test(html4));
 
 // ordenação por impacto: faixa 1003 (peso 42.5) vem antes da 1001 (peso 10.1)
+// (olha só a partir da etapa "Reorganize" — a etapa de saneamento antes dela também usa o Econômico)
+const planPart4 = html4.slice(html4.indexOf('Reorganize'));
 check('plano ordenado por plan_weights (1003 antes de 1001)',
-  html4.indexOf('Acelerado') !== -1 && html4.indexOf('Acelerado') < html4.indexOf('Econômico'));
+  planPart4.indexOf('Acelerado') !== -1 && planPart4.indexOf('Acelerado') < planPart4.indexOf('Econômico'));
 
 // planCards nova assinatura: corpo da etapa, SEM wrapper de card nem header proprio
 const body4 = AA.planCards(dp4, ['1003', '1001']);
@@ -260,9 +262,24 @@ AA.advertiserId = 4242;
 // estado vazio: sem etapas -> "Tudo no lugar"
 const dpEmpty = AA.demoPlan(3, null);
 dpEmpty.plan = {}; dpEmpty.plan_items = {}; dpEmpty.probe_items = {}; dpEmpty.budget_reductions = [];
+dpEmpty.sanitize_plan = {}; dpEmpty.sanitize_items = {}; dpEmpty.paused = { count: 0, items: [] };
 let emptyOk = true;
 try { AA.render(dpEmpty); } catch (e) { emptyOk = false; }
 check('render nao lanca com plano vazio (Tudo no lugar)', emptyOk && /Tudo no lugar/.test(byId('aa-out').innerHTML));
+
+// ── v4.5 (12/06): etapa de saneamento + pausados + aviso de equilíbrio ────────
+AA.advertiserId = 4242;
+const dp5 = AA.demoPlan(3, null);
+AA.render(dp5);
+let html5 = byId('aa-out').innerHTML;
+check('render tem a etapa "Proteja 1 anúncio com aviso" (sanitize)', /Proteja 1 anúncio com aviso/.test(html5));
+check('etapa sanitize lista o código buscável do penalizado', /MLB1212121212/.test(html5));
+check('card "Pausados por você" presente e colapsado (details)', /Pausados por você \(1\)/.test(html5) && /fora da análise/.test(html5));
+check('balanced=true NÃO mostra aviso de equilíbrio', !/segurar os aumentos/.test(html5));
+const dp6 = AA.demoPlan(3, null);
+dp6.summary.balanced = false;
+AA.render(dp6);
+check('balanced=false mostra o aviso de equilíbrio (investimento × faturamento)', /segurar os aumentos/.test(byId('aa-out').innerHTML));
 
 // ── A2 (X-MF-Auth): mint + cache + header + retry-401 ─────────────────────────
 check('AA.MINT_WF aponta pro workflow get-user-id', /get-user-id$/.test(AA.MINT_WF));
