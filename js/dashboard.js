@@ -1838,11 +1838,11 @@ function buildHeroSub(agg, totals, streak, seller) {
   if (totalRev === 0) {
     const prefix = tierTxt ? `${tierTxt} com ` : 'Você tem ';
     const itensTxt = `${totals.activeItems} ${totals.activeItems === 1 ? 'anúncio ativo' : 'anúncios ativos'}`;
-    // agg sem nenhuma chave = ML não devolveu dados de Ads (conta sem campanha).
-    // A medição por pedidos pode estar carregando ou ter falhado — não dá pra
-    // afirmar "zero vendas" sem fonte.
+    // A medição por pedidos pode estar carregando — não afirmar "zero vendas" ainda
+    if (STATE.ordersLoading) return `${prefix}${itensTxt}. Medindo suas vendas do período...`;
+    // agg sem nenhuma chave = ML não devolveu dados de Ads (conta sem campanha)
+    // e a medição por pedidos falhou — sem fonte, não dá pra afirmar nada
     if (!Object.keys(agg).length) {
-      if (STATE.ordersLoading) return `${prefix}${itensTxt}. Medindo suas vendas do período...`;
       return `${prefix}${itensTxt}. Não consegui medir suas vendas do período agora — recarregue pra tentar de novo.`;
     }
     return `${prefix}${itensTxt} e zero vendas no período. Bora investigar o que está prendendo as vendas.`;
@@ -1852,6 +1852,11 @@ function buildHeroSub(agg, totals, streak, seller) {
   if ((agg.total_cost || 0) === 0) {
     const aboutRev = agg.revenue_complete === false ? 'mais de ' : '';
     return `${tierPrefix}${aboutRev}${fmtMoneyCompact(totalRev)} faturados, ${fmtInt(sales)} unidades vendidas — 100% orgânico, sem investir em Ads.`;
+  }
+  // Investiu em Ads mas nenhuma venda foi atribuída a Ads: ROAS 0x não informa nada
+  if ((agg.total_revenue || 0) === 0) {
+    const aboutRev = agg.revenue_complete === false ? 'mais de ' : '';
+    return `${tierPrefix}${aboutRev}${fmtMoneyCompact(totalRev)} faturados, ${fmtInt(sales)} unidades vendidas — 100% orgânico (Ads ainda sem vendas atribuídas no período).`;
   }
   return `${tierPrefix}${fmtMoneyCompact(totalRev)} faturados, ${fmtInt(sales)} unidades vendidas, ROAS ${fmt(agg.overall_roas || 0, 2)}x.`;
 }
@@ -4445,11 +4450,17 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       });
 
       // Em paralelo: conta pedidos (vendas brutas) pro funil de conversão estilo Seller Central.
-      // Conta SEM dados de Mercado Ads (ML não devolve metrics_summary — seller sem campanha):
-      // pede também a receita por pedidos, que vira a fonte orgânica do dashboard inteiro.
+      // A receita por pedidos vira a fonte orgânica em DOIS cenários:
+      //  - organicFallback: ML não devolve metrics_summary (seller sem campanha)
+      //  - aggRevZero: summary existe mas com receita TOTAL zerada — o
+      //    organic_units_amount do ML Ads não cobre as vendas orgânicas reais
+      //    de contas com campanha sem conversão (gasto sem venda atribuída)
       const organicFallback = !aggData.aggregated;
+      const aggRevZero = !!aggData.aggregated &&
+        ((aggData.aggregated.total_revenue || 0) + (aggData.aggregated.organic_revenue || 0)) === 0;
+      const needsOrdersRevenue = organicFallback || aggRevZero;
       STATE.ordersLoading = true;
-      fetchOrdersCount(sidLocal, period, organicFallback).then(d => {
+      fetchOrdersCount(sidLocal, period, needsOrdersRevenue).then(d => {
         if (reqId !== STATE._reqSeq) return;
         STATE.ordersLoading = false;
         STATE.ordersData = d; // null = indisponível (conversões caem pro cálculo por unidades)
@@ -4467,33 +4478,67 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
           }
           rtSaveSnapshot(sidLocal, period, reqSnap);
         }
-        if (organicFallback && d && d.revenue && typeof d.revenue.amount === 'number') {
-          // Sintetiza o agregado 100% orgânico no MESMO shape do /ads-aggregated:
-          // hero, KPIs, health, resumo e charts passam a funcionar sem nenhum
-          // tratamento especial (custo/cliques de Ads ficam zerados de verdade)
-          STATE.data.aggregated = {
-            total_cost: 0, total_revenue: 0,
-            organic_revenue: d.revenue.amount,
-            total_clicks: 0, total_impressions: 0,
-            total_orders: 0,
-            organic_orders: d.revenue.units || 0,
-            avg_acos: 0, avg_tacos: 0, overall_roas: 0,
-            avg_ctr: 0, avg_cvr: 0, avg_cpc: 0,
-            ads_sales_pct: 0,
-            organic_only: true,
-            revenue_complete: d.revenue.complete !== false
-          };
-          STATE.data.daily_aggregated = (d.daily || []).map(day => ({
-            date: day.date, cost: 0, clicks: 0, prints: 0,
-            total_amount: 0,
-            organic_units_amount: day.revenue || 0,
-            units_quantity: 0,
-            organic_units_quantity: day.units || 0
-          }));
+        if (needsOrdersRevenue && d && d.revenue && typeof d.revenue.amount === 'number' &&
+            (organicFallback || d.revenue.amount > 0)) {
+          if (organicFallback) {
+            // Sintetiza o agregado 100% orgânico no MESMO shape do /ads-aggregated:
+            // hero, KPIs, health, resumo e charts passam a funcionar sem nenhum
+            // tratamento especial (custo/cliques de Ads ficam zerados de verdade)
+            STATE.data.aggregated = {
+              total_cost: 0, total_revenue: 0,
+              organic_revenue: d.revenue.amount,
+              total_clicks: 0, total_impressions: 0,
+              total_orders: 0,
+              organic_orders: d.revenue.units || 0,
+              avg_acos: 0, avg_tacos: 0, overall_roas: 0,
+              avg_ctr: 0, avg_cvr: 0, avg_cpc: 0,
+              ads_sales_pct: 0,
+              organic_only: true,
+              revenue_complete: d.revenue.complete !== false
+            };
+            STATE.data.daily_aggregated = (d.daily || []).map(day => ({
+              date: day.date, cost: 0, clicks: 0, prints: 0,
+              total_amount: 0,
+              organic_units_amount: day.revenue || 0,
+              units_quantity: 0,
+              organic_units_quantity: day.units || 0
+            }));
+          } else {
+            // Summary de Ads existe mas zerado de receita E a conta vendeu (caso
+            // real: campanha ativa sem conversão): injeta a receita por pedidos
+            // como orgânica, preservando custo/cliques/impressões de Ads
+            const a = STATE.data.aggregated;
+            a.organic_revenue = d.revenue.amount;
+            a.organic_orders = d.revenue.units || 0;
+            a.avg_tacos = (a.total_cost || 0) > 0 ? (a.total_cost / d.revenue.amount) * 100 : 0;
+            a.ads_sales_pct = 0;
+            a.organic_from_orders = true;
+            a.revenue_complete = d.revenue.complete !== false;
+            const byDate = new Map((d.daily || []).map(day => [day.date, day]));
+            STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
+              const o = byDate.get(day.date);
+              if (!o) return day;
+              byDate.delete(day.date);
+              return Object.assign({}, day, {
+                organic_units_amount: o.revenue || 0,
+                organic_units_quantity: o.units || 0
+              });
+            });
+            for (const o of byDate.values()) {
+              STATE.data.daily_aggregated.push({
+                date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
+                organic_units_amount: o.revenue || 0,
+                units_quantity: 0,
+                organic_units_quantity: o.units || 0
+              });
+            }
+            STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
+          }
           if (reqSnap) {
             reqSnap.organic_revenue = d.revenue.amount;
             reqSnap.organic_orders = d.revenue.units || 0;
-            reqSnap.sales = d.revenue.units || 0;
+            reqSnap.sales = (reqSnap.ads_orders || 0) + (d.revenue.units || 0);
+            reqSnap.tacos = STATE.data.aggregated.avg_tacos || 0;
             rtSaveSnapshot(sidLocal, period, reqSnap);
             rtUpdateRecords(sidLocal, Object.assign({ date: todayStr() }, reqSnap));
           }
@@ -4515,7 +4560,7 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       const prevLocal = STATE.prevSnapshot;
       const prevLocalEmpty = !prevLocal ||
         (((prevLocal.revenue || 0) + (prevLocal.organic_revenue || 0) + (prevLocal.sales || 0)) === 0);
-      if (organicFallback && prevLocalEmpty) {
+      if (needsOrdersRevenue && prevLocalEmpty) {
         const { from: curFrom } = periodToDates(period);
         const prevRange = { from: shiftYmd(curFrom, -period), to: shiftYmd(curFrom, -1) };
         fetchOrdersCount(sidLocal, period, true, prevRange).then(pd => {
