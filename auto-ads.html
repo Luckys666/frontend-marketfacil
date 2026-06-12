@@ -213,6 +213,7 @@
   var AA = window.AA = {
     PROXY: 'https://mlb-proxy-fdb71524fd60.herokuapp.com',
     TOKEN_WF: 'https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2',
+    MINT_WF: 'https://app.marketfacil.com.br/api/1.1/wf/get-user-id',   // A2: token do usuário MarketFácil (X-MF-Auth)
     // Painel ML (validado 09/06/26): a tela "Adicionar anúncios" exige ?fe-rollout-version=v2 —
     // sem o param o ML redireciona pro hub geral e o usuário se perde.
     ML_ADD_ADS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/sales/campaigns/{cid}/ads?fe-rollout-version=v2',
@@ -258,17 +259,45 @@
     return null;
   };
 
-  // fetch padronizado: nunca lança, parse de JSON tolerante (HTML de 503 não vira "Unexpected token <")
+  // A2: token de autenticação do USUÁRIO MarketFácil (mintado pelo Bubble; o workflow devolve no
+  // campo user_id). Vai no header X-MF-Auth — separado do Bearer, que carrega o token ML.
+  AA.getMfAuth = async function(force){
+    if (AA._mfAuth && !force) return AA._mfAuth;
+    try {
+      var r = await fetch(AA.MINT_WF, { method:'POST' });
+      if (r.ok){ var d = await r.json(); var t = d && d.response && d.response.user_id; if (t){ AA._mfAuth = t; return t; } }
+    } catch(e){}
+    return null;
+  };
+
+  // fetch padronizado: nunca lança, parse de JSON tolerante (HTML de 503 não vira "Unexpected token <").
+  // 401 de A2 (token mintado vencido/ausente) re-minta e repete UMA vez — sem loop.
   AA.api = async function(path, opts){
     var token = await AA.getToken();
     if (!token) return { ok:false, status:0, data:null, authFail:true };
-    var o = opts || {}; o.headers = o.headers || {};
-    o.headers['Authorization'] = 'Bearer ' + token;
-    var r;
-    try { r = await fetch(AA.PROXY + path, o); }
-    catch(e){ return { ok:false, status:0, data:null, netFail:true }; }
-    var data = null;
-    try { var txt = await r.text(); data = txt ? JSON.parse(txt) : null; } catch(e){}
+    var send = async function(){
+      var o = opts || {}; o.headers = o.headers || {};
+      o.headers['Authorization'] = 'Bearer ' + token;
+      var mf = await AA.getMfAuth();
+      if (mf) o.headers['X-MF-Auth'] = mf;
+      try { return await fetch(AA.PROXY + path, o); }
+      catch(e){ return null; }
+    };
+    var parse = async function(resp){
+      var d = null;
+      try { var txt = await resp.text(); d = txt ? JSON.parse(txt) : null; } catch(e){}
+      return d;
+    };
+    var r = await send();
+    if (!r) return { ok:false, status:0, data:null, netFail:true };
+    var data = await parse(r);
+    if (r.status === 401 && data && String(data.error||'').indexOf('authorization_') === 0){
+      AA._mfAuth = null;
+      if (await AA.getMfAuth(true)){
+        var r2 = await send();
+        if (r2){ r = r2; data = await parse(r2); }
+      }
+    }
     return { ok: r.ok, status: r.status, data: data };
   };
   // mensagem amigável (pt-BR, sem jargão) p/ qualquer falha de chamada

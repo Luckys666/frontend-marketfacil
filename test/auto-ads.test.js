@@ -264,5 +264,49 @@ let emptyOk = true;
 try { AA.render(dpEmpty); } catch (e) { emptyOk = false; }
 check('render nao lanca com plano vazio (Tudo no lugar)', emptyOk && /Tudo no lugar/.test(byId('aa-out').innerHTML));
 
-console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
-process.exit(fail ? 1 : 0);
+// ── A2 (X-MF-Auth): mint + cache + header + retry-401 ─────────────────────────
+check('AA.MINT_WF aponta pro workflow get-user-id', /get-user-id$/.test(AA.MINT_WF));
+check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
+
+(async () => {
+  // fetch fake: workflow de token ML, workflow do mint e proxy (captura headers; 401 A2 na 1ª)
+  let mintCalls = 0, proxyCalls = 0, lastHeaders = null, failFirst = false;
+  const resp = (status, body) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body });
+  sandbox.fetch = function(url, opts){
+    url = String(url);
+    if (url.indexOf('getAccessToken2') !== -1) return Promise.resolve(resp(200, { response: { access_token: 'ML-TOKEN' } }));
+    if (url.indexOf('get-user-id') !== -1) { mintCalls++; return Promise.resolve(resp(200, { response: { user_id: '123x456.999.v2.feedbeef' + mintCalls } })); }
+    proxyCalls++;
+    lastHeaders = (opts && opts.headers) || {};
+    if (failFirst && proxyCalls === 1) return Promise.resolve(resp(401, { error: 'authorization_required', action: 'reload' }));
+    return Promise.resolve(resp(200, { ok: true }));
+  };
+
+  AA._mfAuth = null;
+  const t1 = await AA.getMfAuth();
+  const t2 = await AA.getMfAuth();
+  check('getMfAuth retorna o user_id (token A2) e CACHEIA (1 chamada de rede)', !!t1 && t1 === t2 && mintCalls === 1);
+
+  const r1 = await AA.api('/api/auto-ads/plan?tacos_target=3');
+  check('AA.api manda Authorization + X-MF-Auth', r1.ok && lastHeaders.Authorization === 'Bearer ML-TOKEN' && !!lastHeaders['X-MF-Auth']);
+
+  // retry-401: 1ª resposta 401 authorization_required -> re-minta e repete UMA vez
+  AA._mfAuth = null; mintCalls = 0; proxyCalls = 0; failFirst = true;
+  const r2 = await AA.api('/api/auto-ads/plan?tacos_target=3');
+  check('401 de A2 re-minta e repete 1x (resultado final ok)', r2.ok && proxyCalls === 2 && mintCalls === 2);
+
+  // mint indisponível (fora do app): API segue chamando SEM o header (off/dual no backend)
+  AA._mfAuth = null; proxyCalls = 0; failFirst = false;
+  sandbox.fetch = function(url, opts){
+    url = String(url);
+    if (url.indexOf('getAccessToken2') !== -1) return Promise.resolve(resp(200, { response: { access_token: 'ML-TOKEN' } }));
+    if (url.indexOf('get-user-id') !== -1) return Promise.reject(new Error('offline'));
+    proxyCalls++; lastHeaders = (opts && opts.headers) || {};
+    return Promise.resolve(resp(200, { ok: true }));
+  };
+  const r3 = await AA.api('/api/auto-ads/ads');
+  check('mint indisponível: chamada sai sem X-MF-Auth (não trava o fluxo)', r3.ok && proxyCalls === 1 && !lastHeaders['X-MF-Auth']);
+
+  console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
+  process.exit(fail ? 1 : 0);
+})();
