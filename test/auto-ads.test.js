@@ -251,6 +251,7 @@ check('render mostra ciclos anteriores (histórico)', /ciclos anteriores \(1\)/.
 check('card "Melhore estes anúncios" presente', /Melhore estes anúncios/.test(byId('aa-out').innerHTML));
 check('card de melhorias linka Concorrência de Catálogo', /concorrencia-catalogo/.test(byId('aa-out').innerHTML));
 check('card de melhorias linka Análise de Anúncios', /analise-anuncio/.test(byId('aa-out').innerHTML));
+check('card de melhorias mostra "Sem estoque imediato" (no_stock / deferred_stock)', /Sem estoque imediato/.test(byId('aa-out').innerHTML));
 
 // render adota o advertiser_id do plano (ciclo por conta mesmo sem carregar a lista de anuncios)
 AA.advertiserId = null;
@@ -326,6 +327,25 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   };
   const r3 = await AA.api('/api/auto-ads/ads');
   check('mint indisponível: chamada sai sem X-MF-Auth (não trava o fluxo)', r3.ok && proxyCalls === 1 && !lastHeaders['X-MF-Auth']);
+
+  // ---------- fracionamento da cópia em lotes (limite de 3500 chars do campo de busca do ML) ----------
+  check('AA.chunkCsv existe', typeof AA.chunkCsv === 'function');
+  const bigIds = Array.from({ length: 253 }, (_, i) => 'MLBU' + (1000000000 + i));   // ~3795 chars juntos
+  const chunks = AA.chunkCsv(bigIds);
+  check('chunkCsv divide lista grande em >1 lote', chunks.length > 1);
+  check('chunkCsv: todo lote cabe no limite real do ML (<=3500)', chunks.every((p) => p.length <= 3500));
+  check('chunkCsv nao perde nem duplica codigo', chunks.join(',') === bigIds.join(','));
+  const smallChunks = AA.chunkCsv(['MLBU1', 'MLBU2']);
+  check('chunkCsv: lista pequena vira 1 lote so', smallChunks.length === 1 && smallChunks[0] === 'MLBU1,MLBU2');
+
+  // bandActionRow: lista grande -> botao que cicla os lotes; lista pequena -> botao simples
+  const rowBig = AA.bandActionRow('357621419', null, 253, bigIds);
+  check('bandActionRow grande usa o ciclador (aaCopyChunk + data-idx=0 + lote 1/)', /aaCopyChunk/.test(rowBig) && /data-idx="0"/.test(rowBig) && /lote 1\//.test(rowBig));
+  check('bandActionRow grande avisa que sao varios lotes', /lotes no total/.test(rowBig));
+  check('bandActionRow grande NAO joga tudo num aaCopyText so', rowBig.indexOf('aaCopyText') === -1);
+  const rowSmall = AA.bandActionRow('1001', null, 2, ['MLBU10', 'MLBU20']);
+  check('bandActionRow pequeno mantem o botao simples (aaCopyText, sem ciclador)', /aaCopyText/.test(rowSmall) && rowSmall.indexOf('aaCopyChunk') === -1);
+  check('window.aaCopyChunk existe', typeof sandbox.aaCopyChunk === 'function');
 
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
   process.exit(fail ? 1 : 0);

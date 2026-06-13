@@ -549,13 +549,32 @@
     return '<details class="aa-more"><summary>'+esc(rotulo || ('ver anúncios ('+count+')'))+'</summary><ul class="aa-names" style="margin:0;">'+lis+'</ul>'+resto+'</details>';
   };
   // linha de faixa com ações Copiar/Abrir (usada no plano E no "dar mais força")
+  // o campo "Procurar por # ou título" do ML valida a busca em no máx. 3500 caracteres (erro 500 acima disso) —
+  // listas grandes (ex. saneamento) são fracionadas em lotes de ≤3450 chars e o botão cicla entre eles.
+  AA.CHUNK_LIMIT = 3450;
+  AA.chunkCsv = function(ids, limit){
+    limit = limit || AA.CHUNK_LIMIT; var parts = [], cur = '';
+    for (var i=0;i<(ids||[]).length;i++){ var id = String(ids[i]);
+      if (cur && cur.length + 1 + id.length > limit){ parts.push(cur); cur = id; }
+      else cur = cur ? (cur + ',' + id) : id; }
+    if (cur) parts.push(cur); return parts;
+  };
   AA.bandActionRow = function(cid, bandKey, nCount, copyIds, sufixoNome){
     var band = (bandKey && AA.BANDS[bandKey]) || { label:'Faixa', color:'#64748b' };
+    var parts = AA.chunkCsv(copyIds || []);
+    var copyBtn, hint = '';
+    if (parts.length <= 1){
+      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(parts[0]||'')+'\',this)">Copiar códigos</button>';
+    } else {
+      var lbl = 'Copiar códigos (lote 1/'+parts.length+')';
+      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="'+esc(lbl)+'" data-ids="'+esc((copyIds||[]).join(','))+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(lbl)+'</button>';
+      hint = '<div class="aa-hint" style="margin-top:6px;">São muitos códigos pro Mercado Livre aceitar de uma vez — cole, clique <b>Adicionar</b>, depois volte aqui e copie o próximo lote ('+parts.length+' lotes no total).</div>';
+    }
     return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
       + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+nCount+' anúncio(s)</div></div></div>'
       + '<div class="aa-band-actions">'
-      + '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(copyIds.join(','))+'\',this)">Copiar códigos</button>'
-      + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>';
+      + copyBtn
+      + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>' + hint;
   };
 
   // ---------- ciclo de otimização (persistente em localStorage, por advertiser) ----------
@@ -749,9 +768,10 @@
     // ════════ card secundário: 💡 melhorias fora das campanhas ════════
     var temUns = d.unservable && d.unservable.count > 0;
     var temBB = d.buybox_losers && d.buybox_losers.count > 0;
+    var temNS = d.no_stock && d.no_stock.count > 0;
     var noReach = (s.noReach || 0);
-    if (temUns || temBB || noReach){
-      var totalMelhorias = (temUns ? d.unservable.count : 0) + (temBB ? d.buybox_losers.count : 0);
+    if (temUns || temBB || noReach || temNS){
+      var totalMelhorias = (temUns ? d.unservable.count : 0) + (temBB ? d.buybox_losers.count : 0) + (temNS ? d.no_stock.count : 0);
       html += '<div class="aa-card" style="border-left:3px solid var(--amber);"><h2>'+icon('tools')+' Melhore estes anúncios pra um desempenho ainda melhor</h2>'
         + '<p class="aa-sub" style="margin:0 0 10px;">'+totalMelhorias+' anúncio(s) com oportunidades que <b>não dependem de campanha</b> — resolvendo isso, eles voltam ao jogo dos Ads.</p>';
       if (temBB){
@@ -760,6 +780,12 @@
           + '<div class="aa-hint" style="margin:0;">Anúncio que não ganha a ficha quase não aparece nos Ads. Resolva com preço, frete e reputação — <a href="https://app.marketfacil.com.br/concorrencia-catalogo" target="_blank" rel="noopener"><b>abrir Concorrência de Catálogo →</b></a></div>'
           + (noReach ? '<div class="aa-hint" style="margin:4px 0 0;">'+noReach+' desses já passaram por todas as faixas sem aparecer.</div>' : '')
           + AA.mlbDetails(bl.items, bl.count) + '</div>';
+      }
+      if (temNS){
+        var ns = d.no_stock;
+        html += '<div style="margin-bottom:10px;"><div class="aa-band-name" style="margin-bottom:2px;">Sem estoque imediato <span class="aa-badge aa-b-warn">'+ns.count+'</span></div>'
+          + '<div class="aa-hint" style="margin:0;">Têm estoque, mas em entrega não imediata (cross-docking/sob encomenda) — o Mercado Livre não os exibe nos Ads (a tag "não se pode mostrar" do painel). Dar mais verba não resolve; deixe com estoque pronto pra eles voltarem a aparecer.</div>'
+          + AA.mlbDetails(ns.items, ns.count) + '</div>';
       }
       if (temUns){
         var ug = d.unservable.groups || {};
@@ -850,6 +876,20 @@
     else viaFallback();
   };
   AA.fallbackCopy = function(txt){ try{ var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); var r=document.execCommand('copy'); t.remove(); return !!r; }catch(e){ return false; } };
+  // copia 1 lote por clique e cicla pro próximo (lista grande > 3500 chars do campo de busca do ML)
+  window.aaCopyChunk = function(btn){
+    var ids = (btn.getAttribute('data-ids')||'').split(',').filter(Boolean);
+    var parts = AA.chunkCsv(ids); var total = parts.length || 1;
+    var idx = parseInt(btn.getAttribute('data-idx')||'0',10); if(!(idx>=0&&idx<total)) idx = 0;
+    var txt = parts[idx] || '', cur = idx + 1, next = (idx+1) % total;
+    var setTo = function(i){ btn.setAttribute('data-idx', String(i)); btn.setAttribute('data-label', 'copiar lote '+(i+1)+'/'+total); };
+    var flash = function(msg){ btn.textContent = msg; setTimeout(function(){ btn.textContent = btn.getAttribute('data-label'); }, 1600); };
+    var ok = function(){ setTo(next); flash('✓ lote '+cur+'/'+total+' copiado'); };
+    var bad = function(){ setTo(idx); flash('Não copiou ✕'); };
+    var viaFallback = function(){ AA.fallbackCopy(txt) ? ok() : bad(); };
+    if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok, viaFallback); }
+    else viaFallback();
+  };
   window.aaOpenMl = function(cid){ window.open(cid ? AA.ML_ADD_ADS.replace('{cid}', encodeURIComponent(cid)) : AA.ML_CAMPAIGNS, '_blank', 'noopener'); };
   window.aaOpenCampaign = function(cid){ window.open(AA.ML_CAMPAIGN_DASH.replace('{cid}', encodeURIComponent(cid)), '_blank', 'noopener'); };
 
@@ -876,6 +916,7 @@
       probe_plan:{ '1002':['331'] }, probe_items:{ '1002':['MLB6666666666'] }, probe_search_ids:{ '1002':['MLB6666666666'] },
       sanitize_plan:{ '1001':['441'] }, sanitize_items:{ '1001':['MLB1212121212'] }, sanitize_search_ids:{ '1001':['MLB1212121212'] },
       unservable:{ count:3, groups:{ cannot_display:{ count:2, items:[ { mlb:'MLB7777777777', title:'Produto Exemplo A' }, { mlb:'MLB8888888888', title:'Produto Exemplo B' } ] }, under_review:{ count:1, items:[ { mlb:'MLB9999999999', title:'Produto Exemplo C' } ] } } },
+      no_stock:{ count:2, items:[ { mlb:'MLB1414141414', title:'Cilindro Pneumático (sem estoque imediato)' }, { mlb:'MLB1515151515', title:'Conexão Cross-docking' } ] },
       paused:{ count:1, items:[ { mlb:'MLB1313131313', title:'Produto Pausado Exemplo' } ] },
       coverage:{ ads_total:26, ads_evaluated:24, truncated:false },
       health_score:72,
