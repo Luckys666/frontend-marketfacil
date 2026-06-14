@@ -219,7 +219,8 @@ let html4 = '';
 try { AA.render(dp4); html4 = byId('aa-out').innerHTML; } catch (e) { html4 = ''; }
 check('render mostra o score de saúde (72)', /aa-score/.test(html4) && />72</.test(html4));
 check('render tem o header "Seu plano de ação"', /Seu plano de ação/.test(html4));
-check('render tem etapas com checkbox "marcar etapa como feita"', /marcar etapa como feita/.test(html4));
+check('render tem checkbox "marcar como feito"', /marcar como feito/.test(html4));
+check('render tem os 3 planos como cards temáticos empilhados (aa-plan-card + tema Escalar)', /aa-plan-card/.test(html4) && /Escalar/.test(html4));
 check('render tem a etapa final "Confirme as mudanças"', /Confirme as mudanças/.test(html4));
 check('render tem details "como subir o score"', /como subir o score/.test(html4));
 check('render tem etapa de reduzir orçamento (budget_reductions)', /Reduza o orçamento/.test(html4) && /R\$ 18/.test(html4));

@@ -51,6 +51,9 @@
   .aa-stage-body .aa-stage-desc{font-size:.85rem;color:var(--muted);margin:0 0 10px;}
   .aa-macro-line{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);margin-top:10px;flex-wrap:wrap;}
   .aa-macro-line b{font-size:.95rem;}
+  /* bloco multi-período (7/15/30d): TACOS + crescimento faturamento×investimento por período */
+  .aa-macro-block{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+  .aa-macro-block .aa-macro-line{margin-top:0;}
   /* score de saúde dos Ads */
   .aa-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px;}
   .aa-score{text-align:center;flex:none;}
@@ -62,6 +65,18 @@
   .aa-stage-done{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);cursor:pointer;user-select:none;margin-top:8px;}
   .aa-stage.is-done{opacity:.55;}
   .aa-stage.is-done .aa-stage-num{background:var(--green);}
+  /* 3 planos de ação (Escalar / Proteção / Destravar) lado a lado — grid responsivo (empilha no mobile) */
+  /* os 3 planos de ação (Escalar / Proteção / Destravar) empilhados verticalmente, largura total */
+  .aa-plans-row{display:flex;flex-direction:column;gap:12px;margin:6px 0 16px;}
+  .aa-plan-card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fff;min-width:0;}
+  .aa-plan-card.is-done{opacity:.6;background:#f8fafc;}
+  .aa-plan-card-head{font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin-bottom:7px;}
+  .aa-plan-card.is-done .aa-plan-card-head{color:var(--green);}
+  .aa-plan-card h3{margin:0 0 3px;font-size:.96rem;font-weight:700;}
+  .aa-plan-card .aa-stage-desc{font-size:.84rem;color:var(--muted);margin:0 0 10px;}
+  /* setup (faixas+escolha+meta) vira grid horizontal compacto DEPOIS de gerar o plano (empilha no mobile) */
+  #aa-setup.aa-collapsed .aa-card{margin-bottom:0;}
+  @media(min-width:760px){ #aa-setup.aa-collapsed{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start;margin-bottom:16px;} }
   .aa-h1{font-size:1.5rem;font-weight:800;margin:0 0 4px;letter-spacing:-.02em;}
   .aa-sub{color:var(--muted);font-size:.92rem;margin:0 0 20px;}
   .aa-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;}
@@ -147,6 +162,8 @@
   <h1 class="aa-h1">Ads Automatizado</h1>
   <p class="aa-sub">Escolha os anúncios, defina sua meta, e o Marketfacil organiza tudo pra você chegar lá.</p>
 
+  <!-- setup (faixas + escolha + meta): vira grid horizontal compacto DEPOIS de gerar o plano (.aa-collapsed) -->
+  <div id="aa-setup">
   <!-- 0) Configuração das faixas (monitor) -->
   <div class="aa-card" id="aa-bands-card">
     <h2><span class="aa-step" id="aa-bands-step">…</span> Suas faixas de investimento</h2>
@@ -185,6 +202,7 @@
     </div>
     <div class="aa-hint">De cada R$100 de faturamento, quanto pode ir pra anúncios. Quanto maior, mais o Marketfacil acelera as vendas.</div>
   </div>
+  </div><!-- /aa-setup -->
 
   <!-- 3) Ação -->
   <div class="aa-row" style="margin-bottom:16px;">
@@ -600,7 +618,7 @@
     var c = AA.loadCycle(); if (!c) return;
     if (checked) c.done[stageId] = true; else delete c.done[stageId];
     AA.saveCycle(c);
-    var stage = el && el.closest ? el.closest('.aa-stage') : null;
+    var stage = el && el.closest ? el.closest('.aa-plan-card, .aa-stage') : null;
     if (stage) stage.classList.toggle('is-done', !!checked);
   };
   // fecha o ciclo (tudo aplicado e confirmado): arquiva no histórico + agenda a próxima análise
@@ -619,6 +637,8 @@
 
   AA.render = function(d, extraBanner){
     AA._lastData = d;
+    // plano gerado -> compacta os cards de setup (faixas/escolha/meta) em grid horizontal (libera espaço pro plano)
+    try { var _sp = document.getElementById('aa-setup'); if (_sp) _sp.classList.add('aa-collapsed'); } catch(e){}
     if (d.advertiser_id) AA.advertiserId = d.advertiser_id;   // ciclo/seleção chaveados por conta mesmo sem carregar a lista
     var s = d.summary || {};
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou (conta MLBs)
@@ -700,6 +720,16 @@
     }
 
     // ciclo persistente: preserva o "feito" entre cliques
+    // ORDEM DAS ETAPAS (decisão Lucas 14/06): 1º REORGANIZE entre as faixas (o principal — o que
+    // mais move o ponteiro), 2º PROTEJA os anúncios com aviso, 3º DÊ MAIS FORÇA aos parados (teste
+    // do que ainda não veicula); o ajuste de orçamento fica por último. A ordem de push acima é
+    // só de construção — a apresentação é definida aqui, de forma explícita e estável.
+    var AA_STAGE_ORDER = ['plan', 'sanitize', 'probe', 'budget'];
+    stages.sort(function(a, b){
+      var ia = AA_STAGE_ORDER.indexOf(a.id); if (ia === -1) ia = 99;
+      var ib = AA_STAGE_ORDER.indexOf(b.id); if (ib === -1) ib = 99;
+      return ia - ib;
+    });
     var stageIds = stages.map(function(st){ return st.id; });
     var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalMlbs + nProbe + nSan }) : AA.loadCycle();
     var doneMap = (cycle && cycle.done) || {};
@@ -715,10 +745,8 @@
       + '<span><b style="color:'+tacosCol+'">'+ (s.accountTacos!=null? s.accountTacos+'%' : '—') +'</b> investido em ads</span>'
       + '<span><b>'+ (s.target!=null? s.target+'%' : '—') +'</b> meta</span>'
       + '<span><b>'+ (nAds!=null? nAds : '—') +'</b> '+(d.selected_count!=null?'selecionados':'analisados')+'</span>'
-      + (s.revGrowthPct != null || s.costGrowthPct != null
-          ? '<span>faturamento <b style="color:'+(((s.revGrowthPct||0)>=(s.costGrowthPct||0))?'var(--green)':'var(--amber)')+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b> (30d)</span>'
-          : '')
       + '</div>'
+      + AA.macroPeriods(s)
       // equilíbrio (12/06): investimento subindo sem a receita acompanhar -> avisa que a alavanca
       // pausou; quem PROVOU escala (scalers) continua recebendo força e o aviso deixa isso claro
       + (s.balanced === false
@@ -744,16 +772,32 @@
       var nextAt = 0; try{ nextAt = parseInt(localStorage.getItem(AA.nextKey()) || '0', 10); }catch(e){}
       if (nextAt > Date.now()) html += '<div class="aa-hint">Próxima análise recomendada: <b>'+new Date(nextAt).toLocaleDateString('pt-BR')+'</b>.</div>';
     } else {
-      stages.forEach(function(st, i){
+      // os 3 planos de ação (Escalar / Proteção / Destravar) saem lado a lado num grid; o resto
+      // (ex: reduzir orçamento) e o "Confirme" ficam em largura total abaixo.
+      var THEMES = { plan: 'Escalar', sanitize: 'Proteção', probe: 'Destravar' };
+      var mainPlans = stages.filter(function(st){ return THEMES[st.id]; });
+      var extras = stages.filter(function(st){ return !THEMES[st.id]; });
+      if (mainPlans.length){
+        html += '<div class="aa-plans-row">';
+        mainPlans.forEach(function(st, i){
+          var done = !!doneMap[st.id];
+          html += '<div class="aa-plan-card'+(done?' is-done':'')+'">'
+            + '<div class="aa-plan-card-head">'+(done?'✓ ':'')+'Plano '+(i+1)+' · '+THEMES[st.id]+'</div>'
+            + '<h3>'+st.title+'</h3><div class="aa-stage-desc">'+st.desc+'</div>'
+            + st.body
+            + '<label class="aa-stage-done"><input type="checkbox" '+(done?'checked':'')+' onchange="window.aaStageDone(\''+st.id+'\',this.checked,this)"> marcar como feito</label>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+      extras.forEach(function(st){
         var done = !!doneMap[st.id];
-        html += '<div class="aa-stage'+(done?' is-done':'')+'"><div class="aa-stage-num'+(done?' aa-step-ok':'')+'">'+(done?'✓':(i+1))+'</div>'
-          + '<div class="aa-stage-body"><h3>'+st.title+'</h3><div class="aa-stage-desc">'+st.desc+'</div>'
-          + st.body
-          + '<label class="aa-stage-done"><input type="checkbox" '+(done?'checked':'')+' onchange="window.aaStageDone(\''+st.id+'\',this.checked,this)"> marcar etapa como feita</label>'
-          + '</div></div>';
+        html += '<div class="aa-stage'+(done?' is-done':'')+'"><div class="aa-stage-num'+(done?' aa-step-ok':'')+'">'+(done?'✓':'•')+'</div>'
+          + '<div class="aa-stage-body"><h3>'+st.title+'</h3><div class="aa-stage-desc">'+st.desc+'</div>'+st.body
+          + '<label class="aa-stage-done"><input type="checkbox" '+(done?'checked':'')+' onchange="window.aaStageDone(\''+st.id+'\',this.checked,this)"> marcar como feito</label></div></div>';
       });
-      html += '<div class="aa-stage"><div class="aa-stage-num">'+(stages.length+1)+'</div><div class="aa-stage-body">'
-        + '<h3>Confirme as mudanças</h3><div class="aa-stage-desc">Depois de aplicar as etapas no Mercado Livre, confirme aqui — o Marketfacil confere o que entrou e fecha o ciclo.</div>'
+      html += '<div class="aa-stage"><div class="aa-stage-num">✓</div><div class="aa-stage-body">'
+        + '<h3>Confirme as mudanças</h3><div class="aa-stage-desc">Depois de aplicar os planos no Mercado Livre, confirme aqui — o Marketfacil confere o que entrou e fecha o ciclo.</div>'
         + '<button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já apliquei — Verificar</button></div></div>';
     }
     // histórico de ciclos
@@ -813,6 +857,31 @@
         + AA.mlbDetails(d.paused.items, d.paused.count) + '</details></div>';
     }
     out(html);
+  };
+
+  // bloco multi-período do cabeçalho (7/15/30d): TACOS do período + crescimento faturamento×investimento,
+  // espelhando o painel do Mercado Livre. Usa s.periods (novo); fallback pro formato antigo (só 30d) se ausente.
+  AA.macroPeriods = function(s){
+    var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
+    if (!s) return '';
+    var P = s.periods;
+    if (!P) {  // fallback durante o deploy: proxy antigo só manda costGrowthPct/revGrowthPct (30d)
+      if (s.revGrowthPct == null && s.costGrowthPct == null) return '';
+      var c0 = (s.revGrowthPct||0) >= (s.costGrowthPct||0) ? 'var(--green)' : 'var(--amber)';
+      return '<div class="aa-macro-block"><div class="aa-macro-line"><b style="min-width:30px;">30d</b>'
+        + '<span>faturamento <b style="color:'+c0+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b></span></div></div>';
+    }
+    var tgt = s.target;
+    var line = function(lbl, p){
+      if (!p) return '';
+      var tc = (p.tacos != null && tgt != null) ? (p.tacos <= tgt ? 'var(--green)' : 'var(--amber)') : 'inherit';
+      var gc = ((p.revGrowth||0) >= (p.costGrowth||0)) ? 'var(--green)' : 'var(--amber)';
+      return '<div class="aa-macro-line"><b style="min-width:30px;">'+lbl+'</b>'
+        + '<span>TACOS <b style="color:'+tc+'">'+ (p.tacos!=null? p.tacos+'%' : '—') +'</b></span>'
+        + '<span style="opacity:.4;">·</span>'
+        + '<span>faturamento <b style="color:'+gc+'">'+fg(p.revGrowth)+'</b> × investimento <b>'+fg(p.costGrowth)+'</b></span></div>';
+    };
+    return '<div class="aa-macro-block">' + line('7d', P.d7) + line('15d', P.d15) + line('30d', P.d30) + '</div>';
   };
 
   // corpo da etapa "Reorganize" — o render envolve no wrapper de etapa; planIds já vêm ordenados por impacto
@@ -928,7 +997,9 @@
       ],
       plan_weights:{ '1003':42.5, '1001':10.1 },
       budget_reductions:[ { key:'B2', label:'Equilibrado', campaign_id:1002, budget:30, suggested_budget:18 } ],
-      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120, balanced:true, moves:3, toNeverActivate:1, probes:1, noReach:1, sanitized:1 } };
+      summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120,
+        periods:{ d7:{ tacos:3.8, costGrowth:55, revGrowth:18 }, d15:{ tacos:4.0, costGrowth:48, revGrowth:30 }, d30:{ tacos:4.2, costGrowth:40, revGrowth:120 } },
+        balanced:true, moves:3, toNeverActivate:1, probes:1, noReach:1, sanitized:1 } };
   };
   AA.demoBands = function(){
     return { advertiser_id:0, site_id:'MLB', all_ok:false, bands:[
