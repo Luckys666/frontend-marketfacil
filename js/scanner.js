@@ -579,7 +579,7 @@
         <div class="sc-card-top">
           <img class="sc-thumb" src="${escapeAttr(safeThumb)}" alt="" loading="lazy" decoding="async">
           <div class="sc-card-meta">
-            <a href="${escapeAttr(safeLink)}" target="_blank" rel="noopener noreferrer" class="sc-title" title="${escapeAttr(title)}">${escapeHtml(title)}<span class="sr-only"> (abre em nova aba)</span></a>
+            <a href="${escapeAttr(safeLink)}" target="_blank" rel="noopener noreferrer" class="sc-title" title="${escapeAttr(title)}" aria-label="${escapeAttr(title + ' (abre em nova aba)')}">${escapeHtml(title)}</a>
             <div class="sc-price">${price}</div>
             <div class="sc-id">${escapeHtml(String(id))}</div>
           </div>
