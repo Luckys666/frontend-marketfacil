@@ -16,10 +16,12 @@
  *   - geração de CSV (BOM, escape de aspas, acentos, CSV-injection, delimitador)
  *   - varredura ponta-a-ponta com Proxy mockado + segurança (token só no header Bearer)
  *
- * NÃO alteramos o comportamento de scanner.js. Onde o comportamento correto/seguro
- * NÃO acontece hoje, registramos via bug() — defeito real, detalhado em
- * _audit_tags_fleet/findings/qa-test.md. Spec-tests (check) travam o comportamento
- * correto pra pegar regressão dos outros implementadores.
+ * NÃO alteramos o comportamento de scanner.js. Os 7 defeitos que a suite expôs na
+ * 1ª rodada (XSS título/permalink/thumb, CSV injection, CSV \r, robustez tag null,
+ * console PII) foram corrigidos pelo impl-logica e agora estão TRAVADOS como check()
+ * (guarda de regressão). Os mocks foram reconciliados ao scanner novo: paginação em
+ * modo scan (scroll_id), projeção enxuta {code,body} e contador "N encontrados".
+ * O helper bug() segue disponível p/ registrar defeitos futuros.
  *
  * Rodar: node test/scanner.test.js
  */
@@ -228,7 +230,7 @@ section('handleScannerFilterChange (filtro)');
   sandbox.handleScannerFilterChange();
   check("filtro 'all' mostra todos", sandbox.scannerState.filteredItems.length === items.length);
   check('filtro reseta currentPage p/ 1', sandbox.scannerState.currentPage === 1);
-  check('updateCount escreve "<n> exibidos"', reg.scanCountText.textContent === items.length + ' exibidos');
+  check('updateCount escreve "<n> encontrados" (P2-5: "exibidos" enganava após filtrar)', reg.scanCountText.textContent === items.length + ' encontrados');
 
   reg.tagFilter.value = 'incomplete_technical_specs';
   sandbox.handleScannerFilterChange();
@@ -325,10 +327,9 @@ section('renderScannerGrid (cards)');
   const cEmpty = cardHtml(fx.byCase.empty_tags);
   check('card sem tags mostra "Nenhuma tag relevante"', /Nenhuma tag relevante/.test(cEmpty.innerHTML) && !/has-problem/.test(cEmpty.className));
 
-  const cBody = cardHtml(fx.byCase.body_wrapper);
-  check('desembrulha { body } e usa título de dentro', /Relógio Digital/.test(cBody.innerHTML) && /has-problem/.test(cBody.className));
-  const cResult = cardHtml(fx.byCase.result_wrapper);
-  check('desembrulha { result } quando não há título no topo', /Liquidificador/.test(cResult.innerHTML));
+  // A normalização (desembrulho {code,body} + projeção enxuta) MIGROU de renderScannerGrid
+  // para scannerFetchDetails (P-1). O render agora recebe itens já enxutos. A cobertura do
+  // unwrap/projeção/descarte vive no teste E2E "projeção/descarte" mais abaixo.
 
   let threw = false;
   try { cardHtml(fx.byCase.null_tags); } catch (e) { threw = true; }
@@ -339,22 +340,22 @@ section('renderScannerGrid (cards)');
   check('item com campos null usa fallbacks (Sem título / N/A) sem quebrar',
     !threw && /Sem título/.test(reg.scannerResults.children[0].innerHTML) && /N\/A/.test(reg.scannerResults.children[0].innerHTML));
 
-  // SEGURANÇA — sinks de XSS (dados do ML são não-confiáveis, spec §6)
+  // SEGURANÇA — sinks de XSS (dados do ML são não-confiáveis, spec §6). Corrigidos (A1/A2) → travados.
   const cXssTitle = cardHtml(fx.byCase.xss_title);
-  check('título malicioso é escapado no ATRIBUTO title (escapeAttr aplicado)', /title="&lt;img/.test(cXssTitle.innerHTML));
-  bug('XSS: título não escapado no TEXTO do card (innerHTML cru)',
+  check('XSS: título escapado no ATRIBUTO title (escapeAttr)', /title="&lt;img/.test(cXssTitle.innerHTML));
+  check('XSS: título escapado no TEXTO do card (sink principal — escapeHtml)',
     cXssTitle.innerHTML.indexOf('<img src=x onerror=') === -1 && cXssTitle.innerHTML.indexOf('<b>PWNED</b>') === -1);
   const cXssLink = cardHtml(fx.byCase.xss_permalink);
-  bug('XSS: permalink não escapado no atributo href (quebra de atributo)',
+  check('XSS: permalink sanitizado (safeUrl+escapeAttr, sem breakout de atributo)',
     cXssLink.innerHTML.indexOf('"><script>alert(1)</script>') === -1);
-  bug('thumbnail com esquema javascript: não é higienizado em src',
+  check('XSS: thumbnail javascript: cai no fallback (safeUrl bloqueia esquema)',
     cXssLink.innerHTML.indexOf('src="javascript:') === -1);
 
-  // robustez: tag não-string quebra translateTag (TAG.replace em número/null)
+  // robustez: tag não-string NÃO pode quebrar o render (translateTag coage p/ String)
   reset();
   let threw2 = false;
   try { sandbox.renderScannerGrid([{ id: 'X', title: 'T', tags: ['free_shipping', null] }]); } catch (e) { threw2 = true; }
-  bug('robustez: render não deve quebrar com tag não-string (null no array)', !threw2);
+  check('robustez: render não quebra com tag não-string (null no array)', !threw2);
 })();
 
 // ── 10. consistência problema/neutra entre card e CSV ──────────────────────
@@ -364,28 +365,40 @@ check('SCANNER_TAGS_NEGATIVAS = mesma régua nos dois lados (error == problema)'
   sandbox.tagBadgeClass('incomplete_technical_specs') === 'error');
 
 // ── 11/12/13. CSV + varredura + segurança (async) ──────────────────────────
-function makeProxyFetch(details, token, calls) {
+// Simulador do Proxy alinhado ao scanner NOVO:
+//  - /api/fetch-ads: modo SCAN — a 1ª chamada vem com &offset=1000 (sem scroll_id); responde
+//    página + scroll_id; chamadas seguintes vêm com &scroll_id=...; `results: []` encerra o loop. (P1-2/P1-3)
+//  - /api/fetch-item: vem com &skip_description=true; responde array de { code, body }. (P1-1/P2-4)
+// cfg: { token, ids:[idStr], itemResponder:(idsArray)=>rawArray, calls:[] }
+function makeProxyFetch(cfg) {
   const resp = function (status, body) {
     return Promise.resolve({ ok: status >= 200 && status < 300, status, json: function () { return Promise.resolve(body); }, text: function () { return Promise.resolve(JSON.stringify(body)); } });
   };
+  const PAGE = 50;
   return function (url, opts) {
-    url = String(url); calls.push({ url, opts });
-    if (url.indexOf('getAccessToken2') !== -1) return resp(200, { response: { access_token: token } });
+    url = String(url); cfg.calls.push({ url, opts });
+    if (url.indexOf('getAccessToken2') !== -1) return resp(200, { response: { access_token: cfg.token } });
     if (url.indexOf('/api/fetch-ads') !== -1) {
       const u = new URL(url);
-      const offset = parseInt(u.searchParams.get('offset') || '0', 10);
-      const limit = parseInt(u.searchParams.get('limit') || '50', 10);
-      const ids = details.slice(offset, offset + limit).map(function (d) { return d.id; });
-      return resp(200, { results: ids, paging: { total: details.length } });
+      const scrollId = u.searchParams.get('scroll_id');
+      const start = scrollId ? (parseInt(String(scrollId).replace(/^cursor-/, ''), 10) || 0) : 0;
+      const slice = cfg.ids.slice(start, start + PAGE);
+      const body = { results: slice };
+      if (slice.length > 0) body.scroll_id = 'cursor-' + (start + PAGE); // scan devolve cursor enquanto há página
+      return resp(200, body);
     }
     if (url.indexOf('/api/fetch-item') !== -1) {
       const u = new URL(url);
       const ids = (u.searchParams.get('item_id') || '').split(',').filter(Boolean);
-      const out = ids.map(function (id) { return details.filter(function (d) { return d.id === id; })[0]; }).filter(Boolean);
-      return resp(200, out);
+      return resp(200, cfg.itemResponder(ids));
     }
     return resp(404, { error: 'not found' });
   };
+}
+// itemResponder padrão: envelopa cada detalhe em { code:200, body } (formato real do proxy)
+function detailResponder(detailsArr) {
+  const byId = {}; detailsArr.forEach(function (d) { byId[d.id] = d; });
+  return function (ids) { return ids.map(function (id) { return { code: 200, body: byId[id] }; }).filter(function (e) { return e.body; }); };
 }
 
 (async function () {
@@ -433,13 +446,13 @@ function makeProxyFetch(details, token, calls) {
   check('aspas internas são dobradas (RFC4180) e o ; fica dentro da célula',
     semi && semi[1] === 'Kit 3 itens; modelo "Premium" novo' && csv.indexOf('""Premium""') !== -1);
 
-  // SEGURANÇA — CSV injection (fórmula no título)
+  // SEGURANÇA — CSV injection (fórmula no título) neutralizada com prefixo ' (M1) → travado
   const inj = byId['MLB1000000014'];
-  bug('CSV injection: célula iniciada por =/+/-/@ deve ser neutralizada',
-    inj && !/^[=+\-@\t\r]/.test(inj[1]));
-  // carriage-return não removido (só \n é trocado por espaço)
+  check("CSV injection: célula iniciada por =/+/-/@ é neutralizada (prefixo ')",
+    inj && inj[1][0] === "'" && !/^[=+\-@\t\r]/.test(inj[1]));
+  // csvCell remove \r e \n (P2-2)
   const nl = byId['MLB1000000018'];
-  bug('CSV: título não deve conter \\r/\\n cru (só \\n é tratado hoje)',
+  check('CSV: título não contém \\r/\\n cru (csvCell normaliza quebras)',
     nl && nl[1].indexOf('\r') === -1 && nl[1].indexOf('\n') === -1);
 
   // filtro aplicado na exportação
@@ -461,11 +474,11 @@ function makeProxyFetch(details, token, calls) {
   check('export sem itens: alerta e não gera arquivo', /Nenhum item/.test(lastAlert || '') && getCsv() === null);
 
   // ── varredura ponta-a-ponta (Proxy mockado) ──────────────────────────────
-  section('startAccountScan (Proxy mockado) + segurança');
+  section('startAccountScan (Proxy mockado: scan + skip_description) + segurança');
   reset();
   const TOKEN = 'APP_USR-1111111111-061826-deadbeef-90909';
   let calls = [];
-  sandbox.fetch = makeProxyFetch(fx.scanAccount, TOKEN, calls);
+  sandbox.fetch = makeProxyFetch({ token: TOKEN, ids: fx.scanAccount.map(function (d) { return d.id; }), itemResponder: detailResponder(fx.scanAccount), calls: calls });
   await sandbox.startAccountScan();
   check('varredura carrega os 3 anúncios', sandbox.scannerState.allItems.length === 3);
   check('grid renderiza 3 cards', reg.scannerResults.children.length === 3);
@@ -486,11 +499,44 @@ function makeProxyFetch(details, token, calls) {
   check('userId veio do token, sem chamar /users/me',
     calls.every(function (c) { return c.url.indexOf('/users/me') === -1; }));
 
+  // paginação reescrita: modo scan (offset=1000 -> scroll_id) + skip_description (P1-1/2/3)
+  check('1ª chamada de fetch-ads força o modo scan (offset=1000)',
+    calls.some(function (c) { return /\/api\/fetch-ads/.test(c.url) && /[?&]offset=1000\b/.test(c.url); }));
+  check('paginação seguinte usa scroll_id (não offset incremental)',
+    calls.some(function (c) { return /\/api\/fetch-ads/.test(c.url) && /[?&]scroll_id=/.test(c.url); }));
+  check('fetch-item pede skip_description=true (corta description, P1-1)',
+    calls.some(function (c) { return /\/api\/fetch-item/.test(c.url) && /[?&]skip_description=true\b/.test(c.url); }));
+
+  // ── projeção enxuta + descarte (scannerFetchDetails via scan, P-1 + P2-4) ──
+  section('projeção/descarte (normalização migrada p/ scannerFetchDetails)');
+  reset();
+  calls = [];
+  const rawIds = ['MLBOK', 'MLB500', 'MLBNOID', 'MLBNOTITLE', 'MLBNOTAGS'];
+  const rawResponder = function () {
+    return [
+      { code: 200, body: { id: 'MLBOK', title: 'Item Bom', price: 50, permalink: 'https://x.test/ok', thumbnail: 'https://t.test/ok.webp', tags: ['incomplete_technical_specs', 'free_shipping'], description: 'DESC LONGA', extra_field: 'lixo', sold_quantity: 99 } },
+      { code: 500, body: { id: 'MLB500', title: 'Erro de servidor' } },
+      { code: 200, body: { title: 'Sem ID' } },
+      { code: 200, body: { id: 'MLBNOTITLE' } },
+      { code: 200, body: { id: 'MLBNOTAGS', title: 'Sem Tags', price: 10, permalink: 'https://x.test/nt', thumbnail: 'https://t.test/nt.webp' } }
+    ];
+  };
+  sandbox.fetch = makeProxyFetch({ token: TOKEN, ids: rawIds, itemResponder: rawResponder, calls: calls });
+  await sandbox.startAccountScan();
+  check('descarta code!=200 e itens sem id/title (sobram 2 válidos)', sandbox.scannerState.allItems.length === 2);
+  const okItem = sandbox.scannerState.allItems.filter(function (i) { return i.id === 'MLBOK'; })[0];
+  check('projeção enxuta: item só com id/title/price/permalink/thumbnail/tags',
+    !!okItem && Object.keys(okItem).sort().join(',') === 'id,permalink,price,tags,thumbnail,title');
+  check('projeção enxuta: descarta description e campos extras (corta memória, P-1)',
+    !!okItem && !('description' in okItem) && !('extra_field' in okItem) && !('sold_quantity' in okItem));
+  const noTagsItem = sandbox.scannerState.allItems.filter(function (i) { return i.id === 'MLBNOTAGS'; })[0];
+  check('projeção: tags ausente vira [] (Array vazio)', !!noTagsItem && Array.isArray(noTagsItem.tags) && noTagsItem.tags.length === 0);
+
   // ── conta vazia ───────────────────────────────────────────────────────────
   section('conta vazia');
   reset();
   calls = [];
-  sandbox.fetch = makeProxyFetch(fx.emptyAccount, TOKEN, calls);
+  sandbox.fetch = makeProxyFetch({ token: TOKEN, ids: [], itemResponder: detailResponder([]), calls: calls });
   await sandbox.startAccountScan();
   check('conta vazia: 0 itens, sem quebrar', sandbox.scannerState.allItems.length === 0);
   check('conta vazia: grid mostra estado vazio', /Nenhum item/.test(reg.scannerResults.innerHTML));
@@ -509,7 +555,7 @@ function makeProxyFetch(details, token, calls) {
 
   // ── higiene de console (PII) ───────────────────────────────────────────────
   section('higiene de console (segurança)');
-  bug('console não deve logar o userId extraído do token (PII)',
+  check('console não loga o userId extraído do token (PII, M2/§6)',
     scannerSrc.indexOf('ID extraído do token') === -1);
 
   // ───────────────────────── resumo ─────────────────────────
