@@ -1,7 +1,7 @@
-﻿<!-- 
+<!--
   BUBBLE.IO COMPONENT: SCANNER WIDGET
   Repository: Luckys666/frontend-marketfacil
-  
+
   INSTRUCTIONS:
   1. Copy this entire code block.
   2. Paste it into an "HTML Element" in your Bubble app.
@@ -16,59 +16,63 @@
 <!-- COMPONENT WRAPPER -->
 <div class="mf-dashboard-wrapper">
     <div class="ml-analyzer-widget">
+
+        <!-- A14: heading-landmark p/ leitores de tela. O titulo visivel hoje e um Text do Bubble. -->
+        <h2 class="sr-only">Auditoria de Tags</h2>
+
+        <!--
+          HEADER DA FEATURE (ATIVAVEL) — descomente p/ trazer o titulo pro componente e controla-lo via CSS.
+          Se ativar: (1) o orquestrador deve OCULTAR no Bubble o Text "Auditoria de Tags" (evita duplicar);
+          (2) remova o <h2 class="sr-only"> acima (evita heading duplicado no leitor de tela).
+        <div class="sc-header">
+            <h2 class="sc-title-main">Auditoria de Tags</h2>
+            <p class="sc-subtitle">Escaneie sua conta e veja anuncios com problemas de qualidade de foto, ficha tecnica incompleta ou penalidade.</p>
+        </div>
+        -->
+
         <!-- Controls -->
-        <div class="input-area" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
-            <div style="flex-grow: 1;">
-                <label for="tagFilter" class="text-label" style="display:block; margin-bottom:5px;">Filtrar por
-                    Tag:</label>
-                <select id="tagFilter" onchange="handleScannerFilterChange()"
-                    style="width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <div class="sc-controls">
+            <div class="sc-control-field">
+                <label for="tagFilter" class="sc-label">Filtrar por Tag:</label>
+                <select id="tagFilter" onchange="handleScannerFilterChange()">
                     <option value="all">Ver Tudo (Inicie o Scanner)</option>
                 </select>
             </div>
-            <div style="display: flex; align-items: flex-end; gap: 10px;">
-                <button id="scanButton" onclick="startAccountScan()" style="height: 42px;">Escanear Conta</button>
+            <div class="sc-actions">
+                <button id="scanButton" onclick="startAccountScan()">Escanear Conta</button>
                 <button id="exportCsvButton" onclick="exportToCSV()"
-                    style="height: 42px; background: #fff !important; color: #3b82f6; border: 1px solid #3b82f6 !important; white-space: nowrap;"
-                    title="Gerar planilha com todos os anúncios e problemas encontrados">📊 Exportar Relatório</button>
+                    title="Gerar planilha com todos os anuncios e problemas encontrados"><span aria-hidden="true">📊</span> Exportar Relatório</button>
             </div>
         </div>
 
         <!-- Progress Bar -->
-        <div id="scanProgress" style="display: none; margin: 20px 0;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span id="scanStatusText" class="text-small" style="font-weight: 600;">Iniciando...</span>
-                <span id="scanCountText" class="text-small">0 encontrados</span>
+        <div id="scanProgress" style="display: none;">
+            <div class="sc-status-row" role="status" aria-live="polite" aria-atomic="true">
+                <span id="scanStatusText">Iniciando...</span>
+                <span id="scanCountText">0 encontrados</span>
             </div>
-            <div class="char-counter-bar">
-                <div id="scanProgressBar" class="char-progress" style="width: 0%; background: #3b82f6;"></div>
+            <div class="sc-progress-bar-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso da varredura">
+                <div id="scanProgressBar" style="width: 0%;"></div>
             </div>
         </div>
 
         <!-- Tag Legend -->
-        <div id="tagLegend"
-            style="display: none; margin-top: 16px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8rem; color: #64748b; flex-wrap: wrap; align-items: center; gap: 4px;">
-            <span style="font-weight: 600; margin-right: 12px;">Legenda:</span>
-            <span class="status-badge error" style="font-size: 0.7rem; vertical-align: middle;">Problema</span>
-            <span style="margin: 0 6px;">= Erro que precisa de atenção</span>
-            <span class="status-badge muted"
-                style="margin-left: 12px; font-size: 0.7rem; vertical-align: middle;">Neutra</span>
-            <span style="margin: 0 6px;">= Informação sem impacto negativo</span>
+        <div id="tagLegend" style="display: none;">
+            <span class="legend-label">Legenda</span>
+            <span class="legend-item"><span class="legend-dot problem"></span> Problema — precisa de atenção</span>
+            <span class="legend-item"><span class="legend-dot positive"></span> Positiva — vantagem do anúncio</span>
+            <span class="legend-item"><span class="legend-dot neutral"></span> Neutra — informação sem impacto</span>
         </div>
 
         <!-- Results Area -->
-        <div id="scannerResults"
-            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 20px;">
-            <div class="ana-card initial-placeholder"
-                style="grid-column: 1 / -1; text-align: center; color: #94a3b8; padding: 40px;">
+        <div id="scannerResults" class="sc-results-grid" role="list">
+            <div class="initial-placeholder">
                 Selecione um filtro e clique em "Escanear Conta" para começar.
             </div>
         </div>
 
         <!-- Pagination Controls -->
-        <div id="scannerPagination"
-            style="display: none; margin-top: 16px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; align-items: center; justify-content: center; gap: 12px; text-align: center;">
-        </div>
+        <nav id="scannerPagination" style="display: none;" aria-label="Paginação dos resultados"></nav>
     </div>
 </div>
 
