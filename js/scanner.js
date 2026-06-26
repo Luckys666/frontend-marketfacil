@@ -782,4 +782,16 @@
   window.handleScannerFilterChange = handleScannerFilterChange;
   window.changeScannerPage = changeScannerPage;
   window.exportToCSV = exportToCSV;
+
+  // --- Exposição de funções puras/internas (eram globais no scanner original) ---
+  // Habilita a suite de QA (carrega via vm) e debug no console. É idempotente
+  // (não causa SyntaxError no re-inject, ao contrário de const/let) e não vaza dados.
+  window.translateTag = translateTag;
+  window.tagBadgeClass = tagBadgeClass;
+  window.escapeAttr = escapeAttr;
+  window.getScannerUserId = getScannerUserId;
+  window.updateFilterDropdown = updateFilterDropdown;
+  window.renderScannerGrid = renderScannerGrid;
+  window.renderPagination = renderPagination;
+  window.updateCount = updateCount;
 })();
