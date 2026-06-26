@@ -292,6 +292,35 @@
     color: var(--sc-red-dark);
 }
 
+/* === CTA "Corrigir fotos no Redimensionador" (integra tags↔redim, B) ===
+   Botão azul Proposta U, abaixo da dica vermelha. Branco sobre --sc-blue passa AA. */
+.ml-analyzer-widget .ana-card .sc-cta-redim {
+    align-self: flex-start;        /* não estica no flex-column do card */
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    padding: 8px 14px;
+    background: var(--sc-blue);
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: var(--sc-radius-sm);
+    box-shadow: 0 1px 3px rgba(0, 102, 255, 0.25);
+    transition: background .15s ease, box-shadow .15s ease;
+}
+.ml-analyzer-widget .ana-card .sc-cta-redim:hover {
+    background: #0052cc;
+    color: #fff;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(0, 102, 255, 0.3);
+}
+.ml-analyzer-widget .ana-card .sc-cta-redim:focus-visible {
+    outline: 2px solid var(--sc-blue);
+    outline-offset: 2px;
+}
+
 /* === Progress bar (durante scan) === */
 .ml-analyzer-widget #scanProgress {
     background: var(--sc-card);
@@ -672,7 +701,8 @@
     .ml-analyzer-widget #scannerPagination button,
     .ml-analyzer-widget #scanProgressBar,
     .ml-analyzer-widget .sc-controls,
-    .ml-analyzer-widget #tagFilter {
+    .ml-analyzer-widget #tagFilter,
+    .ml-analyzer-widget .ana-card .sc-cta-redim {
         transition: none !important;
     }
 }
@@ -694,6 +724,11 @@
     .ml-analyzer-widget .sc-actions #exportCsvButton {
         flex: 1;
         min-height: 44px;
+    }
+    .ml-analyzer-widget .ana-card .sc-cta-redim {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
     }
     .ml-analyzer-widget #tagLegend {
         gap: 8px;

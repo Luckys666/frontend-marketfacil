@@ -358,6 +358,85 @@ section('renderScannerGrid (cards)');
   check('robustez: render não quebra com tag não-string (null no array)', !threw2);
 })();
 
+// ── 9b. CTA "Corrigir fotos no Redimensionador" (integra tags↔redim, B) ─────
+// Dispara SÓ em problema de IMAGEM (poor_quality_picture/_thumbnail). moderation_penalty
+// fica DE FORA (tag opaca). Nova aba, href com encodeURIComponent + escapeAttr, base por ambiente.
+section('CTA Corrigir fotos (tags→redim)');
+(function () {
+  reset();
+  const ORIG_HREF = sandbox.location.href;
+  function render(item) { sandbox.renderScannerGrid([item]); return reg.scannerResults.children[0].innerHTML; }
+  function ctaTag(html) { const m = html.match(/<a\b[^>]*sc-cta-redim[^>]*>/); return m ? m[0] : ''; }
+  function ctaHref(html) { const m = ctaTag(html).match(/href="([^"]*)"/); return m ? m[1] : ''; }
+  function ctaCount(html) { return (html.match(/sc-cta-redim/g) || []).length; }
+
+  // aparece SÓ quando há problema de FOTO
+  check('CTA aparece com poor_quality_picture',
+    /sc-cta-redim/.test(render({ id: 'MLB111', title: 'p', tags: ['poor_quality_picture'] })));
+  check('CTA aparece com poor_quality_thumbnail',
+    /sc-cta-redim/.test(render({ id: 'MLB222', title: 't', tags: ['poor_quality_thumbnail'] })));
+
+  // NÃO aparece sem problema de foto (não poluir cards)
+  check('CTA NÃO aparece em card só com tags positivas',
+    !/sc-cta-redim/.test(render(fx.byCase.clean_positive)));
+  check('CTA NÃO aparece com problema NÃO-foto (incomplete_technical_specs)',
+    !/sc-cta-redim/.test(render(fx.byCase.incomplete_specs)));
+  check('CTA NÃO aparece em moderation_penalty PURO (tag opaca, fora do escopo)',
+    !/sc-cta-redim/.test(render({ id: 'MLB333', title: 'm', tags: ['moderation_penalty'] })));
+  check('CTA NÃO aparece em card sem tags',
+    !/sc-cta-redim/.test(render(fx.byCase.empty_tags)));
+
+  // href usa o id correto + encodeURIComponent
+  const hHref = ctaHref(render({ id: 'MLB1234567890', title: 'x', tags: ['poor_quality_picture'] }));
+  check('href termina com ?item=<id> correto', /\?item=MLB1234567890$/.test(hHref));
+  const encHref = ctaHref(render({ id: 'MLB 1&2', title: 'x', tags: ['poor_quality_thumbnail'] }));
+  check('id passa por encodeURIComponent (espaço→%20, &→%26)',
+    /item=MLB%201%262$/.test(encHref) && encHref.indexOf(' ') === -1 && encHref.indexOf('&') === -1);
+
+  // um único CTA por card mesmo com as 2 tags de foto (multi_problem tem ambas)
+  check('um único CTA por card mesmo com as 2 tags de foto',
+    ctaCount(render(fx.byCase.multi_problem)) === 1);
+
+  // guard id N/A: item com tag de foto mas sem id NÃO renderiza CTA
+  check('CTA NÃO renderiza quando id é N/A (item sem id)',
+    !/sc-cta-redim/.test(render({ id: null, title: 'x', tags: ['poor_quality_picture'] })));
+
+  // acessibilidade / nova aba
+  const aTag = ctaTag(render(fx.byCase.multi_problem));
+  check('CTA abre em nova aba (target=_blank + rel=noopener noreferrer)',
+    /target="_blank"/.test(aTag) && /rel="noopener noreferrer"/.test(aTag));
+  check('CTA tem aria-label descritivo com "(abre em nova aba)"',
+    /aria-label="Corrigir fotos no Redimensionador \(abre em nova aba\)"/.test(aTag));
+  check('CTA usa a classe sc-cta-redim', /class="sc-cta-redim"/.test(aTag));
+  check('emoji do CTA é decorativo (aria-hidden)',
+    /<span aria-hidden="true">🔧<\/span>/.test(render(fx.byCase.multi_problem)));
+
+  // escape correto no href — id não-confiável (ML §6) não escapa do atributo
+  const xssHtml = render({ id: 'MLB"><script>alert(1)</script>', title: 'x', tags: ['poor_quality_picture'] });
+  check('escape: id malicioso NÃO quebra o href (sem breakout de atributo)',
+    xssHtml.indexOf('"><script>alert(1)') === -1);
+  check('escape: id malicioso é percent-encoded no href (%22 %3E %3C)',
+    /item=MLB%22%3E%3Cscript%3E/.test(ctaHref(xssHtml)));
+
+  // base muda por ambiente — buildRedimUrl direto + CTA renderizado (mocka location.href)
+  sandbox.location.href = 'https://app.marketfacil.com.br/version-test/auditoria-tags';
+  check('base version-test no helper buildRedimUrl',
+    sandbox.buildRedimUrl('MLB9') === 'https://app.marketfacil.com.br/version-test/redimensionar-imagem?item=MLB9');
+  check('base version-test no CTA renderizado',
+    ctaHref(render({ id: 'MLB777', title: 'x', tags: ['poor_quality_picture'] })) ===
+      'https://app.marketfacil.com.br/version-test/redimensionar-imagem?item=MLB777');
+
+  sandbox.location.href = 'https://app.marketfacil.com.br/auditoria-tags';
+  check('base live no helper buildRedimUrl',
+    sandbox.buildRedimUrl('MLB9') === 'https://app.marketfacil.com.br/redimensionar-imagem?item=MLB9');
+  const liveHref = ctaHref(render({ id: 'MLB888', title: 'x', tags: ['poor_quality_thumbnail'] }));
+  check('base live no CTA renderizado (sem /version-test/)',
+    liveHref === 'https://app.marketfacil.com.br/redimensionar-imagem?item=MLB888' &&
+      liveHref.indexOf('/version-test/') === -1);
+
+  sandbox.location.href = ORIG_HREF;   // restaura p/ não contaminar os testes E2E async
+})();
+
 // ── 10. consistência problema/neutra entre card e CSV ──────────────────────
 section('consistência card x CSV');
 // (validada de fato no bloco de CSV abaixo; aqui só a classe-base)

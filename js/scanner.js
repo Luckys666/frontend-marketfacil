@@ -70,6 +70,13 @@
     "incomplete_technical_specs", "moderation_penalty"
   ]);
 
+  // Subconjunto das negativas que são problema de IMAGEM — exatamente o que o Redimensionador conserta.
+  // moderation_penalty fica DE FORA: tag opaca (penalidade pode ser de preço/título/conteúdo, não de foto),
+  // mandar pro redim seria promessa falsa. (integra tags↔redim, B)
+  const SCANNER_TAGS_IMAGEM = new Set([
+    "poor_quality_picture", "poor_quality_thumbnail"
+  ]);
+
   const SCANNER_TAGS_POSITIVAS = new Set([
     "good_quality_picture", "good_quality_thumbnail",
     "brand_verified", "extended_warranty_eligible",
@@ -136,6 +143,16 @@
   function safeUrl(u) {
     u = String(u == null ? '' : u).trim();
     return /^https?:\/\//i.test(u) ? u : '';
+  }
+
+  // Deep-link pro Redimensionador já naquele anúncio. Base muda por ambiente (version-test/live),
+  // detectada como o resto do scanner (location.href.includes('version-test')). O id (item_id MLB/MLBU)
+  // vai por encodeURIComponent; no sink do href aplicar SEMPRE escapeAttr. (integra tags↔redim, B)
+  function buildRedimUrl(itemId) {
+    var base = window.location.href.includes('version-test')
+      ? 'https://app.marketfacil.com.br/version-test/redimensionar-imagem'
+      : 'https://app.marketfacil.com.br/redimensionar-imagem';
+    return base + '?item=' + encodeURIComponent(itemId);
   }
 
   // Neutraliza CSV/Formula injection (Excel/Sheets avaliam células iniciadas por = + - @ \t \r). (M1)
@@ -574,6 +591,16 @@
       const title = safeItem.title || 'Sem título';
       const id = safeItem.id || 'N/A';
 
+      // CTA "Corrigir fotos" — só quando há problema de IMAGEM (foto/miniatura reprovada),
+      // que é exatamente o que o Redimensionador conserta. Um único botão por card, nova aba
+      // (preserva a auditoria). href: encodeURIComponent (em buildRedimUrl) + escapeAttr no sink. (integra tags↔redim, B)
+      let ctaHtml = '';
+      const hasImageProblem = tags.some(t => SCANNER_TAGS_IMAGEM.has(t));
+      if (hasImageProblem && id !== 'N/A') {
+        const redimUrl = buildRedimUrl(id);
+        ctaHtml = `<a href="${escapeAttr(redimUrl)}" target="_blank" rel="noopener noreferrer" class="sc-cta-redim" aria-label="${escapeAttr('Corrigir fotos no Redimensionador (abre em nova aba)')}"><span aria-hidden="true">🔧</span> Corrigir fotos no Redimensionador</a>`;
+      }
+
       // title escapado TAMBÉM no nó de texto (não só no atributo) — sink principal de XSS (A1)
       div.innerHTML = `
         <div class="sc-card-top">
@@ -588,6 +615,7 @@
           ${tagsHtml || '<span class="sc-empty-tags">Nenhuma tag relevante.</span>'}
         </div>
         ${tipsHtml || ''}
+        ${ctaHtml || ''}
       `;
       fragment.appendChild(div);
     });
@@ -789,6 +817,7 @@
   window.translateTag = translateTag;
   window.tagBadgeClass = tagBadgeClass;
   window.escapeAttr = escapeAttr;
+  window.buildRedimUrl = buildRedimUrl;
   window.getScannerUserId = getScannerUserId;
   window.updateFilterDropdown = updateFilterDropdown;
   window.renderScannerGrid = renderScannerGrid;
