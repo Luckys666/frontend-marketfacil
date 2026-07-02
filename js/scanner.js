@@ -179,6 +179,12 @@
     return 'muted';
   }
 
+  // Um anúncio "com problema" tem ao menos uma tag negativa (foto ruim, ficha incompleta, penalidade).
+  // É o foco da auditoria (decisão Lucas 02/07): mostrar os ATIVOS com problema.
+  function itemHasProblem(item) {
+    return !!item && Array.isArray(item.tags) && item.tags.some(t => SCANNER_TAGS_NEGATIVAS.has(t));
+  }
+
   // Erro de rede/HTTP rotulado para o MF_renderError. status 0 = falha de fetch (rede/CORS/timeout 30s do Heroku).
   function scannerHttpError(status) {
     var type = 'network_error';
@@ -302,6 +308,7 @@
       const BATCH_SIZE = 20;
       let processed = 0;
       let failedItems = 0; // anúncios que não puderam ser carregados (P0-1)
+      let skippedInactive = 0; // pausados/encerrados/em revisão — fora do foco (só ATIVOS)
 
       // Sequencial de propósito: o rate-limit do proxy é por userId e intencional
       // (memórias project_mlb_proxy_rate_limit / project_app_scale). NÃO paralelizar agressivo. (P-2)
@@ -320,10 +327,14 @@
         }
 
         items.forEach(item => {
-          if (item) {
-            window.scannerState.allItems.push(item);
-            if (item.tags) item.tags.forEach(t => window.scannerState.uniqueTags.add(t));
-          }
+          if (!item) return;
+          // Foco da auditoria: só anúncios ATIVOS. Pausado = você tirou do ar de propósito;
+          // encerrado/em revisão não vende — não faz sentido priorizar tag deles. (decisão Lucas 02/07)
+          // Fail-open: se o ML não trouxe o status, não escondemos o anúncio.
+          const isActive = !item.status || item.status === 'active';
+          if (!isActive) { skippedInactive++; return; }
+          window.scannerState.allItems.push(item);
+          if (item.tags) item.tags.forEach(t => window.scannerState.uniqueTags.add(t));
         });
 
         processed += batchIds.length;
@@ -335,19 +346,35 @@
 
       updateFilterDropdown();
       window.scannerState.currentPage = 1;
-      window.scannerState.filteredItems = window.scannerState.allItems;
-      renderScannerGrid(window.scannerState.allItems);
-      updateCount(window.scannerState.allItems.length);
+
+      // Abre já focado nos ATIVOS COM problema — o que precisa de ação (decisão Lucas 02/07).
+      const activeCount = window.scannerState.allItems.length;
+      const problemItems = window.scannerState.allItems.filter(itemHasProblem);
+      const problemCount = problemItems.length;
+
+      const filterSel = document.getElementById('tagFilter');
+      if (filterSel) filterSel.value = 'problems';
+      window.scannerState.filteredItems = problemItems;
+      renderScannerGrid(problemItems);
 
       // Mostrar legenda de tags
       const legend = document.getElementById('tagLegend');
       if (legend) legend.style.display = 'flex';
 
-      // "Varredura Completa!" SÓ se nenhum anúncio falhou; senão avisa o usuário (P0-1)
+      // Resumo da varredura: números em mono, à direita (padrão Proposta U).
+      const countEl = document.getElementById('scanCountText');
+      if (countEl) countEl.textContent = `${problemCount} de ${activeCount} com problema`;
+
+      // Headline SÓ "completa" se nenhum anúncio falhou; senão avisa o usuário (P0-1).
+      // Quando há pausados/inativos fora do foco, deixamos explícito p/ não confundir a contagem.
       if (statusText) {
-        statusText.textContent = failedItems > 0
-          ? `Varredura concluída — ${failedItems} anúncio(s) não carregaram. Tente de novo.`
-          : 'Varredura Completa!';
+        if (failedItems > 0) {
+          statusText.textContent = `Varredura concluída — ${failedItems} anúncio(s) não carregaram. Tente de novo.`;
+        } else if (skippedInactive > 0) {
+          statusText.textContent = `Varredura completa · ${skippedInactive} pausado(s)/inativo(s) fora do foco`;
+        } else {
+          statusText.textContent = 'Varredura completa';
+        }
       }
       if (progressBar) { progressBar.style.width = '100%'; setProgressAria(progressBar, 100); }
 
@@ -395,7 +422,11 @@
   async function scannerFetchAllIds(userId, token, onProgress) {
     // Estratégia: usar o modo SCAN do proxy desde o início (P1-2 + P1-3).
     // O proxy força search_type=scan quando offset>=1000 (sem scroll_id) — esse modo
-    // NÃO filtra por status, então pega ativos, pausados, em revisão e penalizados.
+    // NÃO filtra por status, então devolve IDs de ativos, pausados, em revisão e penalizados.
+    // O recorte "só ATIVOS" acontece depois, ao carregar os detalhes: scannerFetchDetails traz
+    // o status e startAccountScan descarta o que não está 'active' (decisão Lucas 02/07). Filtrar
+    // no client é o caminho robusto porque o scan não devolve status por item — e é o único modo
+    // que aguenta contas com >1000 anúncios sem duplicar/perder a cauda.
     // Depois paginamos só por scroll_id e paramos quando results vier vazio
     // (não por offset<total, que duplicava o começo e perdia a cauda em contas grandes).
     const ids = [];
@@ -459,6 +490,7 @@
         price: body.price,
         permalink: body.permalink,
         thumbnail: body.thumbnail,
+        status: body.status || '',   // active/paused/closed/... — usado p/ focar só nos ATIVOS
         tags: Array.isArray(body.tags) ? body.tags : []
       });
     }
@@ -471,7 +503,9 @@
     const select = document.getElementById('tagFilter');
     if (!select) return;
 
-    select.innerHTML = '<option value="all">Ver Tudo</option>';
+    // "Só com problema" é o padrão (foco da auditoria); "Ver todos os ativos" mostra o resto.
+    select.innerHTML = '<option value="problems">⚠️ Só com problema</option>'
+      + '<option value="all">Ver todos os ativos</option>';
     const sortedTags = Array.from(window.scannerState.uniqueTags).sort();
 
     const critical = ['poor_quality_picture', 'poor_quality_thumbnail', 'incomplete_technical_specs', 'moderation_penalty'];
@@ -516,6 +550,8 @@
     window.scannerState.currentPage = 1;
     if (filter === 'all') {
       window.scannerState.filteredItems = all;
+    } else if (filter === 'problems') {
+      window.scannerState.filteredItems = all.filter(itemHasProblem);
     } else {
       window.scannerState.filteredItems = all.filter(item => item.tags && item.tags.includes(filter));
     }
@@ -539,8 +575,19 @@
     const totalItems = items.length;
 
     if (totalItems === 0) {
-      // Estado vazio via classe do contrato §C (sem inline) (J-coordination)
-      container.innerHTML = '<div class="sc-empty-state">Nenhum item corresponde ao filtro.</div>';
+      // Mensagem contextual: sem anúncio ativo, "tudo certo" (0 problemas) ou filtro sem match.
+      const sel = document.getElementById('tagFilter');
+      const isProblems = !!sel && sel.value === 'problems';
+      const noActive = window.scannerState.allItems.length === 0;
+      let msg;
+      if (noActive) {
+        msg = '<span class="sc-empty-icon" aria-hidden="true">💤</span>Nenhum anúncio ativo encontrado. Seus anúncios podem estar pausados ou encerrados.';
+      } else if (isProblems) {
+        msg = '<span class="sc-empty-icon" aria-hidden="true">🎉</span>Nenhum anúncio ativo com problema. Está tudo certo por aqui!';
+      } else {
+        msg = 'Nenhum item corresponde ao filtro.';
+      }
+      container.innerHTML = '<div class="sc-empty-state">' + msg + '</div>';
       renderPagination(0, 0, 0);
       return;
     }
@@ -678,6 +725,8 @@
 
     if (filter === 'all') {
       itemsToExport = all;
+    } else if (filter === 'problems') {
+      itemsToExport = all.filter(itemHasProblem);
     } else {
       itemsToExport = all.filter(item => item.tags && item.tags.includes(filter));
     }
@@ -747,7 +796,8 @@
       const link = document.createElement("a");
       link.setAttribute("href", url);
       const date = new Date().toISOString().slice(0, 10);
-      link.setAttribute("download", `Relatorio_Scanner_${filter === 'all' ? 'Geral' : translateTag(filter)}_${date}.csv`);
+      const filterLabel = filter === 'all' ? 'Geral' : (filter === 'problems' ? 'Com_Problema' : translateTag(filter));
+      link.setAttribute("download", `Relatorio_Scanner_${filterLabel}_${date}.csv`);
 
       // Mostrar "Baixando" ANTES do click
       if (btn) btn.textContent = '⏳ Baixando...';
@@ -816,6 +866,7 @@
   // (não causa SyntaxError no re-inject, ao contrário de const/let) e não vaza dados.
   window.translateTag = translateTag;
   window.tagBadgeClass = tagBadgeClass;
+  window.itemHasProblem = itemHasProblem;
   window.escapeAttr = escapeAttr;
   window.buildRedimUrl = buildRedimUrl;
   window.getScannerUserId = getScannerUserId;

@@ -26,16 +26,16 @@
           (2) remova o <h2 class="sr-only"> acima (evita heading duplicado no leitor de tela).
         <div class="sc-header">
             <h2 class="sc-title-main">Auditoria de Tags</h2>
-            <p class="sc-subtitle">Escaneie sua conta e veja anuncios com problemas de qualidade de foto, ficha tecnica incompleta ou penalidade.</p>
+            <p class="sc-subtitle">Escaneie sua conta e veja quais anuncios ATIVOS tem problema de qualidade de foto, ficha tecnica incompleta ou penalidade. Anuncios pausados ficam fora do foco.</p>
         </div>
         -->
 
         <!-- Controls -->
         <div class="sc-controls">
             <div class="sc-control-field">
-                <label for="tagFilter" class="sc-label">Filtrar por Tag:</label>
+                <label for="tagFilter" class="sc-label">Mostrar:</label>
                 <select id="tagFilter" onchange="handleScannerFilterChange()">
-                    <option value="all">Ver Tudo (Inicie o Scanner)</option>
+                    <option value="problems">Só com problema</option>
                 </select>
             </div>
             <div class="sc-actions">
@@ -67,7 +67,7 @@
         <!-- Results Area -->
         <div id="scannerResults" class="sc-results-grid" role="list">
             <div class="initial-placeholder">
-                Selecione um filtro e clique em "Escanear Conta" para começar.
+                Clique em "Escanear Conta" para auditar seus anúncios ativos e ver quais têm problema de qualidade.
             </div>
         </div>
 

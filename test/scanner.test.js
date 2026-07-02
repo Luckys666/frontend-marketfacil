@@ -147,7 +147,7 @@ function csvRecords(csv) {
 // ════════════════════════════ TESTES ════════════════════════════
 check('scanner.js carrega/inicializa sem lançar', !loadErr);
 if (loadErr) { console.error(loadErr); }
-['translateTag', 'tagBadgeClass', 'escapeAttr', 'getScannerUserId', 'updateFilterDropdown',
+['translateTag', 'tagBadgeClass', 'itemHasProblem', 'escapeAttr', 'getScannerUserId', 'updateFilterDropdown',
  'handleScannerFilterChange', 'renderScannerGrid', 'renderPagination', 'changeScannerPage',
  'updateCount', 'startAccountScan', 'exportToCSV', 'MF_renderError']
   .forEach(function (fn) { check('expõe ' + fn, typeof sandbox[fn] === 'function'); });
@@ -168,6 +168,12 @@ const POS = ['good_quality_picture', 'good_quality_thumbnail', 'brand_verified',
   'loyalty_discount_eligible', 'meliplus_item', 'supermarket_eligible'];
 check('todas as negativas classificam como error', NEG.every(function (t) { return sandbox.tagBadgeClass(t) === 'error'; }));
 check('todas as positivas classificam como success', POS.every(function (t) { return sandbox.tagBadgeClass(t) === 'success'; }));
+
+// itemHasProblem: régua do "anúncio com problema" (foco da auditoria — só ATIVOS com tag negativa)
+check('itemHasProblem: item com tag negativa = true', sandbox.itemHasProblem({ tags: ['incomplete_technical_specs', 'free_shipping'] }) === true);
+check('itemHasProblem: item só com positivas = false', sandbox.itemHasProblem({ tags: ['free_shipping', 'brand_verified'] }) === false);
+check('itemHasProblem: tags ausente/null/item null = false (sem crash)',
+  sandbox.itemHasProblem({}) === false && sandbox.itemHasProblem({ tags: null }) === false && sandbox.itemHasProblem(null) === false);
 
 // ── 2. tradução / humanização ──────────────────────────────────────────────
 section('translateTag');
@@ -266,7 +272,8 @@ section('updateFilterDropdown');
     outVals.indexOf('free_shipping') !== -1 && outVals.indexOf('catalog_listing') !== -1 && outVals.indexOf('algum_atributo_novo') !== -1);
   const novaOpt = outras.children.filter(function (o) { return o.value === 'algum_atributo_novo'; })[0];
   check('option desconhecida é humanizada no texto', novaOpt && novaOpt.textContent === 'Algum Atributo Novo');
-  check("dropdown sempre começa com 'Ver Tudo'", /Ver Tudo/.test(reg.tagFilter.innerHTML));
+  check("dropdown começa com 'Só com problema' (padrão) + 'Ver todos os ativos'",
+    /value="problems"/.test(reg.tagFilter.innerHTML) && /Só com problema/.test(reg.tagFilter.innerHTML) && /Ver todos os ativos/.test(reg.tagFilter.innerHTML));
 })();
 
 // ── 8. paginação (inclui 500+ itens) ───────────────────────────────────────
@@ -307,11 +314,27 @@ section('paginação');
   sandbox.renderScannerGrid(few);
   check('<=50 itens: paginação escondida', reg.scannerPagination.style.display === 'none' && reg.scannerResults.children.length === 40);
 
-  // lista vazia -> mensagem e sem paginação
+  // filtro sem match (há ativos, mas nenhum casa) -> "Nenhum item corresponde" + sem paginação
+  reset();
+  sandbox.scannerState.allItems = [fx.byCase.clean_positive];
+  reg.tagFilter.value = 'free_shipping';
+  sandbox.renderScannerGrid([]);
+  check('filtro sem match mostra "Nenhum item corresponde" e esconde paginação',
+    /Nenhum item corresponde/.test(reg.scannerResults.innerHTML) && reg.scannerPagination.style.display === 'none');
+
+  // empty-state contextual: 0 problemas entre ativos -> mensagem positiva "tudo certo"
+  reset();
+  sandbox.scannerState.allItems = [fx.byCase.clean_positive];
+  reg.tagFilter.value = 'problems';
+  sandbox.renderScannerGrid([]);
+  check('0 problemas entre ativos mostra "tudo certo" (🎉)',
+    /tudo certo/i.test(reg.scannerResults.innerHTML) && /🎉/.test(reg.scannerResults.innerHTML));
+
+  // empty-state contextual: nenhum anúncio ativo -> mensagem "sem anúncio ativo"
   reset();
   sandbox.renderScannerGrid([]);
-  check('lista vazia mostra mensagem e esconde paginação',
-    /Nenhum item corresponde/.test(reg.scannerResults.innerHTML) && reg.scannerPagination.style.display === 'none');
+  check('sem anúncio ativo mostra "Nenhum anúncio ativo encontrado"',
+    /Nenhum anúncio ativo encontrado/.test(reg.scannerResults.innerHTML) && reg.scannerPagination.style.display === 'none');
 })();
 
 // ── 9. render dos cards: classificação + unwrap + robustez + XSS ───────────
@@ -544,6 +567,16 @@ function detailResponder(detailsArr) {
   check('export respeita o filtro (só 1 item)', recs2.length === 1 && parseCsvLine(recs2[0])[0] === 'MLB1000000002');
   check('nome do arquivo usa a tag traduzida no filtro', /Ficha Técnica Incompleta/.test(lastDownload || ''));
 
+  // export com filtro 'problems': só os itens com tag negativa + filename dedicado
+  reset();
+  sandbox.scannerState.allItems = [fx.byCase.incomplete_specs, fx.byCase.clean_positive, fx.byCase.multi_problem];
+  reg.tagFilter.value = 'problems';
+  await sandbox.exportToCSV();
+  const recs3 = csvRecords(getCsv()).slice(1);
+  check("export 'problems' pega só os com problema (2 de 3)", recs3.length === 2);
+  check("nome do arquivo do 'problems' = Relatorio_Scanner_Com_Problema_<data>.csv",
+    /^Relatorio_Scanner_Com_Problema_\d{4}-\d{2}-\d{2}\.csv$/.test(lastDownload || ''));
+
   // export sem itens no filtro -> alerta, sem blob
   reset();
   sandbox.scannerState.allItems = [fx.byCase.clean_positive];
@@ -559,15 +592,28 @@ function detailResponder(detailsArr) {
   let calls = [];
   sandbox.fetch = makeProxyFetch({ token: TOKEN, ids: fx.scanAccount.map(function (d) { return d.id; }), itemResponder: detailResponder(fx.scanAccount), calls: calls });
   await sandbox.startAccountScan();
-  check('varredura carrega os 3 anúncios', sandbox.scannerState.allItems.length === 3);
-  check('grid renderiza 3 cards', reg.scannerResults.children.length === 3);
-  check("status final = 'Varredura Completa!'", reg.scanStatusText.textContent === 'Varredura Completa!');
+  // scanAccount = 5 IDs (4 ativos + 1 pausado). Só os ATIVOS entram (decisão Lucas 02/07).
+  check('varredura mantém só os 4 ATIVOS (pausado MLB...004 descartado)', sandbox.scannerState.allItems.length === 4);
+  check('pausado NÃO entra em allItems', sandbox.scannerState.allItems.every(function (i) { return i.id !== 'MLB2000000004'; }));
+  check('projeção guarda o status e todos os mantidos são active', sandbox.scannerState.allItems.every(function (i) { return i.status === 'active'; }));
+  check('abre filtrado nos ATIVOS com problema: 2 cards (ficha incompleta + penalizado)', reg.scannerResults.children.length === 2);
+  check("filtro default fica em 'problems'", reg.tagFilter.value === 'problems');
+  check('resumo mono "2 de 4 com problema"', reg.scanCountText.textContent === '2 de 4 com problema');
+  check("status final: 'Varredura completa' avisando 1 pausado fora do foco",
+    /Varredura completa/.test(reg.scanStatusText.textContent) && /1 pausado/.test(reg.scanStatusText.textContent));
   check('barra de progresso a 100%', reg.scanProgressBar.style.width === '100%');
   check('legenda fica visível', reg.tagLegend.style.display === 'flex');
-  check('uniqueTags agregou as tags da conta',
-    sandbox.scannerState.uniqueTags.has('incomplete_technical_specs') && sandbox.scannerState.uniqueTags.has('catalog_listing'));
+  check('uniqueTags agrega só tags de ATIVOS (tem incomplete/catalog, NÃO tem poor_quality do pausado)',
+    sandbox.scannerState.uniqueTags.has('incomplete_technical_specs') && sandbox.scannerState.uniqueTags.has('catalog_listing') && !sandbox.scannerState.uniqueTags.has('poor_quality_picture'));
   const dropdownVals = reg.tagFilter.children.reduce(function (a, g) { return a.concat(g.children.map(function (o) { return o.value; })); }, []);
   check('dropdown preenchido com a tag crítica encontrada', dropdownVals.indexOf('incomplete_technical_specs') !== -1);
+  // troca de filtro: 'all' mostra os 4 ativos; 'problems' volta pros 2 com problema
+  reg.tagFilter.value = 'all';
+  sandbox.handleScannerFilterChange();
+  check("filtro 'all' mostra os 4 ativos", sandbox.scannerState.filteredItems.length === 4);
+  reg.tagFilter.value = 'problems';
+  sandbox.handleScannerFilterChange();
+  check("filtro 'problems' volta pros 2 com problema", sandbox.scannerState.filteredItems.length === 2);
 
   // segurança: token só no header Bearer, nunca em querystring; sem /users/me
   const proxyCalls = calls.filter(function (c) { return /\/api\/fetch-(ads|item)/.test(c.url); });
@@ -604,8 +650,8 @@ function detailResponder(detailsArr) {
   await sandbox.startAccountScan();
   check('descarta code!=200 e itens sem id/title (sobram 2 válidos)', sandbox.scannerState.allItems.length === 2);
   const okItem = sandbox.scannerState.allItems.filter(function (i) { return i.id === 'MLBOK'; })[0];
-  check('projeção enxuta: item só com id/title/price/permalink/thumbnail/tags',
-    !!okItem && Object.keys(okItem).sort().join(',') === 'id,permalink,price,tags,thumbnail,title');
+  check('projeção enxuta: item só com id/title/price/permalink/thumbnail/status/tags',
+    !!okItem && Object.keys(okItem).sort().join(',') === 'id,permalink,price,status,tags,thumbnail,title');
   check('projeção enxuta: descarta description e campos extras (corta memória, P-1)',
     !!okItem && !('description' in okItem) && !('extra_field' in okItem) && !('sold_quantity' in okItem));
   const noTagsItem = sandbox.scannerState.allItems.filter(function (i) { return i.id === 'MLBNOTAGS'; })[0];
@@ -618,8 +664,8 @@ function detailResponder(detailsArr) {
   sandbox.fetch = makeProxyFetch({ token: TOKEN, ids: [], itemResponder: detailResponder([]), calls: calls });
   await sandbox.startAccountScan();
   check('conta vazia: 0 itens, sem quebrar', sandbox.scannerState.allItems.length === 0);
-  check('conta vazia: grid mostra estado vazio', /Nenhum item/.test(reg.scannerResults.innerHTML));
-  check("conta vazia: status final = 'Varredura Completa!'", reg.scanStatusText.textContent === 'Varredura Completa!');
+  check('conta vazia: grid mostra estado "sem anúncio ativo"', /Nenhum anúncio ativo encontrado/.test(reg.scannerResults.innerHTML));
+  check("conta vazia: status final = 'Varredura completa'", reg.scanStatusText.textContent === 'Varredura completa');
 
   // ── falha de autenticação ──────────────────────────────────────────────────
   section('autenticação ausente');

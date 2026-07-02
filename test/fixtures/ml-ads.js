@@ -42,7 +42,9 @@ function makeLargeAccount(n) {
   return out;
 }
 
-// Conta com cardápio de tags previsível pra teste de varredura ponta-a-ponta.
+// Conta com cardápio de tags + status previsível pra teste de varredura ponta-a-ponta.
+// O scan do ML devolve IDs de TODOS os status; o scanner recorta só os ATIVOS (decisão Lucas 02/07).
+// Aqui há 4 ativos (2 com problema, 2 sem) + 1 pausado (deve ser DESCARTADO na varredura).
 const scanAccount = [
   {
     id: 'MLB2000000001',
@@ -50,6 +52,7 @@ const scanAccount = [
     price: 49.9,
     permalink: 'https://produto.mercadolivre.com.br/MLB-2000000001',
     thumbnail: 'https://http2.mlstatic.com/D_a.webp',
+    status: 'active',
     tags: ['incomplete_technical_specs', 'free_shipping']
   },
   {
@@ -58,6 +61,7 @@ const scanAccount = [
     price: 120,
     permalink: 'https://produto.mercadolivre.com.br/MLB-2000000002',
     thumbnail: 'https://http2.mlstatic.com/D_b.webp',
+    status: 'active',
     tags: ['good_quality_picture', 'brand_verified']
   },
   {
@@ -65,8 +69,29 @@ const scanAccount = [
     title: 'Anúncio de Catálogo',
     price: 999,
     permalink: 'https://produto.mercadolivre.com.br/MLB-2000000003',
+    status: 'active',
     thumbnail: 'https://http2.mlstatic.com/D_c.webp',
     tags: ['catalog_listing']
+  },
+  {
+    // PAUSADO com problema: precisa ser IGNORADO na varredura (você tirou do ar de propósito).
+    id: 'MLB2000000004',
+    title: 'Anúncio Pausado com Foto Ruim',
+    price: 75,
+    permalink: 'https://produto.mercadolivre.com.br/MLB-2000000004',
+    thumbnail: 'https://http2.mlstatic.com/D_d.webp',
+    status: 'paused',
+    tags: ['poor_quality_picture']
+  },
+  {
+    // ATIVO penalizado: entra no foco (é problema em anúncio no ar).
+    id: 'MLB2000000005',
+    title: 'Anúncio Ativo Penalizado',
+    price: 250,
+    permalink: 'https://produto.mercadolivre.com.br/MLB-2000000005',
+    thumbnail: 'https://http2.mlstatic.com/D_e.webp',
+    status: 'active',
+    tags: ['moderation_penalty']
   }
 ];
 
