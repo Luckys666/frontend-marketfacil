@@ -73,15 +73,15 @@
     color: #fff;
     border: none;
     border-radius: var(--sc-radius-sm) !important;
-    padding: 0 28px !important;
+    /* Alinhado ao botão-padrão do app (analyzer #analyzeButton): 10px 24px, 0.82rem, 0.5px — não "chunky" */
+    padding: 10px 24px !important;
     font-weight: 600;
-    font-size: 0.9rem;
-    height: 44px !important;
+    font-size: 0.82rem;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 102, 255, 0.25);
     transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.5px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -109,10 +109,12 @@
     color: #fff;
     border: none !important;
     border-radius: var(--sc-radius-sm) !important;
-    padding: 0 18px !important;
+    /* Mesma medida do #scanButton (padrão do app); verde é intencional (Proposta U: CSV verde) */
+    padding: 10px 18px !important;
     font-weight: 600;
-    font-size: 0.85rem;
-    height: 44px !important;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 214, 143, 0.25);
     transition: background .15s ease, box-shadow .15s ease;
