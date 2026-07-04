@@ -160,6 +160,10 @@ check('planCards conta anuncios pelo plan_items (2 na faixa B1)', /2 anúncio/.t
 
 // deep-link novo do painel ML (sem ?fe-rollout-version=v2 o ML manda pro hub)
 check('ML_ADD_ADS tem fe-rollout-version=v2', /fe-rollout-version=v2/.test(AA.ML_ADD_ADS));
+// 04/07/26: o ML passou a exigir TAMBÉM navigate_to=seller_central — sem ele TODOS os deep-links
+// redirecionam pro hub novo (ads.mercadolivre.com.br) e o usuário nunca chega na tela certa
+check('deep-links têm navigate_to=seller_central (ADD_ADS/CAMPAIGNS/DASH)',
+  /navigate_to=seller_central/.test(AA.ML_ADD_ADS) && /navigate_to=seller_central/.test(AA.ML_CAMPAIGNS) && /navigate_to=seller_central/.test(AA.ML_CAMPAIGN_DASH));
 check('ML_CAMPAIGNS aponta pra lista nova (sem /sales/)', AA.ML_CAMPAIGNS.indexOf('/admin/campaigns') !== -1 && AA.ML_CAMPAIGNS.indexOf('/sales/') === -1);
 
 // "selecionar visiveis" pula hold (sem estoque)

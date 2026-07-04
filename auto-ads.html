@@ -243,11 +243,13 @@
     PROXY: 'https://mlb-proxy-fdb71524fd60.herokuapp.com',
     TOKEN_WF: 'https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2',
     MINT_WF: 'https://app.marketfacil.com.br/api/1.1/wf/get-user-id',   // A2: token do usuário MarketFácil (X-MF-Auth)
-    // Painel ML (validado 09/06/26): a tela "Adicionar anúncios" exige ?fe-rollout-version=v2 —
-    // sem o param o ML redireciona pro hub geral e o usuário se perde.
-    ML_ADD_ADS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/sales/campaigns/{cid}/ads?fe-rollout-version=v2',
-    ML_CAMPAIGNS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns',
-    ML_CAMPAIGN_DASH: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns/{cid}/dashboard',
+    // Painel ML (revalidado 04/07/26): além do ?fe-rollout-version=v2, o ML passou a exigir
+    // &navigate_to=seller_central — sem ele o link redireciona pro hub novo do Mercado Ads
+    // (ads.mercadolivre.com.br/hub/summary) e o usuário nunca chega na tela "Adicionar anúncios".
+    // Era exatamente isso que quebrava o fluxo de colar os códigos.
+    ML_ADD_ADS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/sales/campaigns/{cid}/ads?fe-rollout-version=v2&navigate_to=seller_central',
+    ML_CAMPAIGNS: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns?navigate_to=seller_central&admin-version=v2',
+    ML_CAMPAIGN_DASH: 'https://www.mercadolivre.com.br/publicidade/product-ads/admin/campaigns/{cid}/dashboard?navigate_to=seller_central',
     BANDS: { B1:{label:'Econômico',color:'#16a34a'}, B2:{label:'Equilibrado',color:'#0066ff'},
              B3:{label:'Acelerado',color:'#f59e0b'}, B4:{label:'Máximo',color:'#ef4444'},
              NA:{label:'Nunca ativar',color:'#64748b'} },
