@@ -357,12 +357,13 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   const r3 = await AA.api('/api/auto-ads/ads');
   check('mint indisponível: chamada sai sem X-MF-Auth (não trava o fluxo)', r3.ok && proxyCalls === 1 && !lastHeaders['X-MF-Auth']);
 
-  // ---------- fracionamento da cópia em lotes (limite de 3500 chars do campo de busca do ML) ----------
+  // ---------- fracionamento da cópia em lotes (limite de 200 chars do campo de busca do ML novo, 04/07) ----------
   check('AA.chunkCsv existe', typeof AA.chunkCsv === 'function');
   const bigIds = Array.from({ length: 253 }, (_, i) => 'MLBU' + (1000000000 + i));   // ~3795 chars juntos
   const chunks = AA.chunkCsv(bigIds);
   check('chunkCsv divide lista grande em >1 lote', chunks.length > 1);
-  check('chunkCsv: todo lote cabe no limite real do ML (<=3500)', chunks.every((p) => p.length <= 3500));
+  check('chunkCsv: todo lote cabe no limite real do ML novo (<=200 chars)', chunks.every((p) => p.length <= 200));
+  check('CHUNK_LIMIT reflete o painel novo (195)', AA.CHUNK_LIMIT === 195);
   check('chunkCsv nao perde nem duplica codigo', chunks.join(',') === bigIds.join(','));
   const smallChunks = AA.chunkCsv(['MLBU1', 'MLBU2']);
   check('chunkCsv: lista pequena vira 1 lote so', smallChunks.length === 1 && smallChunks[0] === 'MLBU1,MLBU2');

@@ -580,9 +580,11 @@
     return '<details class="aa-more"><summary>'+esc(rotulo || ('ver anúncios ('+count+')'))+'</summary><ul class="aa-names" style="margin:0;">'+lis+'</ul>'+resto+'</details>';
   };
   // linha de faixa com ações Copiar/Abrir (usada no plano E no "dar mais força")
-  // o campo "Procurar por # ou título" do ML valida a busca em no máx. 3500 caracteres (erro 500 acima disso) —
-  // listas grandes (ex. saneamento) são fracionadas em lotes de ≤3450 chars e o botão cicla entre eles.
-  AA.CHUNK_LIMIT = 3450;
+  // ⚠️ o campo "Procurar por # ou título" do painel NOVO do ML valida a busca em no máx. 200
+  // caracteres (era 3500 no antigo; medido 04/07/26 — o servidor responde 400 "String must
+  // contain at most 200 character(s)" e a tela mostra ZERO linhas sem explicar). ~14 MLBs por
+  // lote; o botão cicla entre os lotes. O backend já manda só 1 código por família/grupo.
+  AA.CHUNK_LIMIT = 195;
   AA.chunkCsv = function(ids, limit){
     limit = limit || AA.CHUNK_LIMIT; var parts = [], cur = '';
     for (var i=0;i<(ids||[]).length;i++){ var id = String(ids[i]);
