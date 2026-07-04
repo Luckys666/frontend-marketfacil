@@ -54,6 +54,17 @@
   /* bloco multi-período (7/15/30d): TACOS + crescimento faturamento×investimento por período */
   .aa-macro-block{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
   .aa-macro-block .aa-macro-line{margin-top:0;}
+  /* halo: headline em R$ + tabela ads/orgânico/total/investido (espelha a visão TACOS do Mercado Ads) */
+  .aa-halo-msg{font-size:.85rem;color:var(--ink);line-height:1.45;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.22);border-radius:8px;padding:8px 10px;}
+  .aa-halo-table{margin-top:10px;display:flex;flex-direction:column;gap:2px;}
+  .aa-halo-row{display:grid;grid-template-columns:34px repeat(4,1fr);gap:6px;align-items:center;font-size:.8rem;color:var(--ink);}
+  .aa-halo-row > span{text-align:right;}
+  .aa-halo-row .aa-halo-lbl{text-align:left;font-weight:700;color:var(--muted);}
+  .aa-halo-thead{font-size:.7rem;color:var(--muted);border-bottom:1px solid rgba(0,0,0,.08);padding-bottom:3px;margin-bottom:2px;}
+  .aa-halo-inv{color:var(--muted);}
+  .aa-halo-tacos{margin-top:8px;font-size:.85rem;color:var(--muted);}
+  .aa-halo-legend{margin-top:6px;font-size:.7rem;color:var(--muted);opacity:.8;line-height:1.3;}
+  @media(max-width:480px){ .aa-halo-row{grid-template-columns:30px repeat(4,1fr);gap:3px;font-size:.72rem;} .aa-halo-thead{font-size:.62rem;} }
   /* score de saúde dos Ads */
   .aa-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px;}
   .aa-score{text-align:center;flex:none;}
@@ -680,6 +691,12 @@
     var probeSearch = d.probe_search_ids || {};
     var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
     var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
+    // CADÊNCIA (banco de estado): recém-movidos ficam coletando dados na faixa nova por alguns dias
+    // antes do próximo passo — informa em vez de sumir em silêncio ("apliquei e o card desapareceu")
+    var nWait = s.probe_waiting || 0;
+    var waitHint = nWait > 0
+      ? '<div class="aa-hint aa-probe-wait" style="margin-top:6px;">⏳ '+nWait+' anúncio'+(nWait===1?'':'s')+' que você moveu há pouco '+(nWait===1?'está coletando':'estão coletando')+' dados na faixa nova — volte em <b>'+(s.probe_ready_in_days!=null? s.probe_ready_in_days+' dia'+(s.probe_ready_in_days===1?'':'s') : 'alguns dias')+'</b> e gere o plano de novo pra ver o próximo passo.</div>'
+      : '';
     if (nProbe > 0){
       var probeBody = '';
       probeIds.forEach(function(cid){
@@ -688,7 +705,8 @@
       });
       stages.push({ id: 'probe', title: 'Dê mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s'),
         desc: 'Estão ativos mas quase não aparecem — mova-os pra faixa indicada. Depois de aplicar, dê alguns dias pro Mercado Livre reagir.',
-        body: probeBody });
+        body: probeBody + waitHint });
+      waitHint = '';   // já apareceu dentro da etapa — não repete fora
     }
 
     // etapa: reorganizar (o plano principal, ordenado pelo impacto)
@@ -750,7 +768,8 @@
       // equilíbrio (12/06): investimento subindo sem a receita acompanhar -> avisa que a alavanca
       // pausou; quem PROVOU escala (scalers) continua recebendo força e o aviso deixa isso claro
       + (s.balanced === false
-          ? '<div class="aa-hint" style="margin-top:6px;">⚖️ Seu investimento cresceu mais que o faturamento neste período — vamos segurar os aumentos até as vendas acompanharem (os ajustes pra baixo continuam).'
+          ? '<div class="aa-hint" style="margin-top:6px;">⚖️ Seu investimento cresceu mais que o faturamento <b>direto dos anúncios</b> — seguramos os aumentos por garantia até as vendas acompanharem (os ajustes pra baixo continuam).'
+            + ((s.periods && s.periods.d30 && s.periods.d30.totGrowth != null) ? ' <span style="opacity:.9;">O orgânico veio junto: faturamento total dos seus anúncios <b>' + fg(s.periods.d30.totGrowth) + '</b> no período.</span>' : '')
             + (s.scalers > 0 ? ' Os <b>' + s.scalers + '</b> anúncio(s) que estão vendendo mais quando recebem mais verba continuam sendo alimentados.' : '')
             + '</div>'
           : '')
@@ -765,6 +784,8 @@
         + '</ul></details>';
     }
     if (d.coverage && d.coverage.truncated) html += '<div class="aa-warn" style="margin-top:10px;">Sua conta tem muitos anúncios — analisei os '+(d.coverage.ads_evaluated||'')+' principais neste ciclo. Rode de novo depois de aplicar pra cobrir o restante.</div>';
+    // cadência sem etapa de força visível: mostra o aviso aqui (senão o usuário acha que sumiu)
+    if (waitHint) html += waitHint;
 
     // etapas numeradas
     if (!stages.length){
@@ -863,6 +884,7 @@
   // espelhando o painel do Mercado Livre. Usa s.periods (novo); fallback pro formato antigo (só 30d) se ausente.
   AA.macroPeriods = function(s){
     var fg = function(v){ return v==null ? '—' : ((v>0?'+':'')+v+'%'); };
+    var money = function(v){ return v==null ? '—' : ('R$ '+Math.abs(Math.round(v)).toLocaleString('pt-BR')); };  // sem sinal: a headline só aparece com valores positivos
     if (!s) return '';
     var P = s.periods;
     if (!P) {  // fallback durante o deploy: proxy antigo só manda costGrowthPct/revGrowthPct (30d)
@@ -871,17 +893,37 @@
       return '<div class="aa-macro-block"><div class="aa-macro-line"><b style="min-width:30px;">30d</b>'
         + '<span>faturamento <b style="color:'+c0+'">'+fg(s.revGrowthPct)+'</b> × investimento <b>'+fg(s.costGrowthPct)+'</b></span></div></div>';
     }
-    var tgt = s.target;
-    var line = function(lbl, p){
+    var tgt = s.target, d30 = P.d30 || {}, dl = s.deltas30;
+    // headline do halo (R$): só quando o investimento E o faturamento total subiram — aí a história "ao
+    // aumentar o ads o total/orgânico sobem junto" se sustenta com os dados. Caso contrário, omite (honesto).
+    var head = '';
+    if (dl && dl.invest > 0 && dl.total > 0) {
+      var orgUp = (d30.orgGrowth != null && d30.orgGrowth > 0);
+      head = '<div class="aa-halo-msg">💡 Você investiu <b>'+money(dl.invest)+'</b> a mais em ads e o faturamento total dos seus anúncios subiu <b style="color:var(--green)">'+money(dl.total)+'</b>'
+        + (orgUp ? ' — o orgânico veio junto (<b>'+fg(d30.orgGrowth)+'</b>), além das vendas dos próprios anúncios.' : '.')
+        + '</div>';
+    }
+    var row = function(lbl, p){
       if (!p) return '';
-      var tc = (p.tacos != null && tgt != null) ? (p.tacos <= tgt ? 'var(--green)' : 'var(--amber)') : 'inherit';
-      var gc = ((p.revGrowth||0) >= (p.costGrowth||0)) ? 'var(--green)' : 'var(--amber)';
-      return '<div class="aa-macro-line"><b style="min-width:30px;">'+lbl+'</b>'
-        + '<span>TACOS <b style="color:'+tc+'">'+ (p.tacos!=null? p.tacos+'%' : '—') +'</b></span>'
-        + '<span style="opacity:.4;">·</span>'
-        + '<span>faturamento <b style="color:'+gc+'">'+fg(p.revGrowth)+'</b> × investimento <b>'+fg(p.costGrowth)+'</b></span></div>';
+      var totCol = (p.totGrowth != null && p.costGrowth != null && p.totGrowth >= p.costGrowth) ? 'var(--green)' : 'var(--ink)';
+      return '<div class="aa-halo-row">'
+        + '<span class="aa-halo-lbl">'+lbl+'</span>'
+        + '<span>'+fg(p.revGrowth)+'</span>'
+        + '<span>'+fg(p.orgGrowth)+'</span>'
+        + '<span style="color:'+totCol+';font-weight:600;">'+fg(p.totGrowth)+'</span>'
+        + '<span class="aa-halo-inv">'+fg(p.costGrowth)+'</span>'
+        + '</div>';
     };
-    return '<div class="aa-macro-block">' + line('7d', P.d7) + line('15d', P.d15) + line('30d', P.d30) + '</div>';
+    var tc = (d30.tacos != null && tgt != null) ? (d30.tacos <= tgt ? 'var(--green)' : 'var(--amber)') : 'inherit';
+    return '<div class="aa-macro-block">'
+      + head
+      + '<div class="aa-halo-table">'
+      + '<div class="aa-halo-row aa-halo-thead"><span class="aa-halo-lbl"></span><span>ads</span><span>orgânico</span><span>total</span><span class="aa-halo-inv">investido</span></div>'
+      + row('7d', P.d7) + row('15d', P.d15) + row('30d', P.d30)
+      + '</div>'
+      + '<div class="aa-halo-tacos">TACOS 30d <b style="color:'+tc+'">'+ (d30.tacos!=null? d30.tacos+'%' : '—') +'</b>'+(tgt!=null?' (meta '+tgt+'%)':'')+'</div>'
+      + '<div class="aa-halo-legend">faturamento total = vendas via ads + vendas orgânicas dos mesmos anúncios</div>'
+      + '</div>';
   };
 
   // corpo da etapa "Reorganize" — o render envolve no wrapper de etapa; planIds já vêm ordenados por impacto
@@ -998,7 +1040,8 @@
       plan_weights:{ '1003':42.5, '1001':10.1 },
       budget_reductions:[ { key:'B2', label:'Equilibrado', campaign_id:1002, budget:30, suggested_budget:18 } ],
       summary:{ accountTacos:4.2, adsSharePct:38, target:tacos, shareCapHit:false, onboarding:false, costGrowthPct:40, revGrowthPct:120,
-        periods:{ d7:{ tacos:3.8, costGrowth:55, revGrowth:18 }, d15:{ tacos:4.0, costGrowth:48, revGrowth:30 }, d30:{ tacos:4.2, costGrowth:40, revGrowth:120 } },
+        periods:{ d7:{ tacos:3.8, costGrowth:55, revGrowth:18, orgGrowth:60, totGrowth:40 }, d15:{ tacos:4.0, costGrowth:48, revGrowth:30, orgGrowth:52, totGrowth:44 }, d30:{ tacos:4.2, costGrowth:40, revGrowth:120, orgGrowth:65, totGrowth:88 } },
+        deltas30:{ invest:1240, ads:2100, org:6800, total:8900 },
         balanced:true, moves:3, toNeverActivate:1, probes:1, noReach:1, sanitized:1 } };
   };
   AA.demoBands = function(){

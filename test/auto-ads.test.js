@@ -201,6 +201,20 @@ let renderProbeOk = true;
 try { AA.render(dpProbe); } catch (e) { renderProbeOk = false; }
 check('AA.render nao lanca com probe_items no plano', renderProbeOk);
 
+// ── cadência (banco de estado, 04/07): recém-movidos "coletando dados" ────────
+const dpWait = AA.demoPlan(3, null);
+dpWait.summary.probe_waiting = 2; dpWait.summary.probe_ready_in_days = 4;
+let waitHtml = '';
+try { AA.render(dpWait); waitHtml = byId('aa-out').innerHTML; } catch (e) { waitHtml = ''; }
+check('cadência: aviso "coletando dados" aparece junto da etapa de força', /aa-probe-wait/.test(waitHtml) && /4 dias/.test(waitHtml));
+check('cadência: aviso aparece UMA vez só (dentro da etapa, não repetido fora)', (waitHtml.match(/aa-probe-wait/g) || []).length === 1);
+const dpWait2 = AA.demoPlan(3, null);
+dpWait2.probe_items = {}; dpWait2.probe_search_ids = {}; dpWait2.probe_plan = {};
+dpWait2.summary.probe_waiting = 1; dpWait2.summary.probe_ready_in_days = 1;
+let waitHtml2 = '';
+try { AA.render(dpWait2); waitHtml2 = byId('aa-out').innerHTML; } catch (e) { waitHtml2 = ''; }
+check('cadência: sem etapa de força visível, o aviso aparece no topo (não some em silêncio)', /aa-probe-wait/.test(waitHtml2) && /1 dia\b/.test(waitHtml2));
+
 // guidedCreation marca o que ja existe quando bands_missing vem do backend
 const gc = AA.guidedCreation({ bands_missing: ['NA'] });
 check('guidedCreation destaca só o que falta (✓ já existe nas outras)', /já existe/.test(gc));
@@ -277,14 +291,24 @@ let html5 = byId('aa-out').innerHTML;
 check('render tem a etapa "Proteja 1 anúncio com aviso" (sanitize)', /Proteja 1 anúncio com aviso/.test(html5));
 check('etapa sanitize lista o código buscável do penalizado', /MLB1212121212/.test(html5));
 check('card "Pausados por você" presente e colapsado (details)', /Pausados por você \(1\)/.test(html5) && /fora da análise/.test(html5));
-check('balanced=true NÃO mostra aviso de equilíbrio', !/segurar os aumentos/.test(html5));
+check('balanced=true NÃO mostra aviso de equilíbrio', !/seguramos os aumentos/.test(html5));
 const dp6 = AA.demoPlan(3, null);
 dp6.summary.balanced = false;
 AA.render(dp6);
-check('balanced=false mostra o aviso de equilíbrio (investimento × faturamento)', /segurar os aumentos/.test(byId('aa-out').innerHTML));
+check('balanced=false mostra o aviso de equilíbrio (investimento × faturamento)', /seguramos os aumentos/.test(byId('aa-out').innerHTML));
+check('aviso de equilíbrio reescrito: "faturamento DIRETO dos anúncios"', /direto dos anúncios/.test(byId('aa-out').innerHTML));
 dp6.summary.scalers = 4;
 AA.render(dp6);
 check('aviso de equilíbrio menciona os scalers que continuam sendo alimentados', /<b>4<\/b> anúncio\(s\) que estão vendendo mais/.test(byId('aa-out').innerHTML));
+
+// ── halo (14/06): card ads × orgânico × total + headline em R$ (espelha visão TACOS do Mercado Ads) ──
+const haloHtml = byId('aa-out').innerHTML;   // dp6 tem periods (orgGrowth/totGrowth) + deltas30
+check('halo: tabela tem colunas ads/orgânico/total/investido', /orgânico/.test(haloHtml) && /investido/.test(haloHtml) && /aa-halo-row/.test(haloHtml));
+check('halo: linhas por período (7d/15d/30d) com orgGrowth/totGrowth', /aa-halo-row/.test(haloHtml) && (haloHtml.match(/aa-halo-row/g) || []).length >= 4);
+check('halo: headline em R$ conta a história (investiu + faturamento total dos anúncios)',
+  /investiu/.test(haloHtml) && /faturamento total dos seus anúncios/.test(haloHtml) && /R\$/.test(haloHtml));
+check('halo: legenda explica total = vendas via ads + vendas orgânicas', /vendas via ads \+ vendas orgânicas/.test(haloHtml));
+check('halo: TACOS 30d com meta presente', /TACOS 30d/.test(haloHtml) && /meta 3%/.test(haloHtml));
 
 // ── A2 (X-MF-Auth): mint + cache + header + retry-401 ─────────────────────────
 check('AA.MINT_WF aponta pro workflow get-user-id', /get-user-id$/.test(AA.MINT_WF));
