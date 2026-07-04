@@ -939,7 +939,10 @@
       + '<li><b>Copiar códigos</b> dos anúncios da faixa.</li>'
       + '<li><b>Abrir no ML →</b> abre a tela de adicionar anúncios daquela campanha.</li>'
       + '<li>Cole no campo de busca e aperte <b>Enter</b>. Depois <b>marque todos</b> e clique <b>Adicionar</b>.</li>'
-      + '<li>Repita pra cada faixa abaixo.</li></ol></details>';
+      + '<li>Repita pra cada faixa abaixo.</li></ol>'
+      // painel novo do ML (04/07): na 1ª visita do dia o link pode cair no resumo geral do Mercado Ads
+      + '<div class="aa-hint" style="margin:6px 0 0;">Se abrir o <b>resumo geral</b> do Mercado Ads em vez da tela de adicionar, entre uma vez em <b>Product Ads</b> pelo menu e clique <b>Abrir no ML →</b> de novo.</div>'
+      + '</details>';
     var planItems = d.plan_items || {};
     var planSearch = d.plan_search_ids || {};
     var totalMlbs = 0;
