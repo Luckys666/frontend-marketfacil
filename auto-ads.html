@@ -603,8 +603,12 @@
       copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="'+esc(lbl)+'" data-ids="'+esc((copyIds||[]).join(','))+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(lbl)+'</button>';
       hint = '<div class="aa-hint" style="margin-top:6px;">São muitos códigos pro Mercado Livre aceitar de uma vez — cole, clique <b>Adicionar</b>, depois volte aqui e copie o próximo lote ('+parts.length+' lotes no total).</div>';
     }
+    // nº de códigos pode ser MENOR que o de anúncios: família/variações entra em bloco no ML —
+    // 1 código traz a família toda na busca e o Adicionar leva todas as variações juntas
+    var nCodes = (copyIds||[]).length;
+    var countTxt = nCount + ' anúncio(s)' + (nCodes > 0 && nCodes !== nCount ? ' · ' + nCodes + ' código' + (nCodes===1?'':'s') : '');
     return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+nCount+' anúncio(s)</div></div></div>'
+      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+countTxt+'</div></div></div>'
       + '<div class="aa-band-actions">'
       + copyBtn
       + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>' + hint;
@@ -944,6 +948,7 @@
       + '<li>Repita pra cada faixa abaixo.</li></ol>'
       // painel novo do ML (04/07): na 1ª visita do dia o link pode cair no resumo geral do Mercado Ads
       + '<div class="aa-hint" style="margin:6px 0 0;">Se abrir o <b>resumo geral</b> do Mercado Ads em vez da tela de adicionar, entre uma vez em <b>Product Ads</b> pelo menu e clique <b>Abrir no ML →</b> de novo.</div>'
+      + '<div class="aa-hint" style="margin:6px 0 0;">Anúncio com <b>variações</b> entra em bloco: 1 código traz a família toda — por isso o nº de códigos pode ser menor que o de anúncios.</div>'
       + '</details>';
     var planItems = d.plan_items || {};
     var planSearch = d.plan_search_ids || {};

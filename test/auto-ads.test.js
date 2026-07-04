@@ -375,6 +375,10 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   check('bandActionRow grande NAO joga tudo num aaCopyText so', rowBig.indexOf('aaCopyText') === -1);
   const rowSmall = AA.bandActionRow('1001', null, 2, ['MLBU10', 'MLBU20']);
   check('bandActionRow pequeno mantem o botao simples (aaCopyText, sem ciclador)', /aaCopyText/.test(rowSmall) && rowSmall.indexOf('aaCopyChunk') === -1);
+  // famílias: nº de códigos < nº de anúncios -> a contagem mostra os dois (senão parece bug)
+  const rowFam = AA.bandActionRow('1001', null, 13, ['MLB1', 'MLB2', 'MLB3']);
+  check('bandActionRow mostra "N anúncio(s) · M códigos" quando família consolida', /13 anúncio\(s\) · 3 códigos/.test(rowFam));
+  check('bandActionRow contagem simples quando códigos == anúncios (sem ruído)', /2 anúncio\(s\)</.test(AA.bandActionRow('1001', null, 2, ['MLB1', 'MLB2'])));
   check('window.aaCopyChunk existe', typeof sandbox.aaCopyChunk === 'function');
 
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
