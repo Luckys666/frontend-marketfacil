@@ -279,9 +279,9 @@ AA.render(dpAdv);
 check('render seta AA.advertiserId a partir do plano (ciclo por conta)', AA.advertiserId === 55667 && AA.cycleKey() === 'mf_aa_cycle_55667');
 AA.advertiserId = 4242;
 
-// estado vazio: sem etapas -> "Tudo no lugar"
+// estado vazio: sem etapas -> "Tudo no lugar" (as contagens vêm dos *_plan = grupos)
 const dpEmpty = AA.demoPlan(3, null);
-dpEmpty.plan = {}; dpEmpty.plan_items = {}; dpEmpty.probe_items = {}; dpEmpty.budget_reductions = [];
+dpEmpty.plan = {}; dpEmpty.plan_items = {}; dpEmpty.probe_plan = {}; dpEmpty.probe_items = {}; dpEmpty.budget_reductions = [];
 dpEmpty.sanitize_plan = {}; dpEmpty.sanitize_items = {}; dpEmpty.paused = { count: 0, items: [] };
 let emptyOk = true;
 try { AA.render(dpEmpty); } catch (e) { emptyOk = false; }
@@ -375,10 +375,10 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   check('bandActionRow grande NAO joga tudo num aaCopyText so', rowBig.indexOf('aaCopyText') === -1);
   const rowSmall = AA.bandActionRow('1001', null, 2, ['MLBU10', 'MLBU20']);
   check('bandActionRow pequeno mantem o botao simples (aaCopyText, sem ciclador)', /aaCopyText/.test(rowSmall) && rowSmall.indexOf('aaCopyChunk') === -1);
-  // famílias: nº de códigos < nº de anúncios -> a contagem mostra os dois (senão parece bug)
-  const rowFam = AA.bandActionRow('1001', null, 13, ['MLB1', 'MLB2', 'MLB3']);
-  check('bandActionRow mostra "N anúncio(s) · M códigos" quando família consolida', /13 anúncio\(s\) · 3 códigos/.test(rowFam));
-  check('bandActionRow contagem simples quando códigos == anúncios (sem ruído)', /2 anúncio\(s\)</.test(AA.bandActionRow('1001', null, 2, ['MLB1', 'MLB2'])));
+  // contagem na UNIDADE do painel do ML (nCount = grupos/famílias = linhas do painel); nunca MLBs soltos
+  const rowFam = AA.bandActionRow('1001', null, 3, ['MLB1', 'MLB2', 'MLB3']);
+  check('bandActionRow mostra a contagem crua (3 anúncio(s)) sem "· M códigos"', /3 anúncio\(s\)</.test(rowFam) && !/·\s*\d+\s*código/.test(rowFam));
+  check('bandActionRow: contagem = nCount (grupos), não o tamanho de copyIds', /9 anúncio\(s\)</.test(AA.bandActionRow('1001', null, 9, ['MLB1'])));
   check('window.aaCopyChunk existe', typeof sandbox.aaCopyChunk === 'function');
 
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');

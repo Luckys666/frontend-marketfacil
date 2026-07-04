@@ -603,12 +603,11 @@
       copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="'+esc(lbl)+'" data-ids="'+esc((copyIds||[]).join(','))+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(lbl)+'</button>';
       hint = '<div class="aa-hint" style="margin-top:6px;">São muitos códigos pro Mercado Livre aceitar de uma vez — cole, clique <b>Adicionar</b>, depois volte aqui e copie o próximo lote ('+parts.length+' lotes no total).</div>';
     }
-    // nº de códigos pode ser MENOR que o de anúncios: família/variações entra em bloco no ML —
-    // 1 código traz a família toda na busca e o Adicionar leva todas as variações juntas
-    var nCodes = (copyIds||[]).length;
-    var countTxt = nCount + ' anúncio(s)' + (nCodes > 0 && nCodes !== nCount ? ' · ' + nCodes + ' código' + (nCodes===1?'':'s') : '');
+    // nCount JÁ vem na unidade do painel do ML (grupo/família = 1 linha) — o cliente compara com o
+    // que VÊ no ads, então nunca contamos MLBs soltos aqui (decisão Lucas 04/07: "9 no ads, se eu
+    // disser 13 ele acha que tá errado e me chama").
     return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+countTxt+'</div></div></div>'
+      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+nCount+' anúncio(s)</div></div></div>'
       + '<div class="aa-band-actions">'
       + copyBtn
       + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>' + hint;
@@ -660,8 +659,11 @@
     try { var _sp = document.getElementById('aa-setup'); if (_sp) _sp.classList.add('aa-collapsed'); } catch(e){}
     if (d.advertiser_id) AA.advertiserId = d.advertiser_id;   // ciclo/seleção chaveados por conta mesmo sem carregar a lista
     var s = d.summary || {};
-    // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou (conta MLBs)
-    var plan = d.plan_items || d.plan || {};
+    // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou.
+    // CONTAGEM = GRUPOS (a unidade que o painel do ML mostra: família consolidada = 1 linha) —
+    // decisão 04/07: o cliente compara os números com o que VÊ no painel; contar MLBs soltos
+    // ("13") quando o painel lista 9 linhas parece bug e gera chamado.
+    var plan = d.plan || d.plan_items || {};
     var movesNow = Object.keys(plan).reduce(function(t,k){ return t + ((plan[k]||[]).length); }, 0);
     var banner = extraBanner || '';
     if (AA._verifying && AA._prevMoves != null && d.bands_setup_ok){
@@ -679,26 +681,30 @@
     var stages = [];   // { id, title, desc, body, warn }
 
     // etapa: proteger anúncios com aviso (saneamento — "ou Econômico ou fora", decisão 12/06)
+    // conta GRUPOS (sanitize_plan = 1 por família = 1 linha no painel), copia os CÓDIGOS
+    var sanGrp = d.sanitize_plan || {};
     var san = d.sanitize_items || {};
     var sanSearch = d.sanitize_search_ids || {};
-    var sanIds = Object.keys(san).filter(function(c){ return (san[c]||[]).length; });
-    var nSan = sanIds.reduce(function(t,c){ return t + san[c].length; }, 0);
+    var sanIds = Object.keys(sanGrp).filter(function(c){ return (sanGrp[c]||[]).length; });
+    var nSan = sanIds.reduce(function(t,c){ return t + sanGrp[c].length; }, 0);
     if (nSan > 0){
       var sanBody = '';
       sanIds.forEach(function(cid){
-        var mlbs = san[cid] || [];
-        sanBody += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, sanSearch[cid] || mlbs);
+        var codes = sanSearch[cid] || san[cid] || [];
+        sanBody += AA.bandActionRow(cid, inv[String(cid)], (sanGrp[cid]||[]).length, codes);
       });
       stages.push({ id: 'sanitize', title: 'Proteja '+nSan+' anúncio'+(nSan===1?'':'s')+' com aviso',
         desc: 'Esses anúncios estão com aviso no Mercado Livre (em revisão ou sem exibição) e ocupam uma faixa de investimento alto. Mova pra faixa indicada: quando o aviso cair, eles voltam a aparecer no ritmo certo, sem gastar à toa.',
         body: sanBody });
     }
 
-    // etapa: dar mais força (anúncios parados)
+    // etapa: dar mais força (anúncios parados) — conta GRUPOS (probe_plan = 1 por família = 1 linha
+    // no painel do ML), copia os CÓDIGOS (probe_search_ids)
+    var probeGrp = d.probe_plan || {};
     var probe = d.probe_items || {};
     var probeSearch = d.probe_search_ids || {};
-    var probeIds = Object.keys(probe).filter(function(c){ return (probe[c]||[]).length; });
-    var nProbe = probeIds.reduce(function(t,c){ return t + probe[c].length; }, 0);
+    var probeIds = Object.keys(probeGrp).filter(function(c){ return (probeGrp[c]||[]).length; });
+    var nProbe = probeIds.reduce(function(t,c){ return t + probeGrp[c].length; }, 0);
     // CADÊNCIA (banco de estado): recém-movidos ficam coletando dados na faixa nova por alguns dias
     // antes do próximo passo — informa em vez de sumir em silêncio ("apliquei e o card desapareceu")
     var nWait = s.probe_waiting || 0;
@@ -708,8 +714,8 @@
     if (nProbe > 0){
       var probeBody = '';
       probeIds.forEach(function(cid){
-        var mlbs = probe[cid] || [];
-        probeBody += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, probeSearch[cid] || mlbs);
+        var codes = probeSearch[cid] || probe[cid] || [];
+        probeBody += AA.bandActionRow(cid, inv[String(cid)], (probeGrp[cid]||[]).length, codes);
       });
       stages.push({ id: 'probe', title: 'Dê mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s'),
         desc: 'Estão ativos mas quase não aparecem — mova-os pra faixa indicada. Depois de aplicar, dê alguns dias pro Mercado Livre reagir.',
@@ -717,14 +723,14 @@
       waitHint = '';   // já apareceu dentro da etapa — não repete fora
     }
 
-    // etapa: reorganizar (o plano principal, ordenado pelo impacto)
+    // etapa: reorganizar (o plano principal, ordenado pelo impacto) — conta GRUPOS (planMap = 1 por
+    // família = 1 linha no painel do ML), copia os CÓDIGOS (dentro de planCards via plan_search_ids)
     var planMap = d.plan || {};
-    var planItems = d.plan_items || {};
     var weights = d.plan_weights || {};
     var planIds = Object.keys(planMap).sort(function(a,b){ return (weights[b]||0) - (weights[a]||0); });
-    var totalMlbs = planIds.reduce(function(t,c){ return t + ((planItems[c]||planMap[c]||[]).length); }, 0);
+    var totalGrp = planIds.reduce(function(t,c){ return t + ((planMap[c]||[]).length); }, 0);
     if (planIds.length){
-      stages.push({ id: 'plan', title: 'Reorganize '+totalMlbs+' anúncio'+(totalMlbs===1?'':'s')+' entre as faixas',
+      stages.push({ id: 'plan', title: 'Reorganize '+totalGrp+' anúncio'+(totalGrp===1?'':'s')+' entre as faixas',
         desc: 'Cada anúncio vai pra faixa que a entrega dele sustenta — começando pelo que mais mexe no resultado.',
         body: AA.planCards(d, planIds) });
     }
@@ -757,7 +763,7 @@
       return ia - ib;
     });
     var stageIds = stages.map(function(st){ return st.id; });
-    var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalMlbs + nProbe + nSan }) : AA.loadCycle();
+    var cycle = stages.length ? AA.ensureCycle(stageIds, { score: d.health_score, moves: totalGrp + nProbe + nSan }) : AA.loadCycle();
     var doneMap = (cycle && cycle.done) || {};
 
     // header do artefato: score + estatísticas compactas
@@ -948,23 +954,15 @@
       + '<li>Repita pra cada faixa abaixo.</li></ol>'
       // painel novo do ML (04/07): na 1ª visita do dia o link pode cair no resumo geral do Mercado Ads
       + '<div class="aa-hint" style="margin:6px 0 0;">Se abrir o <b>resumo geral</b> do Mercado Ads em vez da tela de adicionar, entre uma vez em <b>Product Ads</b> pelo menu e clique <b>Abrir no ML →</b> de novo.</div>'
-      + '<div class="aa-hint" style="margin:6px 0 0;">Anúncio com <b>variações</b> entra em bloco: 1 código traz a família toda — por isso o nº de códigos pode ser menor que o de anúncios.</div>'
       + '</details>';
-    var planItems = d.plan_items || {};
     var planSearch = d.plan_search_ids || {};
-    var totalMlbs = 0;
     ids.forEach(function(cid){
-      var mlbs = planItems[cid] || plan[cid] || [];          // contagem amigável (anúncios/MLBs)
-      totalMlbs += mlbs.length;
-      html += AA.bandActionRow(cid, inv[String(cid)], mlbs.length, planSearch[cid] || mlbs);
+      // conta GRUPOS (plan[cid] = 1 por família = 1 linha no painel), copia os CÓDIGOS
+      html += AA.bandActionRow(cid, inv[String(cid)], (plan[cid]||[]).length, planSearch[cid] || plan[cid] || []);
     });
-    // variações do mesmo produto entram juntas (o ML agrupa) — evita o susto "marquei 2, apareceram 9"
-    if (d.selected_count != null && totalMlbs > d.selected_count){
-      html += '<div class="aa-hint">Você marcou '+d.selected_count+' e o plano tem '+totalMlbs+'? É normal: variações do mesmo produto andam juntas no Mercado Livre.</div>';
-    }
-    // quantos anúncios o plano manda pra faixa sem investimento (derivado do PRÓPRIO plano, tempo futuro)
+    // quantos anúncios o plano manda pra faixa sem investimento (grupos = linhas do painel, tempo futuro)
     var naCid = bci.NA != null ? String(bci.NA) : null;
-    var naCount = naCid && planItems[naCid] ? planItems[naCid].length : 0;
+    var naCount = naCid && plan[naCid] ? plan[naCid].length : 0;
     if (naCount > 0) html += '<div class="aa-hint" style="margin-top:10px;">'+naCount+' anúncio(s) vão pra faixa que não recebe investimento (estavam gastando sem retorno).</div>';
     return html;
   };
