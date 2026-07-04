@@ -17,6 +17,8 @@ clip-out.txt
 .claude/
 .codebase-memory/
 ruvector.db
+agentdb.rvf
+agentdb.rvf.lock
 
 # Secrets (defensive — não devem existir no repo)
 .env
