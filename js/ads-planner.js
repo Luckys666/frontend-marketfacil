@@ -2905,18 +2905,22 @@ window.recalcSimulator = function() {
 let _tableData = [];
 let _tableSort = { col: 'cost', dir: 'desc' };
 let _tablePage = 0;
-let _tableFilter = '';
-let _tableCampaignFilter = '';
 let _tableWatchlistOnly = false;
 let _tableCustomFilter = null; // {ids, label, hint} — usado por diversas ações (queimando/wasteful/roas<1/etc)
 let _allCampaigns = [];
 const TABLE_PAGE_SIZE = 20;
 
-function renderAdsTable(items, itemDetails, containerId, campaigns) {
-    _tableData = items.filter(i => i.has_ads);
-    const sidT = (items[0] && items[0].seller_id) || (window._currentOverview && window._currentOverview.seller_id) || '';
-    // Enrich with details
-    _tableData.forEach(item => {
+// Estado server-side da tabela: busca, filtro de campanha e paginação consultam
+// o /ads-items (conta INTEIRA no ML, 50 em 50) — nada além dos primeiros 50 é
+// carregado upfront. Sort, watchlist e filtros de alerta continuam client-side
+// sobre o que já foi acumulado.
+let _tableServer = { q: '', campaignId: '', offset: 0, mlTotal: 0, exhausted: true, loading: false, error: '' };
+let _tableInitialItems = null; // snapshot dos 50 iniciais (restore instantâneo ao limpar busca)
+let _tableSearchDebounce = null;
+
+function _adpEnrichTableItems(list, itemDetails) {
+    const sidT = (window._currentOverview && window._currentOverview.seller_id) || '';
+    list.forEach(item => {
         const d = itemDetails[item.item_id] || {};
         item._title = d.title || item.item_id;
         item._thumb = (d.thumbnail || '').replace(/^http:\/\//, 'https://');
@@ -2927,16 +2931,129 @@ function renderAdsTable(items, itemDetails, containerId, campaigns) {
         item._roas = item.cost > 0 ? item.revenue / item.cost : 0;
         item._trend = sidT ? rtGetItemTrend(sidT, item.item_id) : null;
     });
+    return list;
+}
+
+function renderAdsTable(items, itemDetails, containerId, campaigns) {
+    _tableData = _adpEnrichTableItems(items.filter(i => i.has_ads), itemDetails);
 
     // Collect unique campaigns for filter
     _allCampaigns = campaigns || [];
     _tablePage = 0;
-    _tableFilter = '';
-    _tableCampaignFilter = '';
     _tableWatchlistOnly = false;
     _tableCustomFilter = null;
+    _tableInitialItems = _tableData;
+    const totalWithAds = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
+    _tableServer = {
+        q: '', campaignId: '',
+        offset: _tableData.length,
+        mlTotal: totalWithAds,
+        exhausted: _tableData.length >= totalWithAds,
+        loading: false, error: ''
+    };
     _renderTableUI(containerId);
 }
+
+// Mapeia a response crua do /ads-items pro shape usado pela tabela e registra
+// title/thumb/permalink em _currentItemDetails (vêm na própria response).
+function _adpMapServerItems(rawItems) {
+    const mapped = [];
+    for (const it of rawItems || []) {
+        if (!it.item_id) continue;
+        _currentItemDetails[it.item_id] = {
+            title: it.title || '',
+            thumbnail: it.thumbnail || '',
+            permalink: it.permalink || '',
+            price: it.price || 0,
+            original_price: 0,
+            category_id: ''
+        };
+        mapped.push({
+            item_id: it.item_id, has_ads: true, campaign_id: it.campaign_id,
+            status: it.status, current_level: it.current_level,
+            cost: it.cost || 0, revenue: it.revenue || 0, organic_revenue: it.organic_revenue || 0,
+            clicks: it.clicks || 0, impressions: it.impressions || 0,
+            orders: it.orders || 0, organic_orders: it.organic_orders || 0,
+            acos: it.acos || 0, ctr: it.ctr || 0, cvr: it.cvr || 0,
+            roas: it.roas || 0, cpc: it.cpc || 0
+        });
+    }
+    return _adpEnrichTableItems(mapped, _currentItemDetails);
+}
+
+// Busca no servidor (conta inteira) com o estado atual de q/campanha.
+// append=true pagina (próximos 50); senão substitui o dataset.
+async function _adpTableServerFetch(containerId, opts) {
+    const append = !!(opts && opts.append);
+    const myQ = (_tableServer.q || '').trim();
+    const myCampaign = _tableServer.campaignId || '';
+    _tableServer.loading = true;
+    _tableServer.error = '';
+    if (!append) { _tablePage = 0; _tableCustomFilter = null; _tableWatchlistOnly = false; }
+    _renderTableUI(containerId);
+    try {
+        const token = await fetchAccessToken();
+        if (!token) throw new Error('Token indisponível');
+        const ov = window._currentOverview || {};
+        const params = {
+            limit: 50,
+            offset: append ? _tableServer.offset : 0,
+            sort_by: 'cost', sort: 'desc',
+            advertiser_id: ov.advertiser_id || undefined,
+            site_id: ov.site_id || undefined
+        };
+        if (myQ) params.q = myQ;
+        if (myCampaign) params.filters = { campaign_id: myCampaign };
+        const resp = await fetchAdsItemsPage(token, params);
+        // Descarta resposta atrasada se o usuário já mudou a busca nesse meio tempo
+        if ((_tableServer.q || '').trim() !== myQ || (_tableServer.campaignId || '') !== myCampaign) return;
+        const fresh = _adpMapServerItems(resp.items || []);
+        if (append) {
+            const seen = new Set(_tableData.map(i => i.item_id));
+            for (const it of fresh) { if (!seen.has(it.item_id)) _tableData.push(it); }
+        } else {
+            _tableData = fresh;
+        }
+        const returned = (resp.paging && resp.paging.returned) || fresh.length;
+        _tableServer.offset = (append ? _tableServer.offset : 0) + returned;
+        _tableServer.mlTotal = (resp.paging && resp.paging.ml_total) || _tableData.length;
+        _tableServer.exhausted = !!(resp.paging && resp.paging.exhausted) || returned === 0 ||
+            (_tableServer.mlTotal > 0 && _tableServer.offset >= _tableServer.mlTotal);
+        _tableServer.loading = false;
+        _renderTableUI(containerId);
+    } catch (e) {
+        console.warn('Busca server-side de anúncios falhou:', e);
+        _tableServer.loading = false;
+        _tableServer.error = 'Não foi possível buscar no Mercado Livre agora. Tente de novo em instantes.';
+        _renderTableUI(containerId);
+    }
+}
+
+// Volta pro dataset inicial (top-50 por gasto) sem refetch.
+function _adpTableRestoreInitial(containerId) {
+    if (_tableInitialItems) _tableData = _tableInitialItems;
+    const totalWithAds = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
+    _tableServer = {
+        q: '', campaignId: '',
+        offset: _tableData.length,
+        mlTotal: totalWithAds,
+        exhausted: _tableData.length >= totalWithAds,
+        loading: false, error: ''
+    };
+    _tablePage = 0;
+    _renderTableUI(containerId);
+}
+
+window.adpTableLoadMore = function(containerId) {
+    if (_tableServer.loading || _tableServer.exhausted) return;
+    const goNext = () => {
+        const total = _getFilteredSorted().length;
+        const pages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+        _tablePage = Math.min(_tablePage + 1, pages - 1);
+        _renderTableUI(containerId);
+    };
+    _adpTableServerFetch(containerId, { append: true }).then(goNext);
+};
 
 function _getFilteredSorted() {
     let data = _tableData;
@@ -2949,13 +3066,8 @@ function _getFilteredSorted() {
         const watchIds = sid ? rtGet(sid, 'watchlist', []) : [];
         data = data.filter(i => watchIds.indexOf(i.item_id) >= 0);
     }
-    if (_tableCampaignFilter) {
-        data = data.filter(i => i.campaign_id === _tableCampaignFilter);
-    }
-    if (_tableFilter) {
-        const f = _tableFilter.toLowerCase();
-        data = data.filter(i => i._title.toLowerCase().includes(f) || i.item_id.toLowerCase().includes(f));
-    }
+    // Busca (q) e filtro de campanha não filtram mais aqui: são server-side via
+    // /ads-items (_adpTableServerFetch) — o dataset já chega filtrado da conta inteira.
     const col = _tableSort.col;
     const dir = _tableSort.dir === 'asc' ? 1 : -1;
     data.sort((a, b) => {
@@ -3044,7 +3156,7 @@ function _renderTableUI(containerId) {
     // Campaign filter dropdown
     let campaignOptions = '<option value="">Todas as campanhas</option>';
     for (const c of _allCampaigns) {
-        const sel = _tableCampaignFilter === c.campaign_id ? ' selected' : '';
+        const sel = String(_tableServer.campaignId) === String(c.campaign_id) ? ' selected' : '';
         campaignOptions += `<option value="${c.campaign_id}"${sel}>${escapeHtml(c.name || 'Campanha ' + c.campaign_id)}</option>`;
     }
 
@@ -3062,7 +3174,7 @@ function _renderTableUI(containerId) {
     let html = `<div class="adp-table-container">
         ${customFilterBanner}
         <div class="adp-table-toolbar">
-            <input type="text" class="adp-table-search" placeholder="Buscar an\u00fancio..." value="${escapeHtml(_tableFilter)}" oninput="window.filterAdsTable(this.value, '${containerId}')">
+            <input type="text" class="adp-table-search" id="adp-table-search-input" placeholder="Buscar na conta inteira (t\u00edtulo ou MLB)..." value="${escapeHtml(_tableServer.q)}" oninput="window.filterAdsTable(this.value, '${containerId}')">
             <select class="adp-table-search" style="min-width:180px;" onchange="window.filterAdsCampaign(this.value, '${containerId}')">${campaignOptions}</select>
             <button class="adp-btn-watchlist ${_tableWatchlistOnly ? 'active' : ''}" onclick="window.toggleWatchlistFilter('${containerId}')" title="Mostrar apenas an\u00fancios em observa\u00e7\u00e3o" ${watchCount === 0 ? 'disabled' : ''}>
                 ${_tableWatchlistOnly ? '\u2b50' : '\u2606'} ${_tableWatchlistOnly ? 'Observando' : 'Em observa\u00e7\u00e3o'}${watchCount > 0 ? ` <span class="adp-btn-badge">${watchCount}</span>` : ''}
@@ -3076,6 +3188,8 @@ function _renderTableUI(containerId) {
                 <button class="adp-btn-csv" onclick="window.exportAdsCsv()">CSV</button>
             </div>
         </div>
+        ${_tableServer.loading ? `<div style="padding:8px 12px;font-size:0.72rem;color:var(--text-muted);display:flex;align-items:center;gap:8px;"><span class="adp-loading-spinner" style="width:14px;height:14px;border-width:2px;"></span> Buscando anúncios no Mercado Livre…</div>` : ''}
+        ${_tableServer.error ? `<div style="padding:8px 12px;font-size:0.72rem;color:var(--red);">${escapeHtml(_tableServer.error)} <a href="javascript:void(0)" onclick="window.adpTableRetrySearch('${containerId}')" style="color:var(--blue,#0066ff);font-weight:700;">Tentar de novo</a></div>` : ''}
         <div class="adp-table-scroll">
             <table class="adp-table">
                 <thead><tr>
@@ -3140,24 +3254,51 @@ function _renderTableUI(containerId) {
         </tr>`;
     }
 
+    if (pageData.length === 0 && !_tableServer.loading) {
+        const emptyMsg = _tableServer.error ? 'A busca falhou \u2014 tente de novo acima.'
+            : ((_tableServer.q || '').trim() || _tableServer.campaignId)
+                ? 'Nenhum an\u00fancio encontrado na conta pra essa busca/filtro no per\u00edodo.'
+                : 'Nenhum an\u00fancio com Product Ads no per\u00edodo.';
+        html += `<tr><td colspan="14" style="text-align:center;padding:24px;font-size:0.75rem;color:var(--text-muted);">${emptyMsg}</td></tr>`;
+    }
+
     html += `</tbody></table></div>`;
 
-    // Pagination
-    if (totalPages > 1) {
+    // Pagination \u2014 client-side sobre o acumulado; quando o servidor ainda tem
+    // mais an\u00fancios pra esse q/campanha, a seta final busca os pr\u00f3ximos 50.
+    const serverHasMore = !_tableServer.exhausted && !_tableCustomFilter && !_tableWatchlistOnly;
+    if (totalPages > 1 || serverHasMore) {
+        const atLastPage = page >= totalPages - 1;
+        const nextArrow = (atLastPage && serverHasMore)
+            ? `<button class="adp-pagination-btn" onclick="window.adpTableLoadMore('${containerId}')" ${_tableServer.loading ? 'disabled' : ''} title="Buscar mais 50 an\u00fancios no Mercado Livre">\u2192</button>`
+            : `<button class="adp-pagination-btn" onclick="window.goAdsTablePage(${page + 1},'${containerId}')" ${atLastPage ? 'disabled' : ''}>\u2192</button>`;
+        const totalHint = serverHasMore && _tableServer.mlTotal > data.length
+            ? ` <span style="opacity:.65;">\u00b7 ${_tableServer.mlTotal.toLocaleString('pt-BR')} na conta</span>` : '';
         html += `<div class="adp-pagination">
-            <span>${start + 1}-${Math.min(start + TABLE_PAGE_SIZE, data.length)} de ${data.length}</span>
+            <span>${data.length === 0 ? 0 : start + 1}-${Math.min(start + TABLE_PAGE_SIZE, data.length)} de ${data.length}${totalHint}</span>
             <div class="adp-pagination-btns">
                 <button class="adp-pagination-btn" onclick="window.goAdsTablePage(${page - 1},'${containerId}')" ${page === 0 ? 'disabled' : ''}>\u2190</button>`;
         for (let p = 0; p < totalPages && p < 5; p++) {
             html += `<button class="adp-pagination-btn ${p === page ? 'active' : ''}" onclick="window.goAdsTablePage(${p},'${containerId}')">${p + 1}</button>`;
         }
-        html += `<button class="adp-pagination-btn" onclick="window.goAdsTablePage(${page + 1},'${containerId}')" ${page >= totalPages - 1 ? 'disabled' : ''}>\u2192</button>
+        html += nextArrow + `
             </div>
         </div>`;
     }
 
     html += '</div>';
+
+    // Preserva foco/caret do campo de busca atrav\u00e9s do re-render (innerHTML destr\u00f3i o input)
+    const searchWasFocused = document.activeElement && document.activeElement.id === 'adp-table-search-input';
     container.innerHTML = html;
+    if (searchWasFocused) {
+        const inp = document.getElementById('adp-table-search-input');
+        if (inp) {
+            inp.focus();
+            const end = inp.value.length;
+            try { inp.setSelectionRange(end, end); } catch (_) {}
+        }
+    }
 }
 
 window.sortAdsTable = function(col, containerId) {
@@ -3171,9 +3312,26 @@ window.sortAdsTable = function(col, containerId) {
 };
 
 window.filterAdsTable = function(val, containerId) {
-    _tableFilter = val;
-    _tablePage = 0;
-    _renderTableUI(containerId);
+    // Busca server-side (conta inteira): título vira filters[q], MLB vira
+    // filters[item_id] — resolvido no proxy. Debounce pra não martelar a API
+    // a cada tecla; sem re-render aqui (re-render por keystroke perdia o foco).
+    _tableServer.q = val;
+    clearTimeout(_tableSearchDebounce);
+    _tableSearchDebounce = setTimeout(() => {
+        if (!(_tableServer.q || '').trim() && !_tableServer.campaignId) {
+            _adpTableRestoreInitial(containerId);
+            return;
+        }
+        _adpTableServerFetch(containerId);
+    }, 550);
+};
+
+window.adpTableRetrySearch = function(containerId) {
+    if (!(_tableServer.q || '').trim() && !_tableServer.campaignId) {
+        _adpTableRestoreInitial(containerId);
+        return;
+    }
+    _adpTableServerFetch(containerId);
 };
 
 window.toggleWatchlistFilter = function(containerId) {
@@ -3182,13 +3340,21 @@ window.toggleWatchlistFilter = function(containerId) {
     _renderTableUI(containerId);
 };
 
-// Aplica um filtro customizado na tabela, limpa outros filtros, rola até a tabela
+// Aplica um filtro customizado na tabela, limpa outros filtros, rola até a tabela.
+// Os ids vêm dos alertas/rankings (gerados sobre os 50 iniciais) — restaura o
+// dataset inicial pra garantir que todos estejam presentes.
 function _applyCustomFilter(ids, label, hint) {
     if (!ids || !ids.length) return;
+    if (_tableInitialItems) _tableData = _tableInitialItems;
+    _tableServer.q = '';
+    _tableServer.campaignId = '';
+    _tableServer.offset = _tableData.length;
+    _tableServer.mlTotal = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
+    _tableServer.exhausted = _tableData.length >= _tableServer.mlTotal;
+    _tableServer.loading = false;
+    _tableServer.error = '';
     _tableCustomFilter = { ids, label, hint };
     _tableWatchlistOnly = false;
-    _tableCampaignFilter = '';
-    _tableFilter = '';
     _tablePage = 0;
     _renderTableUI('adp-table');
     const table = document.getElementById('adp-table');
@@ -3215,7 +3381,7 @@ window.adpFilterWasteful = function(idsCsv) {
 
 // Filtra an\u00fancios que est\u00e3o queimando dinheiro (gasto alto sem venda)
 window.adpFilterBurningAds = function() {
-    const items = _tableData.filter(i => (i.cost || 0) > 30 && (i.orders || 0) === 0);
+    const items = (_tableInitialItems || _tableData).filter(i => (i.cost || 0) > 30 && (i.orders || 0) === 0);
     const ids = items.map(i => i.item_id);
     if (!ids.length) return;
     _applyCustomFilter(ids, `\ud83d\udd25 ${ids.length} an\u00fancio${ids.length > 1 ? 's' : ''} queimando dinheiro`, '(mais de R$ 30 gastos sem nenhuma venda)');
@@ -3223,18 +3389,22 @@ window.adpFilterBurningAds = function() {
 
 // Filtra an\u00fancios com ROAS abaixo de 1 (dando preju\u00edzo)
 window.adpFilterLowRoas = function() {
-    const items = _tableData.filter(i => (i._roas || 0) > 0 && (i._roas || 0) < 1 && (i.cost || 0) > 5);
+    const items = (_tableInitialItems || _tableData).filter(i => (i._roas || 0) > 0 && (i._roas || 0) < 1 && (i.cost || 0) > 5);
     const ids = items.map(i => i.item_id);
     if (!ids.length) return;
     _applyCustomFilter(ids, `\ud83d\udcc9 ${ids.length} an\u00fancio${ids.length > 1 ? 's' : ''} com ROAS abaixo de 1`, '(gastando mais do que faturam)');
 };
 
-// Filtra an\u00fancios de uma campanha espec\u00edfica (por ID)
+// Filtra an\u00fancios de uma campanha espec\u00edfica (por ID) \u2014 server-side:
+// mostra TODOS os an\u00fancios da campanha, n\u00e3o s\u00f3 os do top-50 carregado.
 window.adpFilterByCampaign = function(campaignId, campaignName) {
-    const items = _tableData.filter(i => String(i.campaign_id) === String(campaignId));
-    const ids = items.map(i => i.item_id);
-    if (!ids.length) return;
-    _applyCustomFilter(ids, `\ud83d\udccc ${ids.length} an\u00fancio${ids.length > 1 ? 's' : ''} da campanha "${campaignName}"`, '');
+    window.filterAdsCampaign(String(campaignId || ''), 'adp-table');
+    const table = document.getElementById('adp-table');
+    if (table) {
+        table.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        table.classList.add('adp-highlight-flash');
+        setTimeout(() => table.classList.remove('adp-highlight-flash'), 2000);
+    }
 };
 
 // Filtra an\u00fancios de m\u00faltiplas campanhas (usado por health check)
@@ -3246,7 +3416,7 @@ window.adpFilterBadCampaigns = function(idsCsv) {
 // Filtra a tabela para mostrar apenas um an\u00fancio espec\u00edfico (usado por alertas de item)
 window.adpFilterSingleItem = function(itemId) {
     if (!itemId) return;
-    const item = _tableData.find(i => i.item_id === itemId);
+    const item = (_tableInitialItems || _tableData).find(i => i.item_id === itemId);
     const title = item && item._title ? item._title.slice(0, 40) : itemId;
     _applyCustomFilter([itemId], `\ud83d\udd0d Anúncio: ${title}`, '');
 };
@@ -3270,9 +3440,16 @@ window.adpFilterLowCvr = function() {
 };
 
 window.filterAdsCampaign = function(val, containerId) {
-    _tableCampaignFilter = val;
-    _tablePage = 0;
-    _renderTableUI(containerId);
+    // Filtro de campanha server-side: mostra TODOS os anúncios da campanha
+    // (não só os que estavam entre os 50 carregados).
+    _tableServer.campaignId = val || '';
+    _tableCustomFilter = null;
+    _tableWatchlistOnly = false;
+    if (!_tableServer.campaignId && !(_tableServer.q || '').trim()) {
+        _adpTableRestoreInitial(containerId);
+        return;
+    }
+    _adpTableServerFetch(containerId);
 };
 
 window.goAdsTablePage = function(page, containerId) {
@@ -5266,16 +5443,16 @@ function renderFullDashboard(overview, itemDetails, visitsData) {
     const now = new Date();
     const timestamp = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' \u2014 ' + now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    // Banner informativo: KPIs cobrem 100% da conta (via /ads-aggregated), mas a
-    // tabela e ranking nesta versão exibem amostra dos N anúncios mais ativos por gasto.
-    // Paginação total é Fase 3.
+    // Banner informativo: KPIs cobrem 100% da conta (via /ads-aggregated); a
+    // tabela começa nos N mais ativos por gasto e busca/campanha/paginação
+    // consultam a conta inteira no ML sob demanda (50 em 50).
     const totalWithAds = Number(overview.total_items_with_ads) || 0;
     const sampled = Number(overview.items_sampled) || 0;
     const showSampleBanner = totalWithAds > 0 && sampled > 0 && sampled < totalWithAds;
     const truncationBanner = showSampleBanner ? `
         <div style="background:#dbeafe;border:1px solid #3b82f6;color:#1e3a8a;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;line-height:1.45;">
             <strong>ℹ Métricas agregadas (TACOS, ROAS, totais e gráficos) refletem 100% dos seus ${totalWithAds.toLocaleString('pt-BR')} anúncios em Product Ads.</strong>
-            A tabela detalhada e os rankings abaixo mostram os ${sampled.toLocaleString('pt-BR')} anúncios mais ativos por gasto. Use os filtros pra navegar pelo restante.
+            A tabela detalhada começa nos ${sampled.toLocaleString('pt-BR')} anúncios mais ativos por gasto — a busca (título ou MLB), o filtro de campanha e a paginação consultam todos os seus anúncios direto no Mercado Livre.
         </div>` : '';
 
     // Build page structure — grouped into logical blocks
