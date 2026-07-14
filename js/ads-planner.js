@@ -2914,7 +2914,7 @@ const TABLE_PAGE_SIZE = 20;
 // o /ads-items (conta INTEIRA no ML, 50 em 50) — nada além dos primeiros 50 é
 // carregado upfront. Sort, watchlist e filtros de alerta continuam client-side
 // sobre o que já foi acumulado.
-let _tableServer = { q: '', campaignId: '', offset: 0, mlTotal: 0, exhausted: true, loading: false, error: '' };
+let _tableServer = { q: '', campaignId: '', sortBy: 'COST', sortDir: 'desc', minCost: 0, minRevenue: 0, offset: 0, mlTotal: 0, exhausted: true, loading: false, error: '' };
 let _tableInitialItems = null; // snapshot dos 50 iniciais (restore instantâneo ao limpar busca)
 let _tableSearchDebounce = null;
 
@@ -2943,9 +2943,11 @@ function renderAdsTable(items, itemDetails, containerId, campaigns) {
     _tableWatchlistOnly = false;
     _tableCustomFilter = null;
     _tableInitialItems = _tableData;
+    _tableSort = { col: 'cost', dir: 'desc' };
     const totalWithAds = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
     _tableServer = {
         q: '', campaignId: '',
+        sortBy: 'COST', sortDir: 'desc', minCost: 0, minRevenue: 0,
         offset: _tableData.length,
         mlTotal: totalWithAds,
         exhausted: _tableData.length >= totalWithAds,
@@ -2987,6 +2989,7 @@ async function _adpTableServerFetch(containerId, opts) {
     const append = !!(opts && opts.append);
     const myQ = (_tableServer.q || '').trim();
     const myCampaign = _tableServer.campaignId || '';
+    const mySort = (_tableServer.sortBy || 'COST') + ':' + (_tableServer.sortDir || 'desc');
     _tableServer.loading = true;
     _tableServer.error = '';
     if (!append) { _tablePage = 0; _tableCustomFilter = null; _tableWatchlistOnly = false; }
@@ -2998,15 +3001,27 @@ async function _adpTableServerFetch(containerId, opts) {
         const params = {
             limit: 50,
             offset: append ? _tableServer.offset : 0,
-            sort_by: 'cost', sort: 'desc',
+            sort_by: _tableServer.sortBy || 'cost',
+            sort: _tableServer.sortDir || 'desc',
             advertiser_id: ov.advertiser_id || undefined,
             site_id: ov.site_id || undefined
         };
-        if (myQ) params.q = myQ;
+        if (myQ) {
+            params.q = myQ;
+        } else {
+            // Filtros de atividade só valem pro sort de razões (ROAS/ACOS/TACOS);
+            // na busca eles poderiam esconder o anúncio procurado (ex.: MLB sem gasto).
+            if (_tableServer.minCost) params.min_cost = _tableServer.minCost;
+            if (_tableServer.minRevenue) params.min_revenue = _tableServer.minRevenue;
+        }
         if (myCampaign) params.filters = { campaign_id: myCampaign };
         const resp = await fetchAdsItemsPage(token, params);
-        // Descarta resposta atrasada se o usuário já mudou a busca nesse meio tempo
-        if ((_tableServer.q || '').trim() !== myQ || (_tableServer.campaignId || '') !== myCampaign) return;
+        // Descarta resposta atrasada se o usuário já mudou busca/filtro/sort nesse meio tempo
+        if ((_tableServer.q || '').trim() !== myQ || (_tableServer.campaignId || '') !== myCampaign ||
+            ((_tableServer.sortBy || 'COST') + ':' + (_tableServer.sortDir || 'desc')) !== mySort) return;
+        if (resp.paging && resp.paging.partial_error && !(resp.items || []).length) {
+            throw new Error('O Mercado Livre não respondeu agora.');
+        }
         const fresh = _adpMapServerItems(resp.items || []);
         if (append) {
             const seen = new Set(_tableData.map(i => i.item_id));
@@ -3032,9 +3047,11 @@ async function _adpTableServerFetch(containerId, opts) {
 // Volta pro dataset inicial (top-50 por gasto) sem refetch.
 function _adpTableRestoreInitial(containerId) {
     if (_tableInitialItems) _tableData = _tableInitialItems;
+    _tableSort = { col: 'cost', dir: 'desc' };
     const totalWithAds = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
     _tableServer = {
         q: '', campaignId: '',
+        sortBy: 'COST', sortDir: 'desc', minCost: 0, minRevenue: 0,
         offset: _tableData.length,
         mlTotal: totalWithAds,
         exhausted: _tableData.length >= totalWithAds,
@@ -3042,6 +3059,12 @@ function _adpTableRestoreInitial(containerId) {
     };
     _tablePage = 0;
     _renderTableUI(containerId);
+}
+
+// Sort atual é o default (custo desc)? Decide se limpar a busca pode só
+// restaurar o dataset inicial ou se precisa re-buscar mantendo a ordenação.
+function _adpServerSortIsDefault() {
+    return (!_tableServer.sortBy || _tableServer.sortBy === 'COST') && ((_tableServer.sortDir || 'desc') === 'desc');
 }
 
 window.adpTableLoadMore = function(containerId) {
@@ -3301,6 +3324,15 @@ function _renderTableUI(containerId) {
     }
 }
 
+// Colunas com sort server-side (conta inteira via /ads-items). TACOS/CTR/CVR o
+// proxy resolve com varredura completa + sort local; as demais são nativas do ML.
+// _title fica de fora (sort client sobre o carregado).
+const ADP_SORT_SERVER = {
+    _roas: 'ROAS', acos: 'ACOS', _tacos: 'TACOS',
+    cost: 'COST', revenue: 'REVENUE', impressions: 'IMPRESSIONS',
+    ctr: 'CTR', cvr: 'CVR', _price: 'PRICE'
+};
+
 window.sortAdsTable = function(col, containerId) {
     if (_tableSort.col === col) {
         _tableSort.dir = _tableSort.dir === 'asc' ? 'desc' : 'asc';
@@ -3308,6 +3340,19 @@ window.sortAdsTable = function(col, containerId) {
         _tableSort = { col, dir: 'desc' };
     }
     _tablePage = 0;
+    const serverField = ADP_SORT_SERVER[col];
+    if (serverField && !_tableCustomFilter && !_tableWatchlistOnly) {
+        _tableServer.sortBy = serverField;
+        _tableServer.sortDir = _tableSort.dir;
+        // Razões sem gasto/venda viram 0 e poluem o topo do sort: exige atividade
+        // (gastou sem vender não tem ROAS/ACOS/TACOS definido — vive no alerta
+        // "queimando dinheiro", não no topo da ordenação).
+        const isRatio = serverField === 'ROAS' || serverField === 'ACOS' || serverField === 'TACOS';
+        _tableServer.minCost = isRatio ? 0.01 : 0;
+        _tableServer.minRevenue = isRatio ? 0.01 : 0;
+        _adpTableServerFetch(containerId);
+        return;
+    }
     _renderTableUI(containerId);
 };
 
@@ -3318,7 +3363,7 @@ window.filterAdsTable = function(val, containerId) {
     _tableServer.q = val;
     clearTimeout(_tableSearchDebounce);
     _tableSearchDebounce = setTimeout(() => {
-        if (!(_tableServer.q || '').trim() && !_tableServer.campaignId) {
+        if (!(_tableServer.q || '').trim() && !_tableServer.campaignId && _adpServerSortIsDefault()) {
             _adpTableRestoreInitial(containerId);
             return;
         }
@@ -3327,7 +3372,7 @@ window.filterAdsTable = function(val, containerId) {
 };
 
 window.adpTableRetrySearch = function(containerId) {
-    if (!(_tableServer.q || '').trim() && !_tableServer.campaignId) {
+    if (!(_tableServer.q || '').trim() && !_tableServer.campaignId && _adpServerSortIsDefault()) {
         _adpTableRestoreInitial(containerId);
         return;
     }
@@ -3348,6 +3393,10 @@ function _applyCustomFilter(ids, label, hint) {
     if (_tableInitialItems) _tableData = _tableInitialItems;
     _tableServer.q = '';
     _tableServer.campaignId = '';
+    _tableServer.sortBy = 'COST';
+    _tableServer.sortDir = 'desc';
+    _tableServer.minCost = 0;
+    _tableServer.minRevenue = 0;
     _tableServer.offset = _tableData.length;
     _tableServer.mlTotal = (window._currentOverview && window._currentOverview.total_items_with_ads) || _tableData.length;
     _tableServer.exhausted = _tableData.length >= _tableServer.mlTotal;
@@ -3445,7 +3494,7 @@ window.filterAdsCampaign = function(val, containerId) {
     _tableServer.campaignId = val || '';
     _tableCustomFilter = null;
     _tableWatchlistOnly = false;
-    if (!_tableServer.campaignId && !(_tableServer.q || '').trim()) {
+    if (!_tableServer.campaignId && !(_tableServer.q || '').trim() && _adpServerSortIsDefault()) {
         _adpTableRestoreInitial(containerId);
         return;
     }
@@ -5443,17 +5492,10 @@ function renderFullDashboard(overview, itemDetails, visitsData) {
     const now = new Date();
     const timestamp = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' \u2014 ' + now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    // Banner informativo: KPIs cobrem 100% da conta (via /ads-aggregated); a
-    // tabela começa nos N mais ativos por gasto e busca/campanha/paginação
-    // consultam a conta inteira no ML sob demanda (50 em 50).
-    const totalWithAds = Number(overview.total_items_with_ads) || 0;
-    const sampled = Number(overview.items_sampled) || 0;
-    const showSampleBanner = totalWithAds > 0 && sampled > 0 && sampled < totalWithAds;
-    const truncationBanner = showSampleBanner ? `
-        <div style="background:#dbeafe;border:1px solid #3b82f6;color:#1e3a8a;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;line-height:1.45;">
-            <strong>ℹ Métricas agregadas (TACOS, ROAS, totais e gráficos) refletem 100% dos seus ${totalWithAds.toLocaleString('pt-BR')} anúncios em Product Ads.</strong>
-            A tabela detalhada começa nos ${sampled.toLocaleString('pt-BR')} anúncios mais ativos por gasto — a busca (título ou MLB), o filtro de campanha e a paginação consultam todos os seus anúncios direto no Mercado Livre.
-        </div>` : '';
+    // Sem banner técnico pro cliente: os KPIs cobrem 100% da conta e a tabela
+    // busca/ordena/pagina a conta inteira sob demanda — o rodapé ("N na conta")
+    // e o placeholder da busca já comunicam o que importa.
+    const truncationBanner = '';
 
     // Build page structure — grouped into logical blocks
     wrapper.innerHTML = `
