@@ -236,7 +236,33 @@ window.fetch = async function(url, opts) {
         url: 'https://app.marketfacil.com.br/analise-anuncio?item=MLB3785926845',
         score: 38,
         level: 'medium'
-      }
+      },
+      // Novo (?details=N): motivos por anúncio nas palavras do ML
+      details: [
+        {
+          id: 'MLB3785926845', title: 'Camiseta básica branca masculina 100% algodão', status: 'warning', catalog: false,
+          reasons: [
+            { title: 'Qualidade da imagem principal abaixo do esperado', tip: 'Suba uma foto com 1200x1200, boa iluminação e produto centralizado', bucket: 'Fotos' },
+            { title: 'Complete as características do produto', tip: null, bucket: 'Ficha técnica' }
+          ]
+        },
+        {
+          id: 'MLB1669552989', title: 'Tênis esportivo masculino corrida leve', status: 'unhealthy', catalog: false,
+          reasons: [
+            { title: 'Complete a ficha técnica com marca e modelo', tip: 'Anúncios com ficha completa aparecem em mais buscas', bucket: 'Ficha técnica' }
+          ]
+        },
+        {
+          id: 'MLB3604206087', title: 'Kit 3 panos de prato estampados', status: 'warning', catalog: true,
+          reasons: []
+        },
+        {
+          id: 'MLB2914582122', title: 'Garrafa térmica inox 1 litro', status: 'warning', catalog: false,
+          reasons: [
+            { title: 'Adicione uma descrição ao anúncio', tip: 'Descrições completas reduzem perguntas e devoluções', bucket: 'Descrição' }
+          ]
+        }
+      ]
     });
   }
 

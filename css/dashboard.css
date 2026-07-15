@@ -3137,6 +3137,35 @@
 }
 .mfd-issue-pill:hover { background: #e0e7ff; border-color: #2d60c6; color: #2d60c6; }
 
+/* Modo detalhado: motivo + atalho por anúncio */
+.mfd-issue-sub { font-size: 0.8rem; color: #5b6b88; line-height: 1.5; margin-bottom: 10px; }
+.mfd-issue-row {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f97316;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.mfd-issue-row.bad { background: #fef2f2; border-color: #fecaca; border-left-color: #ef4444; }
+.mfd-issue-row.bad .mfd-issue-tag { background: #ef4444; }
+.mfd-issue-row-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; min-width: 0; }
+.mfd-issue-row-head .mfd-issue-tag { margin-bottom: 0; flex-shrink: 0; }
+.mfd-issue-row-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f1c3f;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mfd-issue-row-title:hover { color: #2d60c6; }
+.mfd-issue-more-reason { color: #94a3b8; font-weight: 400; }
+.mfd-issue-links { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+.mfd-issue-link { font-size: 0.8rem; font-weight: 600; color: #2d60c6; text-decoration: none; }
+.mfd-issue-link:hover { text-decoration: underline; }
+
 /* ═══════════ NOTIFICATION BELL + DRAWER ═══════════ */
 .mfd-bell {
   position: relative;

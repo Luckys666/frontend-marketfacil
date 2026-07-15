@@ -723,7 +723,9 @@ async function fetchModerations(sellerId) {
 async function fetchAdsWithIssues(sellerId) {
   if (!sellerId || !STATE.token) return null;
   try {
-    const url = `${BASE_URL_PROXY}/api/slot?seller_id=${sellerId}`;
+    // details=6: além do destaque, o proxy devolve título + motivos de
+    // qualidade (wordings do ML) dos 6 primeiros anúncios com problema
+    const url = `${BASE_URL_PROXY}/api/slot?seller_id=${sellerId}&details=6`;
     const res = await fetch(url, {
       headers: { 'Authorization': `Bearer ${STATE.token}` }
     });
@@ -1458,6 +1460,19 @@ function wireNotifications(root) {
       dashRoot.querySelectorAll('.mfd-notif-item.unread').forEach(el => el.classList.remove('unread'));
       const badge = dashRoot.querySelector('.mfd-bell-badge');
       if (badge) badge.remove();
+    } else if (action === 'goto-issues') {
+      e.preventDefault();
+      // Item do checklist "melhorar anúncios com nota baixa": marca como feito
+      // e rola até o card com os motivos (o listener é delegado no container,
+      // então sobrevive ao patch dos cards)
+      const checkId = target.dataset.checkDone;
+      if (checkId && STATE.sellerId) {
+        const stored = rtGetChecklist(STATE.sellerId);
+        const t = stored && stored.items.find(x => x.id === checkId);
+        if (t && !t.done) { t.done = true; rtSetChecklist(STATE.sellerId, stored.items); patchChecklistCard(); }
+      }
+      const issuesCard = dashRoot.querySelector('.mfd-issues-card');
+      if (issuesCard) issuesCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (action === 'toggle-pills') {
       e.preventDefault();
       const pills = target.closest('.mfd-issue-others')?.querySelector('.mfd-issue-others-pills');
@@ -3632,6 +3647,55 @@ function patchModerationsCard() {
   }
 }
 
+// Mapeia o motivo apontado pelo ML pra ferramenta do app que ajuda a resolver
+function issueShortcutFor(det) {
+  const txt = (det.reasons || [])
+    .map(r => `${r.bucket || ''} ${r.title || ''} ${r.tip || ''}`)
+    .join(' ')
+    .toLowerCase();
+  if (/foto|imagem|imagens/.test(txt))
+    return { href: '/redimensionar-imagem', label: '🖼️ Ajustar as fotos' };
+  if (/ficha|caracter[íi]stic|atribut|t[ée]cnic/.test(txt))
+    return { href: '/agente-palavras-chave', label: '🔑 Completar a ficha técnica' };
+  if (/descri[çc]/.test(txt)) {
+    const t = TOOLS.find(x => x.id === 'description');
+    return t ? { href: t.href, external: true, label: '📝 Melhorar a descrição' } : null;
+  }
+  return null;
+}
+
+// Uma linha por anúncio: status + título + motivo (wording do próprio ML) + atalhos
+function renderIssueRow(det) {
+  const isCrit = det.status === 'unhealthy';
+  const analyzeHref = `https://app.marketfacil.com.br/analise-anuncio?item=${encodeURIComponent(det.id)}`;
+  const reasons = Array.isArray(det.reasons) ? det.reasons.filter(r => r && r.title) : [];
+  const main = reasons[0];
+  const second = reasons[1];
+  let reasonHtml;
+  if (main) {
+    reasonHtml = `<div class="mfd-issue-problem"><b>Motivo:</b> ${escapeHtml(main.title)}${second ? ` <span class="mfd-issue-more-reason">· ${escapeHtml(second.title)}</span>` : ''}</div>`
+      + (main.tip ? `<div class="mfd-issue-solution">${escapeHtml(main.tip)}</div>` : '');
+  } else if (det.catalog) {
+    reasonHtml = '<div class="mfd-issue-problem">Anúncio de catálogo — a nota vem da página do produto. A análise completa mostra o diagnóstico.</div>';
+  } else {
+    reasonHtml = '<div class="mfd-issue-problem">O Mercado Livre marcou este anúncio com nota de qualidade baixa. A análise completa mostra o diagnóstico.</div>';
+  }
+  const short = issueShortcutFor(det);
+  return `
+    <div class="mfd-issue-row ${isCrit ? 'bad' : 'warn'}">
+      <div class="mfd-issue-row-head">
+        <span class="mfd-issue-tag">${isCrit ? 'Crítico' : 'Atenção'}</span>
+        <a class="mfd-issue-row-title" href="${escapeHtml(analyzeHref)}" target="_blank" title="${escapeHtml(det.title || det.id)}">${escapeHtml(det.title || det.id)}</a>
+      </div>
+      ${reasonHtml}
+      <div class="mfd-issue-links">
+        <a class="mfd-issue-link" href="${escapeHtml(analyzeHref)}" target="_blank">🔍 Analisar e corrigir →</a>
+        ${short ? `<a class="mfd-issue-link" href="${escapeHtml(short.href)}"${short.external ? ' target="_blank" rel="noopener"' : ''}>${short.label}</a>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderAdsWithIssues() {
   const data = STATE.issuesData;
   const loading = STATE.issuesLoading;
@@ -3644,7 +3708,27 @@ function renderAdsWithIssues() {
     body = '<div class="mfd-empty">Não conseguimos verificar a saúde dos anúncios agora. Atualize a página pra tentar de novo.</div>';
   } else if (!data.slots || data.slots.length === 0) {
     body = '<div class="mfd-empty">🎉 Nenhum anúncio com problema de saúde detectado.</div>';
+  } else if (Array.isArray(data.details) && data.details.filter(d => d && d.id).length > 0) {
+    // Modo detalhado (proxy com ?details=): motivo + atalho por anúncio
+    const details = data.details.filter(d => d && d.id);
+    const explainer = `
+      <div class="mfd-issue-sub">O Mercado Livre dá uma <b>nota de qualidade</b> pra cada anúncio — e anúncio com nota baixa perde alcance nas buscas. Abaixo, o que o próprio ML apontou pra melhorar em cada um:</div>
+    `;
+    const rows = details.map(renderIssueRow).join('');
+    const rest = data.slots.filter(id => !details.some(d => d.id === id));
+    const hiddenRest = Math.max(0, rest.length - PILLS_VISIBLE);
+    const restList = rest.length ? `
+      <div class="mfd-issue-others">
+        <small class="mfd-issue-others-label">Mais ${rest.length} ${rest.length === 1 ? 'anúncio precisa' : 'anúncios precisam'} de revisão — clique num código pra abrir a análise dele:</small>
+        <div class="mfd-issue-others-pills${hiddenRest ? ' collapsed' : ''}">
+          ${rest.map(id => `<a class="mfd-issue-pill" href="https://app.marketfacil.com.br/analise-anuncio?item=${escapeHtml(id)}" target="_blank">${escapeHtml(id)}</a>`).join('')}
+        </div>
+        ${hiddenRest ? `<button class="mfd-issue-expand" data-mfd-action="toggle-pills" data-more="ver todos (+${hiddenRest})">ver todos (+${hiddenRest})</button>` : ''}
+      </div>
+    ` : '';
+    body = explainer + rows + restList;
   } else {
+    // Fallback (proxy sem details): destaque único + pílulas, layout anterior
     const r = data.result || {};
     const totalCount = data.slots.length;
     const statusLabel = r.status === 'unhealthy' ? 'Crítico' : 'Atenção';
@@ -3682,7 +3766,7 @@ function renderAdsWithIssues() {
     : '';
 
   return `
-    <div class="mfd-card">
+    <div class="mfd-card mfd-issues-card">
       <div class="mfd-card-header">
         <div class="mfd-card-title"><span class="ico">⚠️</span>Anúncios com problema de saúde</div>
         ${headerLabel ? `<span style="font-size:.72rem;color:var(--text-muted);font-weight:600;">${headerLabel}</span>` : ''}
@@ -3707,6 +3791,81 @@ function patchAdsWithIssues() {
       return;
     }
   }
+}
+
+// Insere no checklist do dia o item "melhorar anúncios com nota baixa".
+// Só dá pra saber DEPOIS que /api/slot responde, por isso entra via patch
+// (e não no buildChecklist, que roda no primeiro render).
+function syncHealthChecklistItem() {
+  const sid = STATE.sellerId;
+  const d = STATE.issuesData;
+  const n = d && Array.isArray(d.slots) ? d.slots.length : 0;
+  if (!sid || !n) return;
+  const stored = rtGetChecklist(sid);
+  if (!stored || stored.items.some(i => i.id === 'health')) return;
+  stored.items.splice(1, 0, {
+    id: 'health',
+    text: `Melhorar ${n} ${n === 1 ? 'anúncio' : 'anúncios'} com nota de qualidade baixa`,
+    done: false,
+    meta: '→ ver motivos',
+    action: 'goto-issues'
+  });
+  rtSetChecklist(sid, stored.items);
+  patchChecklistCard();
+}
+
+// Re-renderiza só o card do checklist (sem full re-render, que redesenharia
+// os charts). O botão de action usa listener delegado; o toggle e o data-tool
+// precisam ser religados no card novo.
+function patchChecklistCard() {
+  const root = document.getElementById(STATE.containerId);
+  if (!root || !STATE.sellerId) return;
+  const stored = rtGetChecklist(STATE.sellerId);
+  if (!stored) return;
+  const headers = root.querySelectorAll('.mfd-card-header .mfd-card-title');
+  for (const h of headers) {
+    if (h.textContent.includes('Checklist do dia')) {
+      const card = h.closest('.mfd-card');
+      const next = document.createElement('div');
+      next.innerHTML = renderChecklist(stored.items);
+      const fresh = next.querySelector('.mfd-card');
+      if (fresh && card) {
+        card.replaceWith(fresh);
+        wireChecklistCard(fresh);
+      }
+      return;
+    }
+  }
+}
+
+// Religa toggle + botão "→ abrir" (data-tool) num card de checklist recém-patcheado
+function wireChecklistCard(scope) {
+  scope.querySelectorAll('[data-check-id]').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('[data-tool]') || e.target.closest('[data-mfd-action]')) return;
+      const id = item.dataset.checkId;
+      const sid = STATE.sellerId;
+      if (!id || !sid) return;
+      const stored = rtGetChecklist(sid);
+      if (!stored) return;
+      const target = stored.items.find(x => x.id === id);
+      if (!target) return;
+      target.done = !target.done;
+      rtSetChecklist(sid, stored.items);
+      patchChecklistCard();
+    });
+  });
+  scope.querySelectorAll('[data-tool]').forEach(el => {
+    el.addEventListener('click', () => {
+      const checkId = el.dataset.checkDone;
+      if (checkId && STATE.sellerId) {
+        const stored = rtGetChecklist(STATE.sellerId);
+        const t = stored && stored.items.find(x => x.id === checkId);
+        if (t && !t.done) { t.done = true; rtSetChecklist(STATE.sellerId, stored.items); }
+      }
+      handleToolClick(el.dataset.tool, el);
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -3817,7 +3976,9 @@ function renderChecklist(items) {
             <div class="mfd-check-text">${escapeHtml(i.text)}</div>
             ${i.tool
               ? `<button class="mfd-check-meta mfd-check-open" data-tool="${escapeHtml(i.tool)}" data-check-done="${escapeHtml(i.id)}">${i.meta || '→ abrir'}</button>`
-              : `<div class="mfd-check-meta">${i.meta || ''}</div>`}
+              : i.action
+                ? `<button class="mfd-check-meta mfd-check-open" data-mfd-action="${escapeHtml(i.action)}" data-check-done="${escapeHtml(i.id)}">${i.meta || '→ abrir'}</button>`
+                : `<div class="mfd-check-meta">${i.meta || ''}</div>`}
           </div>
         `).join('')}
       </div>
@@ -4236,8 +4397,9 @@ function wireListeners(root) {
   // Checklist toggle
   root.querySelectorAll('[data-check-id]').forEach(item => {
     item.addEventListener('click', (e) => {
-      // O botão "→ abrir" (data-tool) tem handler próprio — aqui só o toggle
-      if (e.target.closest('[data-tool]')) return;
+      // Os botões "→ abrir" (data-tool) e "→ ver motivos" (data-mfd-action)
+      // têm handler próprio — aqui só o toggle
+      if (e.target.closest('[data-tool]') || e.target.closest('[data-mfd-action]')) return;
       const id = item.dataset.checkId;
       const sid = STATE.sellerId;
       if (!id || !sid) return;
@@ -4679,6 +4841,7 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         STATE.issuesError = d == null;
         patchAdsWithIssues();
         patchHealthCard();
+        syncHealthChecklistItem();
       }).catch(() => {
         if (reqId !== STATE._reqSeq) return;
         STATE.issuesLoading = false;
