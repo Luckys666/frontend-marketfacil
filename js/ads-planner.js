@@ -3219,8 +3219,8 @@ function _renderTableUI(containerId) {
                     <th title="Clique na linha para expandir"></th>
                     <th></th>
                     <th title="Adicionar \u00e0 lista de observa\u00e7\u00e3o"></th>
-                    <th onclick="window.sortAdsTable('_title','${containerId}')">T\u00edtulo ${sortArrow('_title')}</th>
-                    <th onclick="window.sortAdsTable('_price','${containerId}')">Pre\u00e7o ${sortArrow('_price')}</th>
+                    <th style="cursor:default;">T\u00edtulo</th>
+                    <th style="cursor:default;">Pre\u00e7o</th>
                     <th onclick="window.sortAdsTable('_roas','${containerId}')">ROAS ${sortArrow('_roas')}</th>
                     <th onclick="window.sortAdsTable('acos','${containerId}')">ACOS ${sortArrow('acos')}</th>
                     <th onclick="window.sortAdsTable('_tacos','${containerId}')">TACOS ${sortArrow('_tacos')}</th>
@@ -3324,13 +3324,15 @@ function _renderTableUI(containerId) {
     }
 }
 
-// Colunas com sort server-side (conta inteira via /ads-items). TACOS/CTR/CVR o
-// proxy resolve com varredura completa + sort local; as demais são nativas do ML.
-// _title fica de fora (sort client sobre o carregado).
+// Colunas com sort server-side (conta inteira via /ads-items). TACOS/CTR/CVR/ROAS
+// o proxy resolve com varredura completa + sort local; as demais são nativas do ML.
+// Preço e Título NÃO são ordenáveis (decisão 15/07: sort por preço não existe nem
+// no painel oficial do ML — coluna fica só informativa; título não é analítico e
+// a busca já cobre a conta toda).
 const ADP_SORT_SERVER = {
     _roas: 'ROAS', acos: 'ACOS', _tacos: 'TACOS',
     cost: 'COST', revenue: 'REVENUE', impressions: 'IMPRESSIONS',
-    ctr: 'CTR', cvr: 'CVR', _price: 'PRICE'
+    ctr: 'CTR', cvr: 'CVR'
 };
 
 window.sortAdsTable = function(col, containerId) {
