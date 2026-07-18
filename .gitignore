@@ -15,6 +15,7 @@ clip-out.txt
 
 # Agent tooling (não-produto)
 .claude/
+.claude-flow/
 .codebase-memory/
 ruvector.db
 agentdb.rvf
