@@ -381,6 +381,61 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   check('bandActionRow: contagem = nCount (grupos), não o tamanho de copyIds', /9 anúncio\(s\)</.test(AA.bandActionRow('1001', null, 9, ['MLB1'])));
   check('window.aaCopyChunk existe', typeof sandbox.aaCopyChunk === 'function');
 
+  // ── "aguardando o ML" (fixes 09/07): sem beco sem saída + contagens coerentes ──
+  // faixa TODA aguardando: a linha ⏳ mantém "copiar de novo" e "Abrir no ML →"
+  AA._waitingSet = { 'MLB10|1001': 1, 'MLB20|1001': 1 };
+  const rowAllWait = AA.bandActionRow('1001', null, 2, ['MLB10', 'MLB20']);
+  check('faixa toda aguardando: linha ⏳ presente', /aguardando o Mercado Livre/.test(rowAllWait));
+  check('faixa toda aguardando: mantém "copiar de novo" (nada de beco sem saída)', /copiar de novo/.test(rowAllWait) && /MLB10,MLB20/.test(rowAllWait));
+  check('faixa toda aguardando: mantém "Abrir no ML →"', /aaOpenMl/.test(rowAllWait));
+  // parcial: desconta da contagem, copia só os ativos, e mostra a linha ⏳ junto
+  AA._waitingSet = { 'MLB10|1001': 1 };
+  const rowPart = AA.bandActionRow('1001', null, 3, ['MLB10', 'MLB20', 'MLB30']);
+  check('parcial: contagem desconta o aguardando (2 anúncio(s))', /2 anúncio\(s\)</.test(rowPart));
+  check('parcial: Copiar códigos leva só os ativos', /aaCopyText\('MLB20,MLB30'/.test(rowPart));
+  check('parcial: linha ⏳ 1 aguardando aparece junto', /⏳ 1 que você moveu/.test(rowPart));
+  // lista de códigos vazia: a faixa NÃO some (contagem + deep-link continuam)
+  AA._waitingSet = {};
+  const rowEmpty = AA.bandActionRow('1001', null, 3, []);
+  check('códigos vazios: linha não some (contagem + Abrir no ML)', /3 anúncio\(s\)</.test(rowEmpty) && /aaOpenMl/.test(rowEmpty));
+  // render: títulos e hint descontam os aguardando (marcação real via markApplied)
+  AA.advertiserId = 8811; AA.saveApplied({});
+  const dpAg = AA.demoPlan(3, null);
+  Object.keys(dpAg.plan_search_ids).forEach((cid) => AA.markApplied(dpAg.plan_search_ids[cid], cid));
+  AA._verifying = true; AA._prevMoves = 3;   // nada aplicado ainda (movesNow=3) -> ramo do hint
+  AA.render(dpAg);
+  const htmlAg = byId('aa-out').innerHTML;
+  check('tudo do Reorganize aguardando: título vira "⏳ aguardando" (não pede de novo)', /Reorganização — ⏳ aguardando o Mercado Livre/.test(htmlAg));
+  check('hint "Ainda não vi mudança" suprimido (nada acionável no plano)', !/Ainda não vi mudança/.test(htmlAg));
+  check('banner ⏳ do topo presente', /aguardando o Mercado Livre confirmar/.test(htmlAg));
+  check('etapa sanitize (intacta) segue acionável: "Proteja 1 anúncio"', /Proteja 1 anúncio com aviso/.test(htmlAg));
+  // parcial no plano: hint continua (ainda tem acionável) e o título desconta
+  AA.saveApplied({});
+  const dpAg2 = AA.demoPlan(3, null);
+  AA.markApplied(['774884615150225'], '1001');   // só 1 dos 3 grupos aguardando
+  AA._verifying = true; AA._prevMoves = 3;
+  AA.render(dpAg2);
+  const htmlAg2 = byId('aa-out').innerHTML;
+  check('parcial: título desconta (Reorganize 2 anúncios)', /Reorganize 2 anúncios entre as faixas/.test(htmlAg2));
+  check('parcial: hint "Ainda não vi mudança" CONTINUA (ainda há acionáveis)', /Ainda não vi mudança/.test(htmlAg2));
+  AA.saveApplied({});
+
+  // ── "ainda não apliquei" (fix 09/07 pt.2): desfaz o falso-positivo do markApplied ──
+  // markApplied roda no COPIAR, não no colar de verdade — sem uma saída, um clipboard perdido
+  // ou um "copiei mas não colei" trava a faixa em "aguardando" pelos 90min inteiros.
+  AA.advertiserId = 8812; AA.saveApplied({});
+  AA.markApplied(['MLB10', 'MLB20'], '1001');
+  check('markApplied: código fica marcado como aplicado', typeof AA.loadApplied()['MLB10|1001'] === 'number');
+  check('window.aaUndoApplied existe', typeof sandbox.aaUndoApplied === 'function');
+  AA._waitingSet = { 'MLB10|1001': Date.now(), 'MLB20|1001': Date.now() };
+  const rowBeforeUndo = AA.bandActionRow('1001', null, 2, ['MLB10', 'MLB20']);
+  check('waitRow oferece "ainda não apliquei"', /ainda não apliquei/.test(rowBeforeUndo) && /aaUndoApplied/.test(rowBeforeUndo));
+  sandbox.aaUndoApplied('1001', 'MLB10,MLB20');
+  check('aaUndoApplied: remove os códigos do applied', AA.loadApplied()['MLB10|1001'] == null && AA.loadApplied()['MLB20|1001'] == null);
+  AA.clearApplied(['MLB30'], '1001');   // no-op seguro quando o código nem estava marcado
+  check('clearApplied: idempotente (código não marcado não quebra)', true);
+  AA.saveApplied({});
+
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
   process.exit(fail ? 1 : 0);
 })();

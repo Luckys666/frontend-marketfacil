@@ -505,9 +505,13 @@
   AA.updateCount = function(){ var n = Object.keys(AA.sel).length; $('aa-selcount').textContent = n+' selecionado'+(n===1?'':'s'); };
   // Persistencia da SELECAO (rascunho de intencao) em localStorage por advertiser. O estado REAL
   // (anuncio acompanhado = anuncio numa faixa) e o proprio ML (in_automation/automation_band do backend).
+  // helpers únicos de persistência JSON em localStorage — evita reimplementar o try/catch em
+  // cada load/save (eram 4 cópias divergentes antes desta unificação)
+  AA.lsLoad = function(key, fallback){ try{ var v = JSON.parse(localStorage.getItem(key)); return (v == null) ? fallback : v; }catch(e){ return fallback; } };
+  AA.lsSave = function(key, val){ try{ if (val == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(val)); }catch(e){} };
   AA.selKey = function(){ return 'mf_aa_sel_' + (AA.advertiserId || 'x'); };
-  AA.saveSel = function(){ if(!AA.advertiserId) return; try{ localStorage.setItem(AA.selKey(), JSON.stringify({ all: AA.allMode, ids: Object.keys(AA.sel) })); }catch(e){} };
-  AA.loadSel = function(){ try{ var d = JSON.parse(localStorage.getItem(AA.selKey()) || 'null'); if(d){ AA.allMode = !!d.all; (d.ids||[]).forEach(function(id){ AA.sel[id] = 1; }); } }catch(e){} };
+  AA.saveSel = function(){ if(!AA.advertiserId) return; AA.lsSave(AA.selKey(), { all: AA.allMode, ids: Object.keys(AA.sel) }); };
+  AA.loadSel = function(){ var d = AA.lsLoad(AA.selKey(), null); if(d){ AA.allMode = !!d.all; (d.ids||[]).forEach(function(id){ AA.sel[id] = 1; }); } };
 
   // ---------- 2) meta (validação + persistência) ----------
   window.aaTacosChanged = function(){
@@ -594,32 +598,63 @@
   };
   AA.bandActionRow = function(cid, bandKey, nCount, copyIds, sufixoNome){
     var band = (bandKey && AA.BANDS[bandKey]) || { label:'Faixa', color:'#64748b' };
-    var parts = AA.chunkCsv(copyIds || []);
-    var copyBtn, hint = '';
-    if (parts.length <= 1){
-      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(parts[0]||'')+'\',this)">Copiar códigos</button>';
+    // separa o que você acabou de mover (aguardando o ML confirmar) do que ainda falta mover
+    var all = copyIds || [], active = [], waitingIds = [];
+    for (var i=0;i<all.length;i++){ if (AA.isWaiting(all[i], cid)) waitingIds.push(all[i]); else active.push(all[i]); }
+    var waiting = waitingIds.length;
+    // linha "aguardando" (só quando há algo aguardando NESTA faixa). NUNCA vira beco sem saída
+    // (fix 09/07): mantém "copiar de novo" (copiou e perdeu o clipboard / esqueceu de colar) e,
+    // quando é a única linha da faixa, também o "Abrir no ML →".
+    var waitRow = '';
+    if (waiting > 0){
+      var wParts = AA.chunkCsv(waitingIds), reBtn;
+      if (wParts.length <= 1){
+        reBtn = '<button class="aa-btn aa-btn-ghost aa-btn-sm" data-label="copiar de novo" onclick="window.aaCopyText(\''+esc(wParts[0]||'')+'\',this,\''+esc(cid)+'\')">copiar de novo</button>';
+      } else {
+        var wLbl = 'copiar de novo (lote 1/'+wParts.length+')';
+        reBtn = '<button class="aa-btn aa-btn-ghost aa-btn-sm" data-label="'+esc(wLbl)+'" data-ids="'+esc(waitingIds.join(','))+'" data-cid="'+esc(cid)+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(wLbl)+'</button>';
+      }
+      var undoBtn = '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaUndoApplied(\''+esc(cid)+'\',\''+esc(waitingIds.join(','))+'\')">ainda não apliquei</button>';
+      waitRow = '<div class="aa-band" style="opacity:.62;"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+';opacity:.5"></span>'
+        + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div>'
+        + '<div class="aa-band-count">⏳ '+waiting+' que você moveu — aguardando o Mercado Livre</div></div></div>'
+        + '<div class="aa-band-actions">'+reBtn+undoBtn
+        + (active.length ? '' : '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button>')
+        + '</div></div>';
+    }
+    // nada ativo nesta faixa: mostra só o "aguardando" (que já carrega os botões de emergência)
+    if (!active.length && waiting > 0) return waitRow;
+    var parts = AA.chunkCsv(active);
+    var copyBtn = '', hint = '';
+    if (!active.length){
+      // sem código copiável (ex.: grupo sem item veiculável): a linha, a contagem e o caminho pro
+      // ML continuam aparecendo (antes a faixa sumia inteira e levava o deep-link junto — fix 09/07)
+    } else if (parts.length <= 1){
+      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="Copiar códigos" onclick="window.aaCopyText(\''+esc(parts[0]||'')+'\',this,\''+esc(cid)+'\')">Copiar códigos</button>';
     } else {
       var lbl = 'Copiar códigos (lote 1/'+parts.length+')';
-      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="'+esc(lbl)+'" data-ids="'+esc((copyIds||[]).join(','))+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(lbl)+'</button>';
+      copyBtn = '<button class="aa-btn aa-btn-primary aa-btn-sm aa-copy-btn" data-label="'+esc(lbl)+'" data-ids="'+esc(active.join(','))+'" data-cid="'+esc(cid)+'" data-idx="0" onclick="window.aaCopyChunk(this)">'+esc(lbl)+'</button>';
       hint = '<div class="aa-hint" style="margin-top:6px;">São muitos códigos pro Mercado Livre aceitar de uma vez — cole, clique <b>Adicionar</b>, depois volte aqui e copie o próximo lote ('+parts.length+' lotes no total).</div>';
     }
     // nCount JÁ vem na unidade do painel do ML (grupo/família = 1 linha) — o cliente compara com o
     // que VÊ no ads, então nunca contamos MLBs soltos aqui (decisão Lucas 04/07: "9 no ads, se eu
-    // disser 13 ele acha que tá errado e me chama").
+    // disser 13 ele acha que tá errado e me chama"). Desconta os que estão aguardando o ML — o
+    // desconto é em códigos, e código ≈ linha do painel (v404: search_ids emitem 1 código por grupo).
+    var shownCount = waiting > 0 ? Math.max(active.length, nCount - waiting) : nCount;
     return '<div class="aa-band"><div class="aa-band-info"><span class="aa-dot" style="background:'+band.color+'"></span>'
-      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+nCount+' anúncio(s)</div></div></div>'
+      + '<div><div class="aa-band-name">'+esc(band.label)+(sufixoNome||'')+'</div><div class="aa-band-count">'+shownCount+' anúncio(s)</div></div></div>'
       + '<div class="aa-band-actions">'
       + copyBtn
-      + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>' + hint;
+      + '<button class="aa-btn aa-btn-ghost aa-btn-sm" onclick="window.aaOpenMl(\''+esc(cid)+'\')">Abrir no ML →</button></div></div>' + hint + waitRow;
   };
 
   // ---------- ciclo de otimização (persistente em localStorage, por advertiser) ----------
   AA.cycleKey = function(){ return 'mf_aa_cycle_' + (AA.advertiserId || 'x'); };
   AA.histKey  = function(){ return 'mf_aa_hist_'  + (AA.advertiserId || 'x'); };
   AA.nextKey  = function(){ return 'mf_aa_next_'  + (AA.advertiserId || 'x'); };
-  AA.loadCycle = function(){ try{ return JSON.parse(localStorage.getItem(AA.cycleKey()) || 'null'); }catch(e){ return null; } };
-  AA.saveCycle = function(c){ try{ if(c) localStorage.setItem(AA.cycleKey(), JSON.stringify(c)); else localStorage.removeItem(AA.cycleKey()); }catch(e){} };
-  AA.loadHist = function(){ try{ return JSON.parse(localStorage.getItem(AA.histKey()) || '[]'); }catch(e){ return []; } };
+  AA.loadCycle = function(){ return AA.lsLoad(AA.cycleKey(), null); };
+  AA.saveCycle = function(c){ AA.lsSave(AA.cycleKey(), c); };
+  AA.loadHist = function(){ return AA.lsLoad(AA.histKey(), []); };
   // garante um ciclo corrente coerente com o plano da tela; preserva "feito" de etapas com o mesmo id
   AA.ensureCycle = function(stageIds, meta){
     var c = AA.loadCycle();
@@ -639,25 +674,92 @@
     var stage = el && el.closest ? el.closest('.aa-plan-card, .aa-stage') : null;
     if (stage) stage.classList.toggle('is-done', !!checked);
   };
-  // fecha o ciclo (tudo aplicado e confirmado): arquiva no histórico + agenda a próxima análise
+  // fecha o ciclo (tudo aplicado e confirmado): arquiva no histórico + agenda a próxima análise.
+  // O banco (via proxy) é a verdade multi-dispositivo (10/07); o localStorage segue como fallback
+  // offline — se o POST falhar, nada quebra (mesmo contrato fail-open do backend).
   AA.closeCycle = function(s){
     var c = AA.loadCycle(); if (!c) return;
     try {
       var hist = AA.loadHist();
       hist.unshift({ startedAt: c.startedAt, closedAt: new Date().toISOString(),
         score: (c.meta||{}).score, tacos: s && s.accountTacos, moves: (c.meta||{}).moves });
-      localStorage.setItem(AA.histKey(), JSON.stringify(hist.slice(0, 12)));
+      AA.lsSave(AA.histKey(), hist.slice(0, 12));
       localStorage.setItem(AA.nextKey(), String(Date.now() + 7*86400000));
+    } catch(e){}
+    try {
+      AA.api('/api/auto-ads/cycle-close', { method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ moves: (c.meta||{}).moves || 0,
+          health_score: (c.meta||{}).score != null ? (c.meta||{}).score : null,
+          tacos: (s && s.accountTacos != null) ? s.accountTacos : null }) })
+        .catch(function(){});
     } catch(e){}
     AA.saveCycle(null);
   };
   AA.scoreColor = function(n){ return n >= 80 ? 'var(--green)' : (n >= 50 ? 'var(--amber)' : 'var(--red)'); };
+
+  // ---------- "aguardando o Mercado Livre" (lag de propagação pós-troca) ----------
+  // O plano lê a VERDADE do ML. Quando você move um anúncio de faixa no painel, a API do ML demora
+  // até ~1h pra refletir — nesse meio-tempo o plano repetiria a MESMA instrução ("já tá lá e pede de
+  // novo"). Aqui: quando você COPIA os códigos de uma faixa (= vai colar no ML e aplicar), marcamos
+  // esses códigos como "aplicados agora". Enquanto o código reaparecer PRA A MESMA FAIXA dentro da
+  // janela, mostramos "⏳ aguardando o ML" em vez de pedir de novo. Reaparecer pra OUTRA faixa (novo
+  // destino) ou passar a janela -> volta a ser ação normal (autocorrige). Tudo em localStorage por conta.
+  AA.APPLIED_WINDOW_MS = 90 * 60 * 1000;   // ~1h de propagação do ML + margem
+  AA.appliedKey = function(){ return 'mf_aa_applied_' + (AA.advertiserId || 'x'); };
+  AA.loadApplied = function(){ return AA.lsLoad(AA.appliedKey(), {}); };
+  AA.saveApplied = function(m){ AA.lsSave(AA.appliedKey(), m || {}); };
+  // marca os códigos como aplicados pra faixa `cid` agora (chamado no clique de Copiar códigos)
+  AA.markApplied = function(codes, cid){
+    if (!cid || !codes || !codes.length) return;
+    var m = AA.loadApplied(), now = Date.now();
+    codes.forEach(function(c){ c = String(c).trim(); if (c) m[c + '|' + cid] = now; });
+    AA.saveApplied(m);
+  };
+  // desfaz o "aplicado": marcar como aguardando acontece no COPIAR, não no colar de verdade —
+  // clipboard pode falhar, aba pode crashar, ou o usuário nunca chega a colar no ML. Sem uma saída
+  // pra desfazer, esse falso-positivo trava a faixa em "⏳ aguardando" pelos 90min inteiros.
+  AA.clearApplied = function(codes, cid){
+    if (!cid || !codes || !codes.length) return;
+    var m = AA.loadApplied();
+    codes.forEach(function(c){ c = String(c).trim(); if (c) delete m[c + '|' + cid]; });
+    AA.saveApplied(m);
+  };
+  // monta o conjunto "aguardando" pro plano atual (e limpa expirados de passagem)
+  AA.computeWaiting = function(d){
+    var m = AA.loadApplied(), now = Date.now(), changed = false;
+    Object.keys(m).forEach(function(k){ if (now - m[k] > AA.APPLIED_WINDOW_MS){ delete m[k]; changed = true; } });
+    if (changed) AA.saveApplied(m);
+    var waiting = {}, since = null;
+    var maps = [d.plan_search_ids, d.sanitize_search_ids, d.probe_search_ids];
+    maps.forEach(function(sm){
+      if (!sm) return;
+      Object.keys(sm).forEach(function(cid){
+        (sm[cid]||[]).forEach(function(code){
+          var k = String(code) + '|' + cid;
+          if (m[k] != null){ waiting[k] = m[k]; if (since == null || m[k] < since) since = m[k]; }
+        });
+      });
+    });
+    // contagem derivada do SET (chave única codigo|cid): código repetido entre mapas não conta 2x
+    AA._waitingSet = waiting; AA._waitingCount = Object.keys(waiting).length; AA._waitingSince = since;
+    return AA._waitingCount;
+  };
+  AA.isWaiting = function(code, cid){ return !!(AA._waitingSet && AA._waitingSet[String(code) + '|' + cid] != null); };
+  // quantos códigos de um mapa cid->códigos estão aguardando o ML (código ≈ grupo/linha do painel)
+  AA.waitingIn = function(searchMap){
+    var n = 0;
+    Object.keys(searchMap || {}).forEach(function(cid){
+      (searchMap[cid]||[]).forEach(function(code){ if (AA.isWaiting(code, cid)) n++; });
+    });
+    return n;
+  };
 
   AA.render = function(d, extraBanner){
     AA._lastData = d;
     // plano gerado -> compacta os cards de setup (faixas/escolha/meta) em grid horizontal (libera espaço pro plano)
     try { var _sp = document.getElementById('aa-setup'); if (_sp) _sp.classList.add('aa-collapsed'); } catch(e){}
     if (d.advertiser_id) AA.advertiserId = d.advertiser_id;   // ciclo/seleção chaveados por conta mesmo sem carregar a lista
+    AA.computeWaiting(d);   // quais códigos você acabou de mover e o ML ainda não confirmou
     var s = d.summary || {};
     // read-after-write: compara o plano com o da checagem anterior p/ mostrar o que ja entrou.
     // CONTAGEM = GRUPOS (a unidade que o painel do ML mostra: família consolidada = 1 linha) —
@@ -668,9 +770,30 @@
     var banner = extraBanner || '';
     if (AA._verifying && AA._prevMoves != null && d.bands_setup_ok){
       var applied = AA._prevMoves - movesNow;
-      if (applied > 0) banner += '<div class="aa-ok" style="margin-bottom:12px;">✓ '+applied+' anúncio(s) já organizados'+(movesNow>0 ? (' — faltam '+movesNow+'.') : '. Tudo no lugar! 🎉')+'</div>';
-      else if (movesNow > 0) banner += '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
-      if (movesNow === 0) AA.closeCycle(s);   // ciclo concluído e confirmado
+      // "faltam N" e o hint contam só o ACIONÁVEL (fora os ⏳ aguardando o ML) — senão os números
+      // brigam com as linhas das faixas logo abaixo, que descontam os aguardando (fix 09/07)
+      var movesLeft = Math.max(0, movesNow - AA.waitingIn(d.plan_search_ids));
+      if (applied > 0) banner += '<div class="aa-ok" style="margin-bottom:12px;">✓ '+applied+' anúncio(s) já organizados'+(movesNow>0 ? (movesLeft>0 ? (' — faltam '+movesLeft+'.') : ' — o restante está aguardando o Mercado Livre confirmar.') : '. Tudo no lugar! 🎉')+'</div>';
+      else if (movesLeft > 0) banner += '<div class="aa-hint" style="margin-bottom:12px;">Ainda não vi mudança — o Mercado Livre pode levar um instante. Adicione os anúncios no painel e clique <b>Verificar de novo</b>.</div>';
+      if (movesNow === 0) AA.closeCycle(s);   // ciclo concluído e confirmado (contagem CRUA: "aguardando" não fecha ciclo)
+    }
+    // aviso de propagação: o que você moveu e o ML ainda não refletiu — não pede pra mover de novo
+    if (AA._waitingCount > 0){
+      var _wm = AA._waitingSince ? Math.max(1, Math.round((Date.now() - AA._waitingSince)/60000)) : null;
+      banner += '<div class="aa-hint" style="border-left:3px solid var(--blue);background:rgba(0,102,255,.06);margin-bottom:12px;">⏳ <b>'+AA._waitingCount+' anúncio(s)</b> que você moveu'+(_wm?(' há ~'+_wm+' min'):'')+' estão aguardando o Mercado Livre confirmar (pode levar até ~1h). Não precisa mexer neles de novo — quando o ML atualizar, eles somem do plano sozinhos.</div>';
+    }
+    // EARLY-WARNING (10/07): recém-movido pagando mais por clique do que o retorno histórico —
+    // sinal antecedente do TACOS (não espera a receita de 30d pra avisar que está gastando à toa)
+    var ew = d.early_warnings || {};
+    if (ew.count > 0){
+      var ewCodes = (ew.items||[]).map(function(x){ return x.mlb; }).join(', ');
+      banner += '<div class="aa-hint" style="border-left:3px solid var(--amber);background:rgba(255,170,0,.07);margin-bottom:12px;">⚠️ <b>'+ew.count+' anúncio'+(ew.count===1?'':'s')+'</b> que você moveu há pouco '+(ew.count===1?'está gastando':'estão gastando')+' acima do esperado pra sua meta — vale conferir hoje'+(ewCodes?(': <span class="aa-label">'+esc(ewCodes)+'</span>'):'.')+'</div>';
+    }
+    // REVISÃO RÁPIDA (10/07, banco): moveu anúncio com bom volume pra faixa de investimento mais
+    // alto -> a data de volta encurta (o servidor manda; vale em qualquer navegador/dispositivo)
+    var rv = d.review || null;
+    if (rv && rv.fast_review && rv.next_review_at && Date.parse(rv.next_review_at) > Date.now() && !ew.count){
+      banner += '<div class="aa-hint" style="border-left:3px solid var(--amber);background:rgba(255,170,0,.07);margin-bottom:12px;">⚡ Você moveu anúncios com bom volume pra faixas de investimento mais alto. Volte até <b>'+new Date(rv.next_review_at).toLocaleDateString('pt-BR')+'</b> e gere o plano de novo pra confirmar que o gasto está valendo a pena.</div>';
     }
     AA._verifying = false; AA._prevMoves = movesNow;
     var html = banner;
@@ -693,7 +816,11 @@
         var codes = sanSearch[cid] || san[cid] || [];
         sanBody += AA.bandActionRow(cid, inv[String(cid)], (sanGrp[cid]||[]).length, codes);
       });
-      stages.push({ id: 'sanitize', title: 'Proteja '+nSan+' anúncio'+(nSan===1?'':'s')+' com aviso',
+      // título conta só o acionável (desconta os ⏳ aguardando o ML) — coerente com as linhas do corpo
+      var nSanLeft = Math.max(0, nSan - AA.waitingIn(sanSearch));
+      stages.push({ id: 'sanitize', title: nSanLeft > 0
+          ? 'Proteja '+nSanLeft+' anúncio'+(nSanLeft===1?'':'s')+' com aviso'
+          : 'Anúncios com aviso — ⏳ aguardando o Mercado Livre',
         desc: 'Esses anúncios estão com aviso no Mercado Livre (em revisão ou sem exibição) e ocupam uma faixa de investimento alto. Mova pra faixa indicada: quando o aviso cair, eles voltam a aparecer no ritmo certo, sem gastar à toa.',
         body: sanBody });
     }
@@ -717,7 +844,11 @@
         var codes = probeSearch[cid] || probe[cid] || [];
         probeBody += AA.bandActionRow(cid, inv[String(cid)], (probeGrp[cid]||[]).length, codes);
       });
-      stages.push({ id: 'probe', title: 'Dê mais força a '+nProbe+' anúncio'+(nProbe===1?'':'s')+' parado'+(nProbe===1?'':'s'),
+      // título conta só o acionável (desconta os ⏳ aguardando o ML)
+      var nProbeLeft = Math.max(0, nProbe - AA.waitingIn(probeSearch));
+      stages.push({ id: 'probe', title: nProbeLeft > 0
+          ? 'Dê mais força a '+nProbeLeft+' anúncio'+(nProbeLeft===1?'':'s')+' parado'+(nProbeLeft===1?'':'s')
+          : 'Anúncios parados — ⏳ aguardando o Mercado Livre',
         desc: 'Estão ativos mas quase não aparecem — mova-os pra faixa indicada. Depois de aplicar, dê alguns dias pro Mercado Livre reagir.',
         body: probeBody + waitHint });
       waitHint = '';   // já apareceu dentro da etapa — não repete fora
@@ -730,7 +861,11 @@
     var planIds = Object.keys(planMap).sort(function(a,b){ return (weights[b]||0) - (weights[a]||0); });
     var totalGrp = planIds.reduce(function(t,c){ return t + ((planMap[c]||[]).length); }, 0);
     if (planIds.length){
-      stages.push({ id: 'plan', title: 'Reorganize '+totalGrp+' anúncio'+(totalGrp===1?'':'s')+' entre as faixas',
+      // título conta só o acionável (desconta os ⏳ aguardando o ML)
+      var totalLeft = Math.max(0, totalGrp - AA.waitingIn(d.plan_search_ids));
+      stages.push({ id: 'plan', title: totalLeft > 0
+          ? 'Reorganize '+totalLeft+' anúncio'+(totalLeft===1?'':'s')+' entre as faixas'
+          : 'Reorganização — ⏳ aguardando o Mercado Livre',
         desc: 'Cada anúncio vai pra faixa que a entrega dele sustenta — começando pelo que mais mexe no resultado.',
         body: AA.planCards(d, planIds) });
     }
@@ -804,7 +939,9 @@
     // etapas numeradas
     if (!stages.length){
       html += '<div class="aa-ok" style="margin-top:10px;">✓ Tudo no lugar — nada pra fazer neste ciclo.</div>';
+      // data do servidor (banco, multi-dispositivo) tem prioridade; localStorage é o fallback
       var nextAt = 0; try{ nextAt = parseInt(localStorage.getItem(AA.nextKey()) || '0', 10); }catch(e){}
+      if (rv && rv.next_review_at) nextAt = Date.parse(rv.next_review_at) || nextAt;
       if (nextAt > Date.now()) html += '<div class="aa-hint">Próxima análise recomendada: <b>'+new Date(nextAt).toLocaleDateString('pt-BR')+'</b>.</div>';
     } else {
       // os 3 planos de ação (Escalar / Proteção / Destravar) saem lado a lado num grid; o resto
@@ -835,8 +972,10 @@
         + '<h3>Confirme as mudanças</h3><div class="aa-stage-desc">Depois de aplicar os planos no Mercado Livre, confirme aqui — o Marketfacil confere o que entrou e fecha o ciclo.</div>'
         + '<button class="aa-btn aa-btn-primary" onclick="window.aaVerify()">✓ Já apliquei — Verificar</button></div></div>';
     }
-    // histórico de ciclos
-    var hist = AA.loadHist();
+    // histórico de ciclos — o do banco (multi-dispositivo) tem prioridade; localStorage é fallback
+    var hist = (rv && rv.cycles && rv.cycles.length)
+      ? rv.cycles.map(function(h){ return { closedAt: h.closed_at, moves: h.moves, score: h.health_score, tacos: h.tacos }; })
+      : AA.loadHist();
     if (hist.length){
       html += '<details class="aa-more"><summary>ciclos anteriores ('+hist.length+')</summary><ul class="aa-names" style="margin:0;">'
         + hist.map(function(h){ return '<li><span class="aa-label">'+new Date(h.closedAt).toLocaleDateString('pt-BR')+' — '+(h.moves||0)+' ajuste(s)'+(h.score!=null?(' · saúde '+h.score):'')+(h.tacos!=null?(' · TACOS '+h.tacos+'%'):'')+'</span></li>'; }).join('')
@@ -989,9 +1128,11 @@
       + '<div class="aa-row" style="margin-top:14px;"><button class="aa-btn aa-btn-primary" onclick="window.aaOpenMl(\'\')">Abrir painel do ML →</button> <button class="aa-btn aa-btn-ghost" onclick="window.aaVerify()">Verificar de novo</button></div></div>';
   };
 
-  window.aaCopyText = function(txt, btn){
+  window.aaCopyText = function(txt, btn, cid){
     var restore = function(label){ if(btn){ btn.textContent = label; setTimeout(function(){ btn.textContent = btn.getAttribute('data-label') || 'Copiar'; }, 1600); } };
-    var ok = function(){ restore('Copiado ✓'); };
+    // copiou os códigos de uma faixa (cid) = vai aplicar no ML -> marca como "aguardando confirmação"
+    var mark = function(){ if (cid) try{ AA.markApplied(String(txt).split(','), cid); }catch(e){} };
+    var ok = function(){ mark(); restore('Copiado ✓'); };
     var bad = function(){ restore('Não copiou ✕'); };   // sem feedback falso: só confirma quando copiou mesmo
     var viaFallback = function(){ AA.fallbackCopy(txt) ? ok() : bad(); };
     if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok, viaFallback); }
@@ -1001,16 +1142,26 @@
   // copia 1 lote por clique e cicla pro próximo (lista grande > 3500 chars do campo de busca do ML)
   window.aaCopyChunk = function(btn){
     var ids = (btn.getAttribute('data-ids')||'').split(',').filter(Boolean);
+    var cid = btn.getAttribute('data-cid');
     var parts = AA.chunkCsv(ids); var total = parts.length || 1;
     var idx = parseInt(btn.getAttribute('data-idx')||'0',10); if(!(idx>=0&&idx<total)) idx = 0;
     var txt = parts[idx] || '', cur = idx + 1, next = (idx+1) % total;
     var setTo = function(i){ btn.setAttribute('data-idx', String(i)); btn.setAttribute('data-label', 'copiar lote '+(i+1)+'/'+total); };
     var flash = function(msg){ btn.textContent = msg; setTimeout(function(){ btn.textContent = btn.getAttribute('data-label'); }, 1600); };
-    var ok = function(){ setTo(next); flash('✓ lote '+cur+'/'+total+' copiado'); };
+    // copiou este lote (cid) = vai aplicar no ML -> marca os códigos do lote como "aguardando confirmação"
+    var ok = function(){ if (cid) try{ AA.markApplied((txt||'').split(','), cid); }catch(e){} setTo(next); flash('✓ lote '+cur+'/'+total+' copiado'); };
     var bad = function(){ setTo(idx); flash('Não copiou ✕'); };
     var viaFallback = function(){ AA.fallbackCopy(txt) ? ok() : bad(); };
     if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok, viaFallback); }
     else viaFallback();
+  };
+  // "ainda não apliquei" no aviso ⏳: desfaz o falso-positivo (copiou mas não colou de verdade) e
+  // re-renderiza — a faixa volta a pedir a ação normal em vez de ficar travada até os 90min passarem
+  window.aaUndoApplied = function(cid, codesCsv){
+    var codes = (codesCsv||'').split(',').filter(Boolean);
+    if (!cid || !codes.length) return;
+    AA.clearApplied(codes, cid);
+    if (AA._lastData) AA.render(AA._lastData);
   };
   window.aaOpenMl = function(cid){ window.open(cid ? AA.ML_ADD_ADS.replace('{cid}', encodeURIComponent(cid)) : AA.ML_CAMPAIGNS, '_blank', 'noopener'); };
   window.aaOpenCampaign = function(cid){ window.open(AA.ML_CAMPAIGN_DASH.replace('{cid}', encodeURIComponent(cid)), '_blank', 'noopener'); };
