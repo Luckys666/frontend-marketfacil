@@ -21,6 +21,13 @@ ruvector.db
 agentdb.rvf
 agentdb.rvf.lock
 
+# Material interno — repo é PÚBLICO (jsDelivr CDN exige); nada de docs/specs internos aqui
+CLAUDE.md
+*-SPEC.md
+RELATORIO-*.md
+test-env/
+docs/
+
 # Secrets (defensive — não devem existir no repo)
 .env
 .env.local
