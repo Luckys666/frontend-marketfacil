@@ -750,7 +750,10 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             title: `Fotos com qualidade baixa`,
             detail: `O ML detectou imagens de baixa qualidade — afeta conversão e ranking. Suba fotos com 1200×1200 ou 1200×1540 (depende da categoria), boa iluminação e produto centralizado, sem texto ou marca d'água sobreposta.`,
             value: 0,
-            actions: editUrl ? [{ type: 'external', label: 'Trocar fotos no ML', href: editUrl }] : [],
+            actions: [
+                ...(itemId ? [{ type: 'external', label: '🪄 Melhorar no Redimensionador', href: `/redimensionar-imagem?item=${itemId}` }] : []),
+                ...(editUrl ? [{ type: 'external', label: 'Trocar fotos no ML', href: editUrl }] : []),
+            ],
         });
     }
 

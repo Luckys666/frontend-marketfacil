@@ -3368,9 +3368,12 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             priority: 2,
             icon: MF_OPP_KIND_ICON.tag_pics,
             title: `Fotos com qualidade baixa`,
-            detail: `O ML detectou imagens de baixa qualidade — afeta conversão e ranking. Suba fotos com 1200×1540, fundo branco e produto centralizado.`,
+            detail: `O ML detectou imagens de baixa qualidade — afeta conversão e ranking. Suba fotos com 1200×1200 ou 1200×1540 (depende da categoria), boa iluminação e produto centralizado, sem texto ou marca d'água sobreposta.`,
             value: 0,
-            actions: editUrl ? [{ type: 'external', label: 'Trocar fotos no ML', href: editUrl }] : [],
+            actions: [
+                ...(itemId ? [{ type: 'external', label: '🪄 Melhorar no Redimensionador', href: `/redimensionar-imagem?item=${itemId}` }] : []),
+                ...(editUrl ? [{ type: 'external', label: 'Trocar fotos no ML', href: editUrl }] : []),
+            ],
         });
     }
 
@@ -4467,7 +4470,7 @@ window.MF_openFamilyBatchEditor = async function (upId) {
         });
         if (!res.ok) {
             const e = await res.json().catch(() => ({}));
-            body.innerHTML = `<div class="mfd-fb-error">Não foi possível carregar a família. ${e.error || `Erro ${res.status}`}</div>`;
+            body.innerHTML = `<div class="mfd-fb-error">Não foi possível carregar a família. ${escapeHtml(e.error || `Erro ${res.status}`)}</div>`;
             return;
         }
         const data = await res.json();
@@ -4475,7 +4478,7 @@ window.MF_openFamilyBatchEditor = async function (upId) {
         window.__mfFamilyOverview = data;
         MF_renderFamilyOverview(data, body);
     } catch (e) {
-        body.innerHTML = `<div class="mfd-fb-error">Falha de rede: ${e.message}</div>`;
+        body.innerHTML = `<div class="mfd-fb-error">Falha de rede: ${escapeHtml(e.message)}</div>`;
     }
 };
 
@@ -5993,7 +5996,7 @@ function appendError(message, containerId = 'resultsContainer') {
     if (Array.from(cont.querySelectorAll('.error-message')).some(el => el.textContent.includes(message))) return;
     const p = document.createElement('p');
     p.className = 'error-message';
-    p.innerHTML = `❌ ${message}`;
+    p.innerHTML = `❌ ${escapeHtml(message)}`;
     cont.appendChild(p);
 }
 
