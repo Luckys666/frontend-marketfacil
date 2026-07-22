@@ -2579,7 +2579,7 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 function exibirInformacaoGarantia(detail, containerId = "warrantyInfo") {
     const el = document.getElementById(containerId);
     if (!el) return;
-    const temGarantia = detail?.warranty;
+    const temGarantia = getWarrantyText(detail);
     const badgeClass = temGarantia ? 'success' : 'error';
     const icon = temGarantia ? '✅' : '❌';
     const text = temGarantia ? 'Informada' : 'Ausente';
@@ -2600,7 +2600,8 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
     const hasDesc = !!(descriptionData && ((descriptionData.plain_text && descriptionData.plain_text.trim()) || (descriptionData.text && descriptionData.text.trim())));
     const descSource = descriptionData?.source;
     const descSourceLabel = descSource === 'catalog' ? 'Herdada do catálogo' : (descSource === 'user_product' ? 'Herdada do produto (MLBU)' : 'Detectada');
-    const hasWarranty = !!detail?.warranty;
+    const warrantyText = getWarrantyText(detail);
+    const hasWarranty = !!warrantyText;
 
     // Count images per variation (min 3 each)
     let imageDetail = '';
@@ -2630,7 +2631,7 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
 
     const items = [
         { ok: hasDesc, label: 'Descrição em texto', detail: hasDesc ? descSourceLabel : 'Não preenchida' },
-        { ok: hasWarranty, label: 'Garantia', detail: hasWarranty ? detail.warranty : 'Não informada' },
+        { ok: hasWarranty, label: 'Garantia', detail: hasWarranty ? warrantyText : 'Não informada' },
         { ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
     ];
 
@@ -3180,7 +3181,7 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
             : 'Adicionar descrição em texto';
         checks.push({ ok: hasDesc, text: descText });
         // Warranty
-        const hasWarranty = !!d.detail?.warranty;
+        const hasWarranty = !!getWarrantyText(d.detail);
         checks.push({ ok: hasWarranty, text: hasWarranty ? 'Garantia informada' : 'Informar garantia' });
         // Tags
         const hasBadTags = Array.isArray(d.detail?.tags) && d.detail.tags.some(t => TAGS_NEGATIVAS.has(t));
@@ -3459,6 +3460,16 @@ async function fetchApiData(fullUrl, accessToken) {
 async function fetchItemDetails(itemIds, accessToken) {
     const url = `${API_FETCH_ITEM_ENDPOINT}?item_id=${itemIds.join(',')}`;
     return fetchApiData(url, accessToken);
+}
+
+// Garantia: campo legado OU sale_terms (itens no modelo UP podem vir com warranty null e a garantia em WARRANTY_TYPE/WARRANTY_TIME).
+function getWarrantyText(detail) {
+    if (detail?.warranty) return detail.warranty;
+    const terms = Array.isArray(detail?.sale_terms) ? detail.sale_terms : [];
+    const typeName = terms.find(t => t?.id === 'WARRANTY_TYPE')?.value_name || '';
+    const timeName = terms.find(t => t?.id === 'WARRANTY_TIME')?.value_name || '';
+    if (typeName && timeName) return `${typeName}: ${timeName}`;
+    return typeName || timeName || null;
 }
 
 // Extrai qualquer texto de descrição de um payload (item, user-product ou catalog product).
@@ -4610,6 +4621,19 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                         // Fallback em cadeia: item → user-product → catalog_product.
                         const hasInlineDesc = !!(descriptionData?.plain_text?.trim() || descriptionData?.text?.trim());
                         if (!hasInlineDesc) {
+                            // Retry único: o fetch-item engole falha transitória da API de descrição (allSettled
+                            // no proxy) — reconsulta a rota dedicada antes de assumir "sem descrição".
+                            try {
+                                const descRetry = await fetchApiData(`${BASE_URL_PROXY}/api/fetch-item-description?item_id=${itemId}`, accessToken);
+                                const retried = descRetry?.[itemId];
+                                if (retried?.plain_text?.trim() || retried?.text?.trim()) {
+                                    descriptionData = retried;
+                                    console.log('Descrição recuperada no retry dedicado.');
+                                }
+                            } catch (e) { console.warn('Retry de descrição falhou:', e.message); }
+                        }
+                        const hasDescAfterRetry = !!(descriptionData?.plain_text?.trim() || descriptionData?.text?.trim());
+                        if (!hasDescAfterRetry) {
                             const inheritedDesc = await fetchInheritedDescription(detail, accessToken);
                             if (inheritedDesc) {
                                 descriptionData = inheritedDesc;
@@ -4617,7 +4641,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                             }
                         }
                     } else if (itemData?.code === 403) {
-                        throw new Error(`Acesso negado a este anúncio. Verifique se ele pertence à conta vinculada ao app.`);
+                        throw new Error(`O Mercado Livre bloqueia o acesso aos dados completos de anúncios de outros vendedores. Se este anúncio é seu, verifique se ele pertence à conta do Mercado Livre conectada ao app.`);
                     } else {
                         throw new Error(`Não foi possível obter os dados do anúncio (código ${itemData?.code || 'desconhecido'}).`);
                     }
@@ -5162,7 +5186,7 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     else score -= 10;
 
     // --- GARANTIA (-5 se não informada) ---
-    if (!detail.warranty) score -= 5;
+    if (!getWarrantyText(detail)) score -= 5;
 
     // --- IMAGENS (-5 se menos de 3 no total ou por variação) ---
     const variations = detail.variations || [];
