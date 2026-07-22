@@ -455,9 +455,8 @@ function MF_diffSnap(prev, curr) {
     }
     if (prev.adsActive !== curr.adsActive) {
         items.push({ kind: 'adsState', currActive: curr.adsActive });
-    } else if (prev.adsLevel !== curr.adsLevel && (prev.adsLevel || curr.adsLevel)) {
-        items.push({ kind: 'adsLevel', prevLevel: prev.adsLevel, currLevel: curr.adsLevel });
     }
+    // adsLevel (current_level da API de ads) fica fora do diff: jargão interno do ML ("unknown"/"newbie"), sem significado pro usuário.
     return { items, daysSince: Math.floor((curr.ts - prev.ts) / (1000 * 60 * 60 * 24)), prevTs: prev.ts };
 }
 
@@ -490,9 +489,6 @@ function MF_renderDiffBanner(diff) {
         }
         if (i.kind === 'adsState') {
             return `<span style="color:${i.currActive ? '#059669' : '#dc2626'}; font-weight:600;">Ads ${i.currActive ? 'ativos' : 'pausados'}</span>`;
-        }
-        if (i.kind === 'adsLevel') {
-            return `<span>Nível Ads: ${i.prevLevel || '—'} → ${i.currLevel || '—'}</span>`;
         }
         return '';
     }).filter(Boolean).join(' · ');
