@@ -27,7 +27,7 @@ const CONFIG = {
   // USE_Q_PARAM=false esconde a tentativa de q= e cai direto no aviso + sku=.
   USE_Q_PARAM: true,
   ANALYZE_URL: 'https://app.marketfacil.com.br/analise-anuncio',
-  RECONNECT_URL: 'https://app.marketfacil.com.br/conexoes',  // placeholder — ajustar quando a URL real existir
+  RECONNECT_URL: 'https://app.marketfacil.com.br/minha-conta',  // conexão ML fica em Minha Conta (verificado 23/07 — /conexoes é 404)
   PAGE_SIZE: 50,
   HYDRATE_CHUNK: 20,
   OFFSET_CAP: 1000,            // ML trava offset em 1000
