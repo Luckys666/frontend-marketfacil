@@ -1,0 +1,555 @@
+/* ============================================================
+ * Painel Seletor de Anúncios — CSS (port F4 do protótipo)
+ * GERADO a partir de test-env/ad-selector/index.html e prefixado
+ * com `.ana-wrapper .mfsel` (o painel vive DENTRO do widget bTKMH; o prefixo
+ * blinda o app do CSS do painel e vice-versa). Vars do protótipo
+ * ficam escopadas no .mfsel — não colidem com as do analyzer.css.
+ * Regras novas do port ficam no BLOCO FINAL (procure "PORT F4").
+ * ============================================================ */
+
+/* ===== Proposta U — Light Trading (tokens espelhados de css/analyzer.css) ===== */
+.ana-wrapper .mfsel {
+  --bg: #f4f6fa; --bg-card: #ffffff; --navy: #0f172a;
+  --blue: #0066ff; --blue-light: #e8f0ff;
+  --green: #00d68f; --green-light: #e6fbf3; --green-dark: #059669;
+  --yellow: #f59e0b; --yellow-light: #fef3c7;
+  --red: #ff3b5c; --red-light: #fff0f2; --red-dark: #dc2626;
+  --orange: #ea580c; --orange-light: #fff1e6;
+  --text: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+  --border: #e2e8f0; --row-alt: #f8fafc; --row-hover: #e8f0ff;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --radius: 10px; --radius-sm: 6px;
+}
+.ana-wrapper .mfsel * { box-sizing: border-box; }
+.ana-wrapper .mfsel, .ana-wrapper .mfsel { margin: 0; padding: 0; }
+.ana-wrapper .mfsel {
+  font-family: 'DM Sans', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text); line-height: 1.5;
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+.ana-wrapper .mfsel .mono {
+  font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+.ana-wrapper .mfsel { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+/* telas largas: a tabela (com coluna Vendas) precisa de mais respiro pra caber sem scroll horizontal */
+@media (min-width: 1320px) { .ana-wrapper .mfsel { max-width: 1330px; } }
+
+/* ── Header ── */
+.ana-wrapper .mfsel .hdr { margin-bottom: 22px; }
+.ana-wrapper .mfsel .hdr h1 { font-size: 1.55rem; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+.ana-wrapper .mfsel .hdr p { margin: 0; color: var(--text-secondary); font-size: 0.95rem; }
+
+/* ── Cards ── */
+.ana-wrapper .mfsel .card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  margin-bottom: 16px;
+}
+.ana-wrapper .mfsel .card-pad { padding: 16px 18px; }
+.ana-wrapper .mfsel .section-label {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 12px;
+}
+
+/* ── Chips de problema ── */
+.ana-wrapper .mfsel .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+.ana-wrapper .mfsel .chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg);
+  font-family: inherit; font-size: 0.86rem; font-weight: 500; color: var(--text);
+  transition: all .12s ease; white-space: nowrap;
+}
+.ana-wrapper .mfsel .chip:hover { border-color: var(--blue); background: var(--blue-light); }
+.ana-wrapper .mfsel .chip .chip-emoji { font-size: 0.95rem; line-height: 1; }
+/* indicador de severidade flat (estilo LED de status) — substitui as bolinhas emoji */
+.ana-wrapper .mfsel .chip-ind {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
+  vertical-align: middle;
+}
+.ana-wrapper .mfsel .chip-ind.sev-red { background: var(--red);    box-shadow: 0 0 0 3px var(--red-light); }
+.ana-wrapper .mfsel .chip-ind.sev-orange { background: var(--orange); box-shadow: 0 0 0 3px var(--orange-light); }
+.ana-wrapper .mfsel .chip-ind.sev-yellow { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-light); }
+.ana-wrapper .mfsel .chip-ind.sev-gray { background: var(--text-muted); box-shadow: 0 0 0 3px var(--row-alt); }
+.ana-wrapper .mfsel .chip.active .chip-ind { box-shadow: 0 0 0 3px rgba(255,255,255,0.3); }
+.ana-wrapper .mfsel .chip .chip-count {
+  font-family: 'DM Mono', monospace; font-weight: 500; font-size: 0.8rem;
+  background: var(--navy); color: #fff; border-radius: 999px;
+  padding: 1px 8px; min-width: 22px; text-align: center;
+}
+.ana-wrapper .mfsel .chip.active { border-color: var(--blue); background: var(--blue); color: #fff; }
+.ana-wrapper .mfsel .chip.active .chip-count { background: rgba(255,255,255,0.25); color: #fff; }
+.ana-wrapper .mfsel .chips-clean {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--green-dark); font-weight: 500; font-size: 0.92rem;
+}
+.ana-wrapper .mfsel .chips-tip { font-size: 0.8rem; color: var(--text-secondary); margin: 8px 0 0; }
+.ana-wrapper .mfsel .chips-skel { display: flex; gap: 9px; }
+.ana-wrapper .mfsel .chips-skel span {
+  width: 150px; height: 34px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--row-alt) 25%, #eef2f7 50%, var(--row-alt) 75%);
+  background-size: 200% 100%; animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Barra de filtros ── */
+.ana-wrapper .mfsel .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ana-wrapper .mfsel .search-box {
+  position: relative; flex: 1 1 280px; min-width: 220px;
+}
+.ana-wrapper .mfsel .search-box input {
+  width: 100%; padding: 9px 12px 9px 36px;
+  border: 1px solid var(--border); background: var(--bg);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.92rem;
+  color: var(--text); transition: border-color .12s;
+}
+.ana-wrapper .mfsel .search-box input:focus { outline: none; border-color: var(--blue); background: #fff; }
+.ana-wrapper .mfsel .search-box .ico {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); font-size: 0.95rem;
+  border: none; background: transparent; cursor: pointer;
+  padding: 10px; margin: 0 0 0 -10px; line-height: 1;
+}
+.ana-wrapper .mfsel .btn-group { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.ana-wrapper .mfsel .btn-group button {
+  padding: 8px 14px; border: none; background: var(--bg-card);
+  font-family: inherit; font-size: 0.86rem; font-weight: 500; color: var(--text-secondary);
+  cursor: pointer; border-right: 1px solid var(--border); transition: all .1s;
+}
+.ana-wrapper .mfsel .btn-group button:last-child { border-right: none; }
+.ana-wrapper .mfsel .btn-group button:hover { background: var(--row-alt); }
+.ana-wrapper .mfsel .btn-group button.on { background: var(--blue); color: #fff; }
+.ana-wrapper .mfsel .sel {
+  padding: 8px 12px; border: 1px solid var(--border); background: var(--bg-card);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.86rem;
+  color: var(--text); cursor: pointer;
+}
+.ana-wrapper .mfsel .sel:focus { outline: none; border-color: var(--blue); }
+.ana-wrapper .mfsel .btn-clear {
+  padding: 8px 12px; border: 1px solid var(--border); background: var(--bg-card);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.84rem;
+  color: var(--red); cursor: pointer; transition: all .1s;
+}
+.ana-wrapper .mfsel .btn-clear:hover { background: var(--red-light); border-color: var(--red); }
+/* no desktop o wrapper dos filtros secundários é transparente (layout inalterado);
+   no mobile ele colapsa atrás do botão "Filtrar e ordenar" */
+.ana-wrapper .mfsel .filters-more { display: contents; }
+.ana-wrapper .mfsel .btn-filters-toggle { display: none; }
+
+/* ── Tabela ── */
+.ana-wrapper .mfsel .tbl-card { overflow: hidden; }
+/* overflow-x só em telas estreitas — em telas largas (>=1346px) a tabela cabe inteira e o thead sticky engata no scroll da página */
+@media (max-width: 1345px) { .ana-wrapper .mfsel .tbl-wrap { overflow-x: auto; } }
+.ana-wrapper .mfsel table.grid { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.ana-wrapper .mfsel table.grid thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--navy); color: #fff;
+  text-align: left; font-weight: 600; font-size: 0.72rem;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 11px 10px; white-space: nowrap;
+}
+.ana-wrapper .mfsel table.grid thead th.th-wrap { white-space: normal; min-width: 68px; }
+/* Sinais precisa de faixa garantida — senão a coluna Anúncio engole a largura e os
+   badges empilham 3+ dobras (linha alta = menos anúncios na tela). Mantém IGUAL à
+   largura fixa do .badges: coluna estável, tabela não muda ao expandir. */
+.ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 330px; }
+.ana-wrapper .mfsel table.grid th.num, .ana-wrapper .mfsel table.grid td.num { text-align: right; white-space: nowrap; }
+/* top-align: o valor primário de cada célula fica na MESMA altura em toda a linha —
+   sem o zigzag horizontal que o middle criava quando vizinhos têm sublinhas (P2) */
+.ana-wrapper .mfsel table.grid tbody td { padding: 9px 10px 7px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ana-wrapper .mfsel table.grid tbody tr:nth-child(even) { background: var(--row-alt); }
+.ana-wrapper .mfsel table.grid tbody tr { cursor: pointer; transition: background .1s; }
+.ana-wrapper .mfsel table.grid tbody tr:hover { background: var(--row-hover); }
+.ana-wrapper .mfsel table.grid tbody tr.selected { background: var(--blue-light); box-shadow: inset 3px 0 0 var(--blue); }
+.ana-wrapper .mfsel .thumb {
+  width: 56px; height: 56px; border-radius: var(--radius-sm);
+  object-fit: cover; background: var(--row-alt); border: 1px solid var(--border);
+  display: block;
+}
+.ana-wrapper .mfsel .cell-id { color: var(--text-muted); font-size: 0.75rem; }
+.ana-wrapper .mfsel .cell-title { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+/* título + ID empilhados na mesma célula (caret de família à esquerda quando houver) */
+.ana-wrapper .mfsel .cell-main { display: flex; align-items: center; }
+.ana-wrapper .mfsel .cell-text { min-width: 0; }
+/* flex-wrap: em coluna estreita os ícones/ID quebram pra linha de baixo em vez de
+   vazar pra fora da célula (vazamento pego pelo mfLayoutCheck em ~1050px) */
+.ana-wrapper .mfsel .row-id { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 1px; line-height: 1.3; max-width: 100%; }
+.ana-wrapper .mfsel .cell-price { font-weight: 500; }
+/* Faixa min–max (linha-família): único conteúdo sem teto que sobrou nas colunas fit.
+   Conta real (22/07) tinha "R$ 69,90–6.666,00" -> coluna Preço 167px -> tabela 23px
+   maior que o host (lição da leva 23: conteúdo sem teto realoca colunas). A faixa
+   pode quebrar SÓ no <wbr> depois do "–" (o espaço do "R$ " vira NBSP no markup);
+   preço único continua nowrap e intocado. */
+.ana-wrapper .mfsel .price-wrap-range { white-space: normal; }
+.ana-wrapper .mfsel .cell-stock { color: var(--text-secondary); }
+.ana-wrapper .mfsel .cell-stock.low { color: var(--red); font-weight: 500; }
+/* colunas numéricas encolhem no conteúdo — espaço livre vai pro título e sinais */
+.ana-wrapper .mfsel table.grid th.fit, .ana-wrapper .mfsel table.grid td.fit { width: 1%; }
+/* estoque + estimativa de duração empilhados, alinhados à direita */
+.ana-wrapper .mfsel .stock-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.ana-wrapper .mfsel .stock-days { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; cursor: help; white-space: nowrap; }
+/* taxa de conversão 30d sob o nº de visitas — um degrau acima do "≈ dias" (P13):
+   é métrica de decisão, não metadado */
+.ana-wrapper .mfsel .conv-rate { font-size: 0.72rem; color: var(--text-secondary); font-weight: 500; cursor: help; white-space: nowrap; }
+/* números das sublinhas em tabular: sem "tremor" vertical entre linhas (P13) */
+.ana-wrapper .mfsel .conv-rate, .ana-wrapper .mfsel .stock-days, .ana-wrapper .mfsel .price-orig { font-variant-numeric: tabular-nums; }
+/* minigráfico de tendência ao lado do nº de visitas; nº com largura fixa alinha a "lane"
+   dos sparks entre as linhas (P3) */
+.ana-wrapper .mfsel .visits-line { display: inline-flex; align-items: center; gap: 6px; cursor: help; }
+.ana-wrapper .mfsel .visits-line .spark { display: block; flex-shrink: 0; }
+.ana-wrapper .mfsel .visits-line .cell-stock { display: inline-block; min-width: 4ch; text-align: right; }
+/* marcador especial de anúncio de catálogo — junto do título, não é badge de sinal.
+   Ghost (P8 do design review): navy sólido roubava peso da severidade; "é catálogo"
+   é identidade, não alarme — o navy 100% fica pro cabeçalho e pros contadores. */
+.ana-wrapper .mfsel .tag-catalog {
+  display: inline-flex; align-items: center;
+  background: transparent; color: var(--navy); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0 6px; margin-right: 6px;
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  cursor: help; flex-shrink: 0;
+}
+/* Largura FIXA (não max-): a coluna Sinais não muda quando famílias/vinculados
+   expandem — sub-linha com badges largos alargava a tabela e o botão sticky
+   cobria a ponta ("cortado"). Rótulo longo QUEBRA pra próxima linha dentro da
+   faixa, nunca some no meio da palavra (P5). */
+.ana-wrapper .mfsel .badges { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: center; width: 330px; }
+/* Sinal = indicador LED + texto flat (mesma linguagem dos chips do resumo) —
+   sem fundo colorido por sinal: o quadradinho carrega a severidade, o texto fica
+   neutro e a coluna deixa de parecer um arco-íris de pills */
+.ana-wrapper .mfsel .badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 0; border-radius: 4px;
+  font-size: 0.74rem; font-weight: 500; white-space: nowrap; line-height: 1.5;
+  color: var(--text-secondary); background: transparent;
+}
+.ana-wrapper .mfsel .badge::before { content: ''; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.ana-wrapper .mfsel .badge.red::before { background: var(--red); }
+.ana-wrapper .mfsel .badge.orange::before { background: var(--orange); }
+.ana-wrapper .mfsel .badge.yellow::before { background: var(--yellow); }
+.ana-wrapper .mfsel .badge.gray::before { background: var(--text-muted); }
+.ana-wrapper .mfsel .badge.blue::before { background: var(--blue); }
+.ana-wrapper .mfsel .badge.green::before { background: var(--green); }
+/* severidade alta ganha texto colorido pra ranquear o olho (contraste AA mantido) */
+.ana-wrapper .mfsel .badge.red { color: var(--red-dark); font-weight: 600; }
+.ana-wrapper .mfsel .badge.orange { color: #c2410c; font-weight: 600; }
+.ana-wrapper .mfsel .badge.yellow { color: #b45309; }
+.ana-wrapper .mfsel .badge.green { color: var(--green-dark); }
+/* Ações continuam PILLS (clicável precisa parecer clicável): variações, vinculados, +N */
+.ana-wrapper .mfsel .badge.variations, .ana-wrapper .mfsel .badge-more {
+  padding: 2px 9px; border-radius: 999px; font-weight: 600; font-size: 0.72rem;
+  gap: 4px;
+}
+.ana-wrapper .mfsel .badge.variations::before, .ana-wrapper .mfsel .badge-more::before { display: none; }
+.ana-wrapper .mfsel .badge-more { cursor: pointer; user-select: none; background: transparent; color: var(--blue); border: 1px solid #c9dcff; }
+/* dica "o que fazer" aberta por toque num badge (mobile) — inserida logo após .badges */
+.ana-wrapper .mfsel .badge-hint {
+  flex-basis: 100%; font-size: 0.78rem; color: var(--text-secondary);
+  background: var(--row-alt); border-radius: 6px; padding: 8px 10px; margin-top: 6px;
+}
+/* botão "Analisar" fixo na borda direita: em janela estreita (tabela com scroll
+   horizontal) ele continua visível por cima do conteúdo rolado — sinais nunca
+   atropelam o botão. Precisa de fundo sólido por linha (zebra/hover/selected). */
+.ana-wrapper .mfsel .analyze-cell { width: 1%; white-space: nowrap; text-align: right; position: sticky; right: 0; background: var(--bg-card); }
+.ana-wrapper .mfsel table.grid tbody tr:nth-child(even) .analyze-cell { background: var(--row-alt); }
+.ana-wrapper .mfsel table.grid tbody tr:hover .analyze-cell { background: var(--row-hover); }
+.ana-wrapper .mfsel table.grid tbody tr.selected .analyze-cell { background: var(--blue-light); }
+.ana-wrapper .mfsel table.grid tbody tr.subrow .analyze-cell { background: #fbfdff; }
+.ana-wrapper .mfsel .btn-analyze {
+  padding: 5px 10px; border: 1.5px solid var(--blue); background: #fff;
+  color: var(--blue); border-radius: var(--radius-sm); font-family: inherit;
+  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  opacity: 1; transition: background .12s;
+}
+.ana-wrapper .mfsel table.grid tbody tr:hover .btn-analyze { opacity: 1; }
+.ana-wrapper .mfsel .btn-analyze:hover { background: var(--blue); color: #fff; }
+/* touch (sem hover) e navegação por teclado: o botão nunca parece desabilitado */
+@media (hover: none) { .ana-wrapper .mfsel .btn-analyze { opacity: 1; } }
+.ana-wrapper .mfsel .btn-analyze:focus-visible { opacity: 1; }
+
+/* ── Loading orbital (espelhado de analyzer.css .comp-loading) ── */
+.ana-wrapper .mfsel .comp-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 48px 24px 40px; gap: 16px;
+}
+.ana-wrapper .mfsel .comp-orbital { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+.ana-wrapper .mfsel .comp-orbital-ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent; }
+.ana-wrapper .mfsel .comp-orbital-ring:nth-child(1) { border-top-color: var(--blue); border-right-color: var(--blue); animation: comp-spin-f .75s linear infinite; }
+.ana-wrapper .mfsel .comp-orbital-ring:nth-child(2) { inset: 10px; border-bottom-color: var(--green); border-left-color: var(--green); animation: comp-spin-f 1.1s linear infinite reverse; }
+.ana-wrapper .mfsel .comp-orbital-dot { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 8px; height: 8px; border-radius: 50%; background: var(--blue); animation: comp-pulse 1.2s ease-in-out infinite; }
+@keyframes comp-spin-f { to { transform: rotate(360deg); } }
+@keyframes comp-pulse { 0%,100% { transform: translate(-50%,-50%) scale(.7); opacity:.4; } 50% { transform: translate(-50%,-50%) scale(1); opacity:1; } }
+.ana-wrapper .mfsel .comp-loading-msg { color: var(--text); font-weight: 700; font-size: 1rem; margin: 0; text-align: center; }
+.ana-wrapper .mfsel .comp-loading-bar { width: 280px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.ana-wrapper .mfsel .comp-loading-bar-fill { height: 100%; width: 45%; background: linear-gradient(90deg, transparent, var(--blue), var(--green), transparent); animation: comp-sweep 1.6s ease-in-out infinite; }
+@keyframes comp-sweep { 0% { transform: translateX(-222%); } 100% { transform: translateX(333%); } }
+
+/* ── Estados: vazio / erro / aviso ── */
+.ana-wrapper .mfsel .state { padding: 44px 24px; text-align: center; color: var(--text-secondary); }
+.ana-wrapper .mfsel .state .emoji { font-size: 2rem; display: block; margin-bottom: 10px; }
+.ana-wrapper .mfsel .state h3 { margin: 0 0 6px; color: var(--text); font-size: 1.05rem; }
+.ana-wrapper .mfsel .state p { margin: 0; font-size: 0.92rem; }
+.ana-wrapper .mfsel .state .btn-retry {
+  margin-top: 14px; padding: 8px 16px; border: 1px solid var(--blue); background: var(--blue);
+  color: #fff; border-radius: var(--radius-sm); font-family: inherit; font-weight: 600; cursor: pointer;
+}
+.ana-wrapper .mfsel .banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.88rem;
+  margin: 0 0 12px;
+}
+.ana-wrapper .mfsel .banner.warn { background: var(--yellow-light); color: #92400e; border: 1px solid #fde68a; }
+/* #0052cc (mesmo tom do hover do .btn-open-app): contraste ~5,5:1 sobre o fundo azul-claro */
+.ana-wrapper .mfsel .banner.info { background: var(--blue-light); color: #0052cc; border: 1px solid #c7ddff; }
+.ana-wrapper .mfsel .chip-clear-link { background: none; border: none; padding: 10px 4px; margin: -10px 0; color: var(--blue); font-family: inherit; font-size: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+/* ── Paginação ── */
+.ana-wrapper .mfsel .pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; flex-wrap: wrap; }
+.ana-wrapper .mfsel .pager-info { font-size: 0.86rem; color: var(--text-secondary); }
+.ana-wrapper .mfsel .pager-info b { color: var(--text); font-family: 'DM Mono', monospace; font-weight: 500; }
+.ana-wrapper .mfsel .pager-progress { flex: 1 1 140px; max-width: 240px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.ana-wrapper .mfsel .pager-progress span { display: block; height: 100%; background: var(--blue); border-radius: 2px; transition: width .2s; }
+.ana-wrapper .mfsel .pager-btns { display: flex; gap: 8px; }
+.ana-wrapper .mfsel .pager-btns button {
+  padding: 7px 14px; border: 1px solid var(--border); background: var(--bg-card);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.86rem; font-weight: 500;
+  color: var(--text); cursor: pointer; transition: all .1s;
+}
+.ana-wrapper .mfsel .pager-btns button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+.ana-wrapper .mfsel .pager-btns button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Cabeçalho dos chips + botão refresh ── */
+.ana-wrapper .mfsel .chips-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ana-wrapper .mfsel .chips-head .section-label { margin: 0; }
+.ana-wrapper .mfsel .icon-btn {
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary);
+  width: auto; height: 30px; padding: 0 10px; font-size: 0.8rem; border-radius: var(--radius-sm); cursor: pointer;
+  line-height: 1; transition: all .12s;
+}
+.ana-wrapper .mfsel .icon-btn:hover { border-color: var(--blue); color: var(--blue); }
+.ana-wrapper .mfsel .icon-btn:disabled { opacity: .5; cursor: default; }
+.ana-wrapper .mfsel .icon-btn.spin { animation: comp-spin-f .6s linear; }
+
+/* ── Botão exportar CSV ── */
+.ana-wrapper .mfsel .btn-export {
+  padding: 8px 14px; border: 1px solid var(--green); background: var(--green-light);
+  color: var(--green-dark); border-radius: var(--radius-sm); font-family: inherit;
+  font-size: 0.84rem; font-weight: 600; cursor: pointer; transition: all .1s; white-space: nowrap;
+}
+.ana-wrapper .mfsel .btn-export:hover { background: var(--green); color: #fff; }
+
+/* ── Quick-filters (client-side) ── */
+.ana-wrapper .mfsel .quick-filters { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.ana-wrapper .mfsel .chip-sm { padding: 6px 12px; font-size: 0.82rem; }
+.ana-wrapper .mfsel .chip-sm.active { border-color: var(--blue); background: var(--blue); color: #fff; }
+.ana-wrapper .mfsel .quick-hint { font-size: 0.8rem; color: #b45309; font-weight: 500; }
+
+/* ── Preço com desconto ── */
+.ana-wrapper .mfsel .price-orig { color: var(--text-muted); text-decoration: line-through; font-size: 0.78rem; display: block; }
+/* pill de desconto em linha própria, colada à direita: o preço fica sozinho na linha dele
+   e a coluna não alarga — todos os preços da tabela alinham na mesma borda */
+.ana-wrapper .mfsel .badge-off {
+  display: block; width: max-content; margin: 0 0 1px auto; padding: 1px 6px; border-radius: 4px;
+  background: var(--green-light); color: #047857; font-size: 0.7rem; font-weight: 700;
+}
+
+/* ── Linha-produto (família agrupada) ── */
+/* seta maior no glifo, mais magra no espaço (padding 12→8, gutter 8→4) */
+.ana-wrapper .mfsel .caret { cursor: pointer; color: var(--text-secondary); font-size: 1.1rem; user-select: none; transition: transform .15s; display: inline-block; padding: 8px; margin: -8px 4px -8px -8px; line-height: 1; }
+.ana-wrapper .mfsel .caret.open { transform: rotate(90deg); }
+/* pills de ação em GHOST (borda fina, sem preenchimento): param de vencer o vermelho
+   da severidade no scan da coluna (P1 do design review) */
+.ana-wrapper .mfsel .badge.variations { background: transparent; color: var(--blue); border: 1px solid #c9dcff; cursor: pointer; }
+.ana-wrapper .mfsel tr.subrow { background: #fbfdff !important; }
+.ana-wrapper .mfsel tr.subrow td { border-bottom: 1px dashed var(--border); }
+.ana-wrapper .mfsel tr.subrow .cell-main { padding-left: 22px; }
+.ana-wrapper .mfsel tr.subrow .cell-title { color: var(--text-secondary); }
+/* variação: mostra o fim do título (— Tam P, — 38) QUEBRANDO linha (sem ellipsis).
+   max-width segura a coluna: título sem teto alargava a tabela na expansão e o
+   botão sticky cobria os sinais. */
+.ana-wrapper .mfsel tr.subrow .cell-title { max-width: 300px; white-space: normal; }
+.ana-wrapper .mfsel .btn-analyze-var {
+  padding: 4px 10px; border: 1px solid var(--border); background: #fff; color: var(--blue);
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.76rem; font-weight: 600; cursor: pointer;
+}
+.ana-wrapper .mfsel .btn-analyze-var:hover { border-color: var(--blue); background: var(--blue-light); }
+
+/* ── Ícones de ação junto do ID (copiar / abrir no ML) — sempre visíveis, discretos ── */
+.ana-wrapper .mfsel .id-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; opacity: .55; transition: opacity .12s; }
+.ana-wrapper .mfsel tr:hover .id-actions { opacity: 1; }
+.ana-wrapper .mfsel .id-act { cursor: pointer; font-size: 0.82rem; color: var(--text-secondary); text-decoration: none; display: inline-flex; align-items: center; }
+.ana-wrapper .mfsel .id-act svg { display: block; }
+.ana-wrapper .mfsel .id-act:hover { color: var(--blue); }
+.ana-wrapper .mfsel .id-copied { color: var(--green-dark); font-weight: 600; font-size: 0.72rem; margin-left: 6px; }
+
+/* ── Fluxo integrado: barra de análise + placeholder ── */
+.ana-wrapper .mfsel #analysisView { animation: fadeIn .18s ease; }
+.ana-wrapper .mfsel .analysis-bar {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 12px 16px; margin-bottom: 16px;
+}
+.ana-wrapper .mfsel .analysis-back {
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: var(--radius-sm); padding: 8px 14px; font-family: inherit; font-weight: 600;
+  font-size: 0.88rem; cursor: pointer; white-space: nowrap; transition: all .1s;
+}
+.ana-wrapper .mfsel .analysis-back:hover { border-color: var(--blue); color: var(--blue); }
+.ana-wrapper .mfsel .analysis-bar .thumb { width: 38px; height: 38px; }
+.ana-wrapper .mfsel .analysis-bar .ab-meta { display: flex; flex-direction: column; min-width: 0; }
+.ana-wrapper .mfsel .analysis-bar .ab-id { font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--text-muted); }
+.ana-wrapper .mfsel .analysis-bar .ab-title { font-weight: 600; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ana-wrapper .mfsel .analysis-placeholder {
+  background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--radius);
+  padding: 48px 28px; text-align: center; color: var(--text-secondary);
+}
+.ana-wrapper .mfsel .analysis-placeholder .emoji { font-size: 2rem; display: block; margin-bottom: 12px; }
+.ana-wrapper .mfsel .analysis-placeholder h3 { margin: 0 0 8px; color: var(--text); }
+.ana-wrapper .mfsel .analysis-placeholder p { margin: 0 auto 18px; max-width: 460px; font-size: 0.92rem; }
+.ana-wrapper .mfsel .btn-open-app {
+  padding: 10px 20px; border: none; background: var(--blue); color: #fff; border-radius: var(--radius-sm);
+  font-family: inherit; font-weight: 700; font-size: 0.92rem; cursor: pointer;
+}
+.ana-wrapper .mfsel .btn-open-app:hover { background: #0052cc; }
+
+/* ── Mobile: tabela vira cards ──
+   (no FIM do <style> de propósito: as regras mobile precisam vencer a cascata
+   sobre as regras base declaradas acima — não mover de volta pra cima) */
+/* ── Tier compacto 721–1345px (janela estreita / Windows com escala 125%) ──
+   Sem isto a tabela (≈1278px) rolava horizontalmente e o botão sticky COBRIA a
+   coluna Sinais ("sinais cortados"). Aqui a tabela emagrece pra caber inteira:
+   foto 44, sem sparkline, padding menor — e Título/Sinais com largura FLUIDA
+   pelo viewport (clamp): encolhem junto com a janela em QUALQUER largura do
+   tier, e como dependem da janela (não do conteúdo), expandir família/vinculados
+   continua sem mudar a largura da tabela. Piso do clamp ≈ janela de 910px;
+   abaixo disso rola com a sombra do botão como pista. Constantes com ~20px de
+   folga pra barra de rolagem clássica do Windows (vw inclui a barra). */
+@media (min-width: 721px) and (max-width: 1345px) {
+  .ana-wrapper .mfsel { padding-left: 14px; padding-right: 14px; }
+  .ana-wrapper .mfsel .thumb { width: 44px; height: 44px; }
+  .ana-wrapper .mfsel .visits-line .spark { display: none; }
+  .ana-wrapper .mfsel .cell-title { max-width: clamp(104px, 42vw - 289px, 190px); }
+  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: clamp(104px, 42vw - 289px, 190px); }
+  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 165px; }
+  .ana-wrapper .mfsel .badges { width: clamp(165px, 58vw - 404px, 258px); }
+  /* badge individual nunca vaza da faixa: se for mais largo que a coluna mínima,
+     o TEXTO quebra dentro do badge (só acontece em janela < ~1000px) */
+  .ana-wrapper .mfsel .badge { max-width: 100%; white-space: normal; }
+  .ana-wrapper .mfsel .btn-analyze-var { padding: 4px 8px; }
+  .ana-wrapper .mfsel table.grid tbody td { padding-left: 7px; padding-right: 7px; }
+  .ana-wrapper .mfsel table.grid thead th { padding-left: 7px; padding-right: 7px; }
+  .ana-wrapper .mfsel .btn-analyze { padding: 5px 8px; }
+  /* se AINDA rolar (janela < ~1030px), o botão sticky ganha sombra à esquerda:
+     fica claro que há conteúdo passando por baixo (affordance de rolagem) */
+  .ana-wrapper .mfsel .analyze-cell { box-shadow: -10px 0 10px -10px rgba(15, 23, 42, 0.25); }
+}
+
+@media (max-width: 720px) {
+  .ana-wrapper .mfsel { padding: 18px 12px 48px; }
+  .ana-wrapper .mfsel table.grid thead { display: none; }
+  .ana-wrapper .mfsel table.grid, .ana-wrapper .mfsel table.grid tbody, .ana-wrapper .mfsel table.grid tr, .ana-wrapper .mfsel table.grid td { display: block; width: 100%; }
+  .ana-wrapper .mfsel table.grid tbody tr {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 10px; padding: 10px 12px; background: var(--bg-card) !important;
+    box-shadow: var(--shadow-sm); position: relative;
+  }
+  .ana-wrapper .mfsel table.grid tbody tr.selected { box-shadow: inset 0 0 0 2px var(--blue); }
+  .ana-wrapper .mfsel table.grid tbody td { border: none; padding: 4px 0; display: flex; justify-content: space-between; gap: 12px; }
+  .ana-wrapper .mfsel table.grid tbody td::before {
+    content: attr(data-label); font-weight: 600; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .ana-wrapper .mfsel table.grid tbody td.td-photo { justify-content: flex-start; }
+  .ana-wrapper .mfsel table.grid tbody td.td-photo::before { display: none; }
+  .ana-wrapper .mfsel .cell-title { max-width: none; white-space: normal; text-align: right; }
+  .ana-wrapper .mfsel .badges { width: auto; max-width: none; justify-content: flex-end; }
+  /* CTA sólido no mobile (P4): sem hover, o ghost lia como desabilitado */
+  .ana-wrapper .mfsel .btn-analyze { opacity: 1; width: 100%; padding: 12px; min-height: 44px; margin-top: 4px; background: var(--blue); color: #fff; border-color: var(--blue); }
+  .ana-wrapper .mfsel .analyze-cell { text-align: center; }
+  .ana-wrapper .mfsel .analyze-cell::before { display: none; }
+  .ana-wrapper .mfsel .filters .sel, .ana-wrapper .mfsel .filters .btn-export { flex: 1 1 46%; }
+  /* exportar vira ação secundária no fim dos filtros (encurta o caminho até o 1º anúncio) */
+  .ana-wrapper .mfsel .filters .btn-export { order: 99; flex: 1 1 100%; background: var(--bg-card); border-color: var(--border); color: var(--text-secondary); }
+  /* controles secundários colapsam atrás de "Filtrar e ordenar" — 1º anúncio na 1ª dobra */
+  .ana-wrapper .mfsel .btn-filters-toggle { display: block; flex: 1 1 100%; min-height: 44px; padding: 12px; border: 1px solid var(--border); background: var(--bg-card); border-radius: var(--radius-sm); font-family: inherit; font-size: 0.88rem; font-weight: 600; color: var(--text); }
+  .ana-wrapper .mfsel .btn-filters-toggle.has-active { border-color: var(--blue); color: var(--blue); }
+  .ana-wrapper .mfsel .filters-card:not(.open) .filters-more { display: none; }
+  .ana-wrapper .mfsel .filters-card:not(.open) .quick-filters { display: none; }
+  /* resumo da conta vira carrossel de 1 linha */
+  .ana-wrapper .mfsel .chips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; scroll-snap-type: x proximity; }
+  .ana-wrapper .mfsel .chips .chip { flex: 0 0 auto; scroll-snap-align: start; }
+  /* ações de copiar/abrir sempre visíveis + alvo de toque maior
+     (seletor com table.grid pra vencer a regra base .id-actions{opacity:0}) */
+  .ana-wrapper .mfsel table.grid .id-actions { opacity: 1; }
+  .ana-wrapper .mfsel .id-act { display: inline-block; padding: 14px 12px; margin: -14px 0; }
+  .ana-wrapper .mfsel .pager-btns button { padding: 11px 18px; min-height: 44px; }
+  /* alvos de toque ~44px nos controles (chips compactos: ~2 inteiros + peek em 360px) */
+  .ana-wrapper .mfsel .chip { padding: 12px 10px; min-height: 44px; font-size: 0.8rem; }
+  .ana-wrapper .mfsel .btn-group button { padding: 12px 14px; }
+  .ana-wrapper .mfsel .sel { padding: 12px; }
+  .ana-wrapper .mfsel .search-box input { padding: 12px 12px 12px 38px; }
+  /* 16px no foco: elimina o auto-zoom do Safari/Chrome iOS sem bloquear o pinch-zoom */
+  .ana-wrapper .mfsel .search-box input, .ana-wrapper .mfsel .sel { font-size: 1rem; }
+  .ana-wrapper .mfsel .search-box .ico { padding: 14px; margin: 0 0 0 -14px; }
+  .ana-wrapper .mfsel .icon-btn { width: auto; height: 44px; padding: 0 14px; }
+  .ana-wrapper .mfsel .badge.variations, .ana-wrapper .mfsel .badge-more { padding: 12px 14px; margin: -6px 0; font-size: 0.8rem; }
+  /* sinais no card: alvo de toque decente (cada badge abre a dica "o que fazer") — P10 */
+  .ana-wrapper .mfsel .badges { gap: 6px 14px; }
+  .ana-wrapper .mfsel .badge { min-height: 38px; }
+  /* sparkline sai do card (P3): em 390px vira ruído — a tendência fica pra análise */
+  .ana-wrapper .mfsel .visits-line .spark { display: none; }
+  /* ID discreto no card (P11): o vendedor triage por foto+título+sinais; o ID copia quando precisa */
+  .ana-wrapper .mfsel .row-id { opacity: .8; }
+  .ana-wrapper .mfsel .row-id .cell-id { font-size: 0.7rem; }
+  /* pista de que o carrossel de chips continua (P14): fade na borda direita */
+  .ana-wrapper .mfsel .chips { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
+  /* a pill "N variações ▾" já é o controle óbvio de expandir — a setinha do ID é ruído com alvo pequeno */
+  .ana-wrapper .mfsel .caret { display: none; }
+  /* card abre com foto e título, não com o ID */
+  .ana-wrapper .mfsel table.grid tbody tr { display: flex; flex-direction: column; }
+  .ana-wrapper .mfsel table.grid tbody td.td-photo { order: -2; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Título"], .ana-wrapper .mfsel table.grid tbody td[data-label="Variação"], .ana-wrapper .mfsel table.grid tbody td[data-label="Vinculado"] { order: -1; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Título"]::before, .ana-wrapper .mfsel table.grid tbody td[data-label="Variação"]::before, .ana-wrapper .mfsel table.grid tbody td[data-label="Vinculado"]::before { display: none; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Título"] .cell-title, .ana-wrapper .mfsel table.grid tbody td[data-label="Variação"] .cell-title, .ana-wrapper .mfsel table.grid tbody td[data-label="Vinculado"] .cell-title { text-align: left; font-weight: 600; font-size: 1rem; }
+  /* sinais sobem para logo abaixo do título: o "por quê" na primeira dobra
+     (Título também é order:-1 e vem antes no DOM -> foto → título → sinais → resto) */
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Sinais"] { order: -1; justify-content: flex-start; flex-wrap: wrap; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Sinais"]::before { display: none; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Sinais"] .badges { justify-content: flex-start; }
+  /* variações expandidas lêem como "filhas" do card de cima */
+  .ana-wrapper .mfsel table.grid tbody tr.subrow { background: #fbfdff !important; border-left: 3px solid #d7e6ff; margin: -4px 0 10px 14px; width: calc(100% - 14px); box-shadow: none; }
+  .ana-wrapper .mfsel table.grid tbody tr.subrow td.td-photo { display: none; }
+  .ana-wrapper .mfsel .btn-analyze-var { display: block; width: 100%; padding: 11px; min-height: 44px; font-size: 0.82rem; margin-top: 4px; }
+  /* barra de análise: título completo orienta; o ID mono não diz nada no celular.
+     Quebra em 2 linhas: linha 1 = Voltar + foto; linha 2 = título em largura cheia
+     (senão o título espreme numa coluna de ~126px) */
+  .ana-wrapper .mfsel .analysis-bar { flex-wrap: wrap; }
+  .ana-wrapper .mfsel .analysis-bar .ab-meta { flex: 1 1 100%; }
+  .ana-wrapper .mfsel .analysis-bar .ab-title { white-space: normal; }
+  .ana-wrapper .mfsel .analysis-bar .ab-id { display: none; }
+  /* .fit (width:1%) é conceito de coluna de DESKTOP — no card mobile o td volta a 100%
+     (senão a caixa fica com ~3px e o conteúdo transborda "alinhado à esquerda") */
+  .ana-wrapper .mfsel table.grid tbody td.fit { width: 100%; }
+  /* sticky do botão é conceito de scroll horizontal de DESKTOP — card não rola */
+  .ana-wrapper .mfsel .analyze-cell { position: static; background: transparent; }
+  /* foto maior no card: reconhecimento do produto no celular */
+  .ana-wrapper .mfsel .thumb { width: 72px; height: 72px; }
+  /* preço com desconto no card: riscado, pill e preço empilham à direita
+     (no flex padrão ficariam lado a lado e estourariam a largura do card) */
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Preço"] { display: block; text-align: right; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Preço"]::before { float: left; }
+  .ana-wrapper .mfsel table.grid tbody td[data-label="Preço"] .badge-off { margin-left: auto; }
+}
+
+
+/* ==== PORT F4 — regras que só existem no widget (não no protótipo) ==== */
+/* Neutraliza o .ana-wrapper button (azul/uppercase do analyzer) dentro do painel:
+   os botões do painel têm SEMPRE regra própria; isto só zera a base herdada. */
+.ana-wrapper .mfsel button { text-transform: none; letter-spacing: 0; }
+/* Esconde o fluxo legado (input de colar link + dica) enquanto o painel está no ar.
+   Se o painel falhar no boot, a classe sai e o fluxo antigo volta intacto. */
+.ana-wrapper.mfsel-on > .input-area,
+.ana-wrapper.mfsel-on > .info-box { display: none; }
