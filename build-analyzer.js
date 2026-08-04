@@ -69,7 +69,7 @@ const selectorHtml = `
 <div class="mfsel" id="mfselRoot">
 <div class="hdr">
   <h1>Selecione um anúncio para analisar</h1>
-  <p id="subtitle">Os sinais mostram qual anúncio precisa de atenção — toque ou clique em um para ver a análise completa.</p>
+  <p id="subtitle">Toque ou clique em um anúncio para ver a análise completa. Os sinais mostram o que precisa de atenção.</p>
 </div>
 
 <div id="panelView">
@@ -89,7 +89,11 @@ const selectorHtml = `
     <div class="filters">
       <div class="search-box">
         <button type="button" class="ico" id="searchGo" title="Buscar" aria-label="Buscar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg></button>
-        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Nome, ID ou link do anúncio" autocomplete="off">
+        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Buscar por nome, ID ou link" autocomplete="off">
+        <select class="search-mode" id="searchModeSelect" aria-label="Buscar por">
+          <option value="text">Nome ou ID</option>
+          <option value="sku">SKU</option>
+        </select>
       </div>
       <div class="btn-group" id="statusGroup">
         <button data-status="active" class="on">Ativos</button>
@@ -117,13 +121,13 @@ const selectorHtml = `
         <option value="xd_drop_off">Coleta</option>
       </select>
       <button class="btn-clear" id="clearBtn" style="display:none">Limpar filtros</button>
-      <button class="btn-export" id="exportBtn" title="Baixa todos os seus anúncios (com os filtros atuais) numa planilha que abre no Excel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg> Baixar planilha</button>
       </div><!-- /.filters-more -->
     </div>
     <div class="quick-filters">
       <button class="chip chip-sm" id="discountChip" data-on="false"><span class="chip-emoji"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8L14.4 20.4a2 2 0 0 1-2.8 0L3 12V4a1 1 0 0 1 1-1h8Z" transform="rotate(0)"/><circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none"/></svg></span> Com desconto</button>
       <button class="chip chip-sm" id="freeShipChip" data-on="false" title="Abaixo de R$ 79 o frete grátis não é obrigatório e sai do seu bolso"><span class="chip-emoji"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></svg></span> Frete grátis abaixo de R$ 79</button>
       <span class="quick-hint" id="discountHint" hidden>Mostrando só os anúncios com desconto desta página</span>
+      <button class="btn-export" id="exportBtn" title="Baixa todos os seus anúncios (com os filtros atuais) numa planilha que abre no Excel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg> Baixar planilha</button>
     </div>
   </div>
 

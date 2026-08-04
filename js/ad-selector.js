@@ -24,8 +24,14 @@
 const CONFIG = {
   // q= (busca por nome) VALIDADO com token real (03/07): filtra de fato e combina
   // com status=. O switch fica como kill-switch: se a ML mudar o comportamento,
-  // USE_Q_PARAM=false esconde a tentativa de q= e cai direto no aviso + sku=.
+  // USE_Q_PARAM=false esconde a tentativa de q= e cai direto no aviso + SKU.
   USE_Q_PARAM: true,
+  // Busca por SKU — param validado com token real (03/08/2026, conta 649733403):
+  //   seller_sku=panela123 -> 1 resultado  |  sku=panela123 -> 0 (sku= é do
+  //   catálogo/inventário, NÃO do vendedor — não usar).
+  // É casamento EXATO e case-sensitive ("PANELA123" e "panela" devolvem 0) e
+  // combina com status=, por isso o modo SKU busca em todos os status.
+  SKU_PARAM: 'seller_sku',
   ANALYZE_URL: 'https://app.marketfacil.com.br/analise-anuncio',
   RECONNECT_URL: 'https://app.marketfacil.com.br/minha-conta',  // conexão ML fica em Minha Conta (verificado 23/07 — /conexoes é 404)
   PAGE_SIZE: 50,
@@ -132,7 +138,10 @@ const state = {
   status: 'active',              // active | paused | all
   order: 'last_updated_desc',
   search: '',
-  searchParam: null,             // 'q' | 'sku' | null  (modo da busca por texto)
+  searchMode: 'text',            // 'text' (nome/ID) | 'sku' — escolhido no seletor dentro do campo
+  searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
+  skuStatusRestore: null,        // status a devolver quando a busca por SKU (que força "Todos") sair
+  pendingBanner: null,           // aviso a exibir na próxima carga (loadPage limpa a área de aviso ao começar)
   activeChip: null,
   prevStatus: null,              // status escolhido pelo usuário antes de um chip fixar outro (devolvido ao desativar)
   listingType: '',               // '' | gold_pro | gold_special | free  (filtro Tipo — validado)
@@ -171,9 +180,6 @@ function fmtPrice(n) {
   if (n == null || isNaN(n)) return '—';
   return 'R$ ' + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-// Variante para dentro de faixas quebráveis (.price-wrap-range): NBSP depois do "R$"
-// para a única oportunidade de quebra ser o <wbr> depois do "–".
-function fmtPriceNb(n) { return fmtPrice(n).replace(' ', ' '); }
 function $(sel) { return document.querySelector(sel); }
 function el(html) { const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; }
 
@@ -557,7 +563,8 @@ function buildListUrl(offsetOverride) {
   if (state.listingType) p.set('listing_type_id', state.listingType);
   if (state.logisticType) p.set('logistic_type', state.logisticType);
 
-  // busca textual (q ou sku) — o caso MLB é tratado antes, sem chamar search
+  // busca textual (q= por nome / seller_sku= por SKU) — o caso MLB é tratado
+  // antes, sem chamar search
   if (state.search && state.searchParam) {
     p.set(state.searchParam, state.search);
   }
@@ -704,10 +711,15 @@ function badgesHtml(list, rowKey) {
   const expanded = !!(rowKey != null && state.expandedBadges[rowKey]);
   // mobile também colapsa (P6 do design review): card mostra os 2 mais graves + "+N sinais ▾"
   const showAll = expanded;
-  // Informativos (gray/blue) nunca ocupam as vagas visíveis do desktop — vão sempre
-  // pro "+N sinais" (o verde "Sem problemas" continua visível: tranquiliza sem contradição)
+  // Informativos (gray/blue) não roubam as vagas visíveis de um sinal grave. Mas se a
+  // linha SÓ tem informativos, eles aparecem: escondê-los todos atrás de "+2 sinais"
+  // deixava a coluna Sinais vazia com uma pill azul — o vendedor tinha que clicar
+  // para descobrir que não havia nada urgente.
   const isInfo = (b) => b.cls === 'gray' || b.cls === 'blue';
-  const collapsedShown = sorted.filter((b) => !isInfo(b)).slice(0, 2);
+  // Só informativos: mostra UM (o resto continua no "+N") — dois já empurravam a pill
+  // "N variações" pra uma segunda linha e engordavam a linha à toa.
+  const severe = sorted.filter((b) => !isInfo(b));
+  const collapsedShown = severe.length ? severe.slice(0, 2) : sorted.slice(0, 1);
   const shown = showAll ? sorted : collapsedShown;
   const resto = showAll ? [] : sorted.filter((b) => collapsedShown.indexOf(b) === -1);
   let html = shown.map((b) => {
@@ -1004,7 +1016,7 @@ function relationSubrowHtml(rel) {
       </div></div></td>
       <td class="num fit" data-label="Preço">${priceHtml(it.price, it.original_price, off)}</td>
       <td class="num fit" data-label="Estoque">${stockCellHtml(it.available_quantity, false, stockDaysFor(it, it.available_quantity))}</td>
-      <td class="num fit" data-label="Vendas (total)"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
+      <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
       ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[rid], rid)}</td>` : ''}
       <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(it), rid)}</div></td>
       <td class="analyze-cell"><button class="btn-analyze-var">Analisar →</button></td>
@@ -1018,11 +1030,26 @@ function relationSubrowHtml(rel) {
     </div></div></td>
     <td class="num fit" data-label="Preço"><span class="mono cell-stock">—</span></td>
     <td class="num fit" data-label="Estoque"><span class="mono cell-stock">—</span></td>
-    <td class="num fit" data-label="Vendas (total)"><span class="mono cell-stock">—</span></td>
+    <td class="num fit" data-label="Vendas"><span class="mono cell-stock">—</span></td>
     ${CONFIG.SHOW_VISITS ? '<td class="num fit" data-label="Visitas (30 dias)"><span class="mono cell-stock">—</span></td>' : ''}
     <td data-label="Sinais"><div class="badges"><span class="badge gray" title="Este anúncio não está na página atual da lista — toque em Analisar para ver os detalhes.">fora desta página</span></div></td>
     <td class="analyze-cell"><button class="btn-analyze-var">Analisar →</button></td>
   </tr>`;
+}
+
+// Texto do estado vazio — o motivo mais provável primeiro (o vendedor precisa saber
+// o que fazer, não que "não há resultados"). No modo SKU o casamento é EXATO e
+// case-sensitive na ML, e isso não é adivinhável: a mensagem diz.
+function emptyStateMsg() {
+  if (state.search && state.searchMode === 'sku') {
+    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. A busca por SKU é exata: confira letras maiúsculas, minúsculas e traços — ou troque para “Nome ou ID”.`;
+  }
+  if (state.search && state.searchParam === CONFIG.SKU_PARAM) {
+    return 'Não achamos por esse texto. Cole o ID ou o link do anúncio — é só copiar o endereço da página do anúncio no Mercado Livre.';
+  }
+  if (state.freeShipUnder) return `Nenhum anúncio desta página está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
+  if (state.discountOnly) return 'Nenhum anúncio desta página está com desconto.';
+  return 'Nenhum anúncio bate com esses filtros. Tente ajustar a busca ou limpar os filtros.';
 }
 
 function renderRows(items) {
@@ -1040,7 +1067,7 @@ function renderRows(items) {
     host.innerHTML = `${chipFilterBannerHtml()}${discountBannerHtml()}${freeShipBannerHtml()}<div class="state">
       <span class="emoji"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg></span>
       <h3>Nenhum anúncio encontrado</h3>
-      <p>${(state.search && state.searchParam === 'sku') ? 'Não achamos por esse texto. Cole o ID ou o link do anúncio — é só copiar o endereço da página do anúncio no Mercado Livre.' : (state.freeShipUnder ? `Nenhum anúncio desta página está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.` : (state.discountOnly ? 'Nenhum anúncio desta página está com desconto.' : 'Nenhum anúncio bate com esses filtros. Tente ajustar a busca ou limpar os filtros.'))}</p>
+      <p>${emptyStateMsg()}</p>
       ${isDefaultState() ? '' : '<button class="btn-retry" id="emptyClearBtn">Limpar filtros</button>'}
     </div>${pagerHtml()}`;
     const ec = $('#emptyClearBtn');
@@ -1077,7 +1104,7 @@ function renderRows(items) {
         </div></div></td>
         <td class="num fit" data-label="Preço">${priceHtml(item.price, item.original_price, off)}</td>
         <td class="num fit" data-label="Estoque">${stockCellHtml(stock, typeof stock === 'number' && stock <= 3, stockDaysFor(item, stock))}</td>
-        <td class="num fit" data-label="Vendas (total)"><span class="mono cell-stock">${item.sold_quantity != null ? escapeHtml(String(item.sold_quantity)) : '—'}</span></td>
+        <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${item.sold_quantity != null ? escapeHtml(String(item.sold_quantity)) : '—'}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[id], id)}</td>` : ''}
         <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(item), id)}${relPill}</div></td>
         <td class="analyze-cell"><button class="btn-analyze">Analisar →</button></td>
@@ -1090,14 +1117,15 @@ function renderRows(items) {
       const analyzeId = (CONFIG.ANALYZE_BY_PRODUCT && a.userProductId) || a.rep.id;
       const sel = state.selectedId === key ? ' selected' : '';
       const open = !!state.expandedFamilies[row.familyId];
-      // "de R$X por R$Y": faixa original riscada (variações com desconto) + faixa atual + pill
-      const origRange = (a.maxOff && a.origMin != null)
-        ? (a.origMin === a.origMax
-          ? `<span class="price-orig">${escapeHtml(fmtPrice(a.origMin))}</span>`
-          : `<span class="price-orig price-wrap-range">${escapeHtml(fmtPriceNb(a.origMin))}–<wbr>${escapeHtml(fmtPrice(a.origMax).replace(/^R\$\s?/, ''))}</span>`) : '';
+      // "de R$X por R$Y": preço original riscado (quando todas as variações partem do
+      // mesmo original) + pill de desconto + preço. Com faixa (min≠max) o preço vai em
+      // DUAS linhas — "R$ 69,90" e "até R$ 6.666,00" — em vez do antigo "R$ 69,90–6.666,00",
+      // que quebrava com o traço pendurado e parecia preço cortado.
+      const origRange = (a.maxOff && a.origMin != null && a.origMin === a.origMax)
+        ? `<span class="price-orig">${escapeHtml(fmtPrice(a.origMin))}</span>` : '';
       const offPill = a.maxOff ? `<span class="badge-off">${a.count > 1 && a.origMin != null ? 'até ' : ''}-${a.maxOff}%</span>` : '';
       const priceCell = a.min === a.max ? priceHtml(a.min, a.rep.original_price, a.maxOff)
-        : `${origRange}${offPill}<span class="mono cell-price price-wrap-range">${escapeHtml(fmtPriceNb(a.min))}–<wbr>${escapeHtml(fmtPrice(a.max).replace(/^R\$\s?/, ''))}</span>`;
+        : `${origRange}${offPill}<span class="mono cell-price">${escapeHtml(fmtPrice(a.min))}</span><span class="price-range-max">até ${escapeHtml(fmtPrice(a.max))}</span>`;
       const visitsTxt = a.visitsPending ? '…' : String(a.visitsSum);
       // severidade primeiro, pill de ação por último (P1 do design review: a pill azul
       // não pode chegar antes do vermelho na coluna cujo trabalho é "o que precisa de atenção")
@@ -1128,7 +1156,7 @@ function renderRows(items) {
         </div></div></td>
         <td class="num fit" data-label="Preço">${priceCell}</td>
         <td class="num fit" data-label="Estoque">${stockCellHtml(a.stock, false, famEst)}</td>
-        <td class="num fit" data-label="Vendas (total)"><span class="mono cell-stock">${a.sales}</span></td>
+        <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${a.sales}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${famVisits}</td>` : ''}
         <td data-label="Sinais"><div class="badges">${badges}</div></td>
         <td class="analyze-cell"><button class="btn-analyze" title="Analisa o produto inteiro (todas as variações de uma vez)">Analisar →</button></td>
@@ -1144,7 +1172,7 @@ function renderRows(items) {
             </div></div></td>
             <td class="num fit" data-label="Preço">${priceHtml(it.price, it.original_price, off)}</td>
             <td class="num fit" data-label="Estoque">${stockCellHtml(it.available_quantity, false, stockDaysFor(it, it.available_quantity))}</td>
-            <td class="num fit" data-label="Vendas (total)"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
+            <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
             ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[it.id], it.id)}</td>` : ''}
             <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(it), it.id)}</div></td>
             <td class="analyze-cell"><button class="btn-analyze-var" title="Analisa só esta variação">Analisar →</button></td>
@@ -1158,7 +1186,7 @@ function renderRows(items) {
     <table class="grid">
       <thead><tr>
         <th>Foto</th><th>Anúncio</th>
-        <th class="num fit">Preço</th><th class="num fit">Estoque</th><th class="num fit th-wrap" title="Total de vendas do anúncio desde a criação">Vendas (total)</th>${CONFIG.SHOW_VISITS ? '<th class="num fit th-wrap">Visitas (30 dias)</th>' : ''}
+        <th class="num fit">Preço</th><th class="num fit">Estoque</th><th class="num fit" title="Total de vendas do anúncio desde a criação">Vendas</th>${CONFIG.SHOW_VISITS ? '<th class="num fit th-wrap">Visitas (30 dias)</th>' : ''}
         <th class="th-sinais">Sinais</th><th></th>
       </tr></thead>
       <tbody>${trs.join('')}</tbody>
@@ -1330,6 +1358,7 @@ async function loadPage() {
   writeStateToUrl();           // mantém a URL em sincronia (F5 preserva, link compartilhável)
   host.innerHTML = loadingHtml('Carregando seus anúncios…');
   clearBanner();
+  if (state.pendingBanner) { setBanner(state.pendingBanner.kind, state.pendingBanner.msg); state.pendingBanner = null; }
 
   try {
     // Caso especial: busca por ID MLB/MLBU -> hidrata direto, resultado único
@@ -1359,11 +1388,11 @@ async function loadPage() {
     renderRows(items);
     loadVisitsForPage(ids);   // camada C — visitas 30d da página (assíncrono, enriquece depois)
   } catch (err) {
-    // Fallback de busca por nome: se q= falhou, tenta sku= com aviso amigável.
-    // NOTA: sku= NÃO foi validado (a conta de teste não usa SKU) — caminho defensivo.
+    // Fallback de busca por nome: se q= falhou, tenta o SKU com aviso amigável.
+    // (o param é seller_sku — sku= devolve 0 sempre, validado em 03/08)
     if (state.search && state.searchParam === 'q' && err.status && err.status >= 400 && err.status !== 401) {
-      state.searchParam = 'sku';
-      setBanner('warn', 'A busca por nome ainda não está disponível — mostrando resultados por código (SKU). Para o resultado exato, cole o ID do anúncio (ex.: MLB123456789).');
+      state.searchParam = CONFIG.SKU_PARAM;
+      setBannerNextLoad('warn', 'A busca por nome ainda não está disponível — tentando pelo SKU. Para o resultado exato, cole o ID do anúncio (ex.: MLB123456789).');
       return loadPage();
     }
     state.loading = false;
@@ -1484,6 +1513,10 @@ function setBannerHtml(kind, html) {
   $('#bannerArea').innerHTML = `<div class="banner ${kind}"><span>${kind === 'warn' ? '⚠️' : 'ℹ️'}</span><span>${html}</span></div>`;
 }
 function clearBanner() { $('#bannerArea').innerHTML = ''; }
+// Aviso que precisa SOBREVIVER à carga seguinte: loadPage() começa limpando a área
+// de aviso, então quem avisa "antes de recarregar" (troca de status pela busca de
+// SKU, fallback de busca) deixa a mensagem aqui e o loadPage a repõe.
+function setBannerNextLoad(kind, msg) { state.pendingBanner = { kind: kind, msg: msg }; }
 
 /* =========================================================================
    Controles de filtro
@@ -1624,13 +1657,14 @@ async function exportAllCsv() {
 /* ── Estado na URL (F5 mantém, link compartilhável) ──
    PORT F4: mexe SÓ nas chaves do painel — params alheios (ex.: ?item= do
    deep-link, params do Bubble) são preservados intactos. */
-const MFSEL_URL_KEYS = ['status', 'order', 'busca', 'chip', 'tipo', 'log', 'desconto', 'frete79', 'offset', 'mock'];
+const MFSEL_URL_KEYS = ['status', 'order', 'busca', 'buscapor', 'chip', 'tipo', 'log', 'desconto', 'frete79', 'offset', 'mock'];
 function writeStateToUrl() {
   const p = new URLSearchParams(location.search);
   MFSEL_URL_KEYS.forEach((k) => p.delete(k));
   if (state.status !== 'active') p.set('status', state.status);
   if (state.order !== 'last_updated_desc') p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
+  if (state.searchMode === 'sku') p.set('buscapor', 'sku');
   if (state.activeChip) p.set('chip', state.activeChip);
   if (state.listingType) p.set('tipo', state.listingType);
   if (state.logisticType) p.set('log', state.logisticType);
@@ -1644,7 +1678,11 @@ function readStateFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.get('status')) state.status = p.get('status');
   if (p.get('order')) state.order = p.get('order');
-  if (p.get('busca')) { state.search = p.get('busca'); state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : 'sku'; }
+  if (p.get('buscapor') === 'sku') state.searchMode = 'sku';
+  if (p.get('busca')) {
+    state.search = p.get('busca');
+    state.searchParam = state.searchMode === 'sku' ? CONFIG.SKU_PARAM : (CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM);
+  }
   if (p.get('chip')) state.activeChip = p.get('chip');
   if (p.get('tipo')) state.listingType = p.get('tipo');
   if (p.get('log')) state.logisticType = p.get('log');
@@ -1652,9 +1690,35 @@ function readStateFromUrl() {
   if (p.get('frete79') === '1') state.freeShipUnder = true;
   if (p.get('offset')) state.offset = parseInt(p.get('offset'), 10) || 0;
 }
+/* ── Modo da busca (nome/ID × SKU) ──
+   O SKU casa EXATO na ML (case-sensitive), então o campo precisa dizer isso: o
+   placeholder muda junto com o modo e o estado vazio explica o casamento exato. */
+function applySearchMode() {
+  const inp = $('#searchInput');
+  const box = inp && inp.closest('.search-box');
+  const isSku = state.searchMode === 'sku';
+  if (box) box.classList.toggle('mode-sku', isSku);
+  if (!inp) return;
+  // No celular o seletor come metade do campo: placeholder curto pra não sair cortado
+  const small = window.matchMedia('(max-width:720px)').matches;
+  inp.placeholder = isSku
+    ? (small ? 'SKU exato' : 'Buscar pelo SKU exato')
+    : (CONFIG.USE_Q_PARAM
+      ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID ou link')
+      : (small ? 'ID do anúncio' : 'ID ou link do anúncio (ex.: MLB123456789)'));
+}
+// Devolve o status que a busca por SKU trocou por "Todos" (só se o usuário não
+// tiver escolhido outro no meio do caminho — nesse caso o restore já foi zerado).
+function restoreStatusAfterSku() {
+  if (state.skuStatusRestore == null) return;
+  setStatusToggle(state.skuStatusRestore);
+  state.skuStatusRestore = null;
+}
 // espelha o estado (vindo da URL) nos controles da UI
 function syncControlsToState() {
   $('#searchInput').value = state.search || '';
+  $('#searchModeSelect').value = state.searchMode;
+  applySearchMode();
   $('#orderSelect').value = state.order;
   $('#typeSelect').value = state.listingType || '';
   $('#logisticSelect').value = state.logisticType || '';
@@ -1700,6 +1764,7 @@ function wireControls() {
         }
       }
       state.prevStatus = null;   // troca manual de status é escolha explícita — não devolver depois
+      state.skuStatusRestore = null;   // idem para o "Todos" que a busca por SKU liga sozinha
       setStatusToggle(newStatus); state.offset = 0; syncClearBtn(); loadPage();
     });
   });
@@ -1733,16 +1798,50 @@ function wireControls() {
     refreshCounts().finally(() => { b.disabled = false; });
     loadPage();
   });
+  // seletor "Nome ou ID / SKU" dentro do campo: troca o modo e, se já havia texto
+  // digitado, refaz a busca no modo novo (o usuário não precisa apertar Enter de novo)
+  $('#searchModeSelect').addEventListener('change', (e) => {
+    state.searchMode = e.target.value === 'sku' ? 'sku' : 'text';
+    applySearchMode();
+    if ($('#searchInput').value.trim() || state.search) submitSearch();
+  });
   // busca (Enter ou clique na lupa): link/ID colado -> análise direta; texto livre -> filtra
+  // lastSubmit: Enter num input type=search dispara keydown E o evento 'search' — sem
+  // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª)
+  let lastSubmit = null;
   function submitSearch() {
     const v = $('#searchInput').value.trim();
-    const pid = parseItemId(v);
+    const sig = state.searchMode + ' ' + v;
+    if (sig === lastSubmit) return;
+    lastSubmit = sig;
+    // No modo SKU o texto é SKU, não link: um SKU tipo "MLB123" não deve virar análise.
+    const pid = state.searchMode === 'sku' ? null : parseItemId(v);
     // PORT F4: manda o texto ORIGINAL (rawInput) — link de catálogo/edição
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
-    if (pid) { enterAnalysis(pid, '', '', pid, { rawInput: v }); return; }
+    // ID/link vira análise: não é uma busca — o mesmo ID pode ser reenviado depois de voltar
+    if (pid) { lastSubmit = null; enterAnalysis(pid, '', '', pid, { rawInput: v }); return; }
     state.search = v; state.offset = 0;
-    state.searchParam = v ? (CONFIG.USE_Q_PARAM ? 'q' : 'sku') : null;
-    if (v && !CONFIG.USE_Q_PARAM) setBanner('warn', 'A busca por nome ainda não está disponível — mostrando resultados por código (SKU). Para o resultado exato, cole o ID (ex.: MLB123456789).');
+    if (!v) {
+      state.searchParam = null;
+      restoreStatusAfterSku();
+    } else if (state.searchMode === 'sku') {
+      state.searchParam = CONFIG.SKU_PARAM;
+      // seller_sku combina com status= — buscar SKU com "Ativos" ligado esconde o
+      // anúncio pausado que o vendedor está procurando (validado na conta real).
+      // Busca de SKU é pontual: varre todos os status e avisa que fez isso.
+      if (state.status !== 'all') {
+        state.skuStatusRestore = state.status;
+        setStatusToggle('all');
+      }
+      // repõe o aviso a cada busca enquanto o "Todos" for nosso (e não escolha dele)
+      if (state.skuStatusRestore != null) {
+        setBannerNextLoad('info', 'Buscando o SKU em todos os anúncios, ativos e pausados.');
+      }
+    } else {
+      state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+      restoreStatusAfterSku();
+      if (!CONFIG.USE_Q_PARAM) setBanner('warn', 'A busca por nome ainda não está disponível — tentando pelo SKU. Para o resultado exato, cole o ID (ex.: MLB123456789).');
+    }
     syncClearBtn(); loadPage();
   }
   $('#searchInput').addEventListener('keydown', (e) => {
@@ -1750,12 +1849,16 @@ function wireControls() {
     submitSearch();
   });
   $('#searchGo').addEventListener('click', submitSearch);
+  // girar o celular troca o tamanho do placeholder (o texto longo some cortado no retrato)
+  window.addEventListener('resize', () => { clearTimeout(applySearchMode._t); applySearchMode._t = setTimeout(applySearchMode, 150); });
   // "x" nativo do input type=search também refaz a lista (submitSearch é idempotente)
   $('#searchInput').addEventListener('search', submitSearch);
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
+    lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
-    state.search = ''; state.searchParam = null; state.activeChip = null; state.prevStatus = null;
+    state.search = ''; state.searchMode = 'text'; state.searchParam = null;
+    state.skuStatusRestore = null; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
     renderChipsFresh(); loadPage();
