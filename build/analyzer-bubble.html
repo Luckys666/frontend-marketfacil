@@ -2900,6 +2900,8 @@
 .ana-wrapper .mfsel .pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; flex-wrap: wrap; }
 .ana-wrapper .mfsel .pager-info { font-size: 0.86rem; color: var(--text-secondary); }
 .ana-wrapper .mfsel .pager-info b { color: var(--text); font-family: 'DM Mono', monospace; font-weight: 500; }
+/* "— procurados em N anúncios da sua conta": explica o alcance do recorte sem competir com a contagem */
+.ana-wrapper .mfsel .pager-scope { color: var(--text-muted); font-weight: 400; }
 .ana-wrapper .mfsel .pager-progress { flex: 1 1 140px; max-width: 240px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .ana-wrapper .mfsel .pager-progress span { display: block; height: 100%; background: var(--blue); border-radius: 2px; transition: width .2s; }
 .ana-wrapper .mfsel .pager-btns { display: flex; gap: 8px; }
@@ -8496,6 +8498,7 @@ const CONFIG = {
   PAGE_SIZE: 50,
   HYDRATE_CHUNK: 20,
   OFFSET_CAP: 1000,            // ML trava offset em 1000
+  SCAN_CONCURRENCY: 4,         // chamadas em voo na varredura de conta inteira (recortes)
   COUNTS_CACHE_KEY: 'mf_sel_counts',
   COUNTS_TTL_MIN: 10,
   SET_TTL_MIN: 10,             // TTL dos Sets de sinais (camada B) e do mapa de perguntas (camada C)
@@ -8642,6 +8645,9 @@ const state = {
   attrNames: {},         // categoryId -> { ATTR_ID: 'Nome amigável' }
   expandedRelations: {}, // itemId (catálogo) -> true (anúncios vinculados abertos)
   lastItems: [],         // itens da página atual, para re-render incremental
+  scan: null,            // recorte de conta inteira: { chave, itens, varridos, total, truncado }
+  scanAtivo: false,      // true quando a página exibida veio do scan (pager e textos mudam)
+  carga: 0,              // geração da carga: resposta de carga antiga não pisa na atual
 };
 
 /* =========================================================================
@@ -9204,6 +9210,102 @@ async function hydrate(ids) {
 }
 
 /* =========================================================================
+   Recortes de conta inteira — "Com desconto" e "Frete grátis abaixo do piso"
+   A ML não filtra nenhum dos dois no servidor (desconto é original_price > price e
+   `shipping_cost=free` é ignorado no users/items/search — validado): o dado só existe
+   no multiget. Então, com um desses recortes ligado, o painel varre a lista inteira
+   (respeitando status, busca e chip ativos), guarda o resultado em memória e pagina
+   em cima dele. Antes o recorte olhava só os 50 anúncios da página aberta, e o que
+   estava com desconto na página 3 simplesmente não aparecia.
+   Custo: uma varredura por combinação de filtros, reaproveitada até algo mudar.
+   ========================================================================= */
+function quickFilterAtivo() { return !!(state.discountOnly || state.freeShipUnder); }
+function scanKey() {
+  return JSON.stringify([state.status, state.search, state.searchParam, state.activeChip,
+    state.listingType, state.logisticType, state.discountOnly, state.freeShipUnder, MOCK]);
+}
+function passaNosRecortes(it) {
+  if (state.discountOnly && !(discountPct(it) > 0)) return false;
+  if (state.freeShipUnder && !isCheapFreeShipping(it)) return false;
+  return true;
+}
+function idsDaResposta(resp) {
+  const results = Array.isArray(resp.results) ? resp.results : [];
+  return results.map((it) => (typeof it === 'string' ? it : (it && (it.id || it.item_id)))).filter(Boolean);
+}
+// Roda as tarefas com no máximo N em voo — conta de 761 anúncios são ~55 chamadas,
+// e em fila indiana isso vira meio minuto de espera olhando spinner.
+async function emParalelo(tarefas, limite, aoConcluir) {
+  const resultados = new Array(tarefas.length);
+  let proxima = 0;
+  const trabalhador = async () => {
+    while (proxima < tarefas.length) {
+      const i = proxima++;
+      resultados[i] = await tarefas[i]();
+      if (aoConcluir) aoConcluir();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limite, tarefas.length) }, trabalhador));
+  return resultados;
+}
+// `atual` diz se esta varredura ainda interessa: trocar de filtro no meio dela abandona
+// a carga, e uma varredura órfã escrevendo progresso apagava a lista que já tinha sido
+// renderizada pela carga nova. O trabalho feito continua indo pro cache — só a tela para.
+async function scanAccount(atual) {
+  const chave = scanKey();
+  if (state.scan && state.scan.chave === chave) return state.scan;
+  const host = $('#tableHost');
+  const vivo = () => (typeof atual === 'function' ? atual() : true);
+  const progresso = (feitos, alvo) => {
+    if (host && vivo()) host.innerHTML = loadingHtml(`Procurando na sua conta inteira… ${Math.min(feitos, alvo)} de ${alvo} anúncios`);
+  };
+
+  // 1) primeira página dá o total — só com ele dá pra paralelizar o resto
+  const primeira = await mlGet(buildListUrl(0));
+  const idsPrimeira = idsDaResposta(primeira);
+  const total = (primeira.paging && typeof primeira.paging.total === 'number') ? primeira.paging.total : idsPrimeira.length;
+  const alvo = Math.min(total, CONFIG.OFFSET_CAP);
+  progresso(0, alvo);
+
+  // 2) demais páginas de IDs, em paralelo
+  const offsets = [];
+  for (let off = CONFIG.PAGE_SIZE; off < alvo; off += CONFIG.PAGE_SIZE) offsets.push(off);
+  let falhas = 0;
+  const outras = await emParalelo(
+    offsets.map((off) => () => mlGet(buildListUrl(off)).then(idsDaResposta).catch(() => { falhas++; return []; })),
+    CONFIG.SCAN_CONCURRENCY
+  );
+  const todosIds = idsPrimeira.concat.apply(idsPrimeira, outras).slice(0, alvo);
+
+  // 3) multiget em paralelo, com o progresso contando anúncios já lidos
+  const lotes = [];
+  for (let i = 0; i < todosIds.length; i += CONFIG.HYDRATE_CHUNK) lotes.push(todosIds.slice(i, i + CONFIG.HYDRATE_CHUNK));
+  let lidos = 0;
+  const partes = await emParalelo(
+    lotes.map((lote) => () => hydrate(lote).catch(() => { falhas++; return []; })),
+    CONFIG.SCAN_CONCURRENCY,
+    () => { lidos += CONFIG.HYDRATE_CHUNK; progresso(lidos, alvo); }
+  );
+
+  const achados = [];
+  let lidosDeVerdade = 0;
+  partes.forEach((itens) => (itens || []).forEach((it) => {
+    lidosDeVerdade++;
+    if (passaNosRecortes(it)) achados.push(it);
+  }));
+  // Varredura com buraco (429, proxy oscilando) NÃO pode virar cache: "0 com desconto"
+  // por causa de chamada que falhou é pior do que não responder.
+  state.scan = {
+    chave: falhas ? null : chave,
+    itens: achados, varridos: lidosDeVerdade, total: total,
+    truncado: total > CONFIG.OFFSET_CAP, parcial: falhas > 0
+  };
+  return state.scan;
+}
+// Qualquer coisa que mude o conjunto de anúncios invalida a varredura guardada
+function invalidarScan() { state.scan = null; }
+
+/* =========================================================================
    Badges por anúncio (client-side, a partir do multiget)
    ========================================================================= */
 function computeBadges(item) {
@@ -9303,8 +9405,13 @@ function computeBadges(item) {
   // não dá pra afirmar que está tudo bem — melhor sem veredito do que um "OK" falso.
   const uncertain = SIGNAL_SETS.some((s) => state.signalSetsIncomplete[s.id] && !(state.signalSets[s.id] && state.signalSets[s.id].has(id)));
   if (problems.length === 0 && !uncertain) out.push({ text: 'Sem problemas', cls: 'green' });
-  // Camada A — informativos neutros
-  if (item.shipping && item.shipping.free_shipping === false) out.push({ text: 'Sem frete grátis', cls: 'gray' });
+  // Camada A — informativos neutros.
+  // "Sem frete grátis" só a partir do piso do ML (R$ 79): abaixo disso a plataforma
+  // não obriga nem subsidia frete grátis, então o vendedor está certo em não dar —
+  // marcar esses anúncios só enchia a linha de sinal que não pede ação nenhuma.
+  if (item.shipping && item.shipping.free_shipping === false && Number(item.price) >= PROBLEM_RULES.freeShippingFloor) {
+    out.push({ text: 'Sem frete grátis', cls: 'gray' });
+  }
   // "Ainda sem vendas" (não "Sem vendas"): não contradiz o "Sem problemas" na mesma linha
   if (item.sold_quantity === 0) out.push({ text: 'Ainda sem vendas', cls: 'gray' });
   return out;
@@ -9346,6 +9453,7 @@ const BADGE_TITLES = {
   'Infração': 'O Mercado Livre apontou uma infração neste anúncio. Veja os detalhes na sua conta do Mercado Livre.',
   'Congelado': 'O Mercado Livre pausou este anúncio temporariamente. Veja os detalhes na sua conta do Mercado Livre.',
 };
+BADGE_TITLES['Sem frete grátis'] = 'A partir de R$ ' + PROBLEM_RULES.freeShippingFloor + ' o Mercado Livre destaca quem oferece frete grátis, e parte do custo é subsidiada. Abaixo desse valor este sinal nem aparece.';
 // Badge do frete grátis abaixo do piso (texto acompanha PROBLEM_RULES.freeShippingFloor)
 const CHEAP_FREESHIP_BADGE = 'Frete grátis abaixo de R$ ' + PROBLEM_RULES.freeShippingFloor;
 BADGE_TITLES[CHEAP_FREESHIP_BADGE] = 'Abaixo de R$ ' + PROBLEM_RULES.freeShippingFloor + ' o Mercado Livre não obriga frete grátis — esse frete sai do seu bolso e costuma comer quase toda a margem. Confira se compensa manter.';
@@ -9647,31 +9755,31 @@ function wireChipClearBtn() {
 // de rolar; pode coexistir com a faixa do chip acima)
 function discountBannerHtml() {
   if (!state.discountOnly) return '';
-  return `<div class="banner info" style="margin:12px 12px 0"><span>ℹ️</span><span>Mostrando só: <b>Com desconto</b> (desta página) — <button type="button" class="chip-clear-link" id="discountClearBtn">voltar para a minha lista</button></span></div>`;
+  return `<div class="banner info" style="margin:12px 12px 0"><span>ℹ️</span><span>Mostrando só: <b>Com desconto</b> (na sua conta inteira) — <button type="button" class="chip-clear-link" id="discountClearBtn">voltar para a minha lista</button></span></div>`;
 }
 function wireDiscountClearBtn() {
   const db = document.getElementById('discountClearBtn');
   if (db) db.addEventListener('click', () => {
     state.discountOnly = false;
     $('#discountChip').classList.toggle('active', false);
+    state.offset = 0;
     syncClearBtn();
-    writeStateToUrl();
-    renderCurrentRows();
+    loadPage();   // o recorte é de conta inteira: sair dele volta pra listagem paginada normal
   });
 }
 // Faixa persistente do quick-filter "Frete grátis abaixo de R$ 79" (mesmo padrão do desconto)
 function freeShipBannerHtml() {
   if (!state.freeShipUnder) return '';
-  return `<div class="banner info" style="margin:12px 12px 0"><span>ℹ️</span><span>Mostrando só: <b>Frete grátis abaixo de R$ ${PROBLEM_RULES.freeShippingFloor}</b> (desta página) — nesses anúncios o frete sai do seu bolso — <button type="button" class="chip-clear-link" id="freeShipClearBtn">voltar para a minha lista</button></span></div>`;
+  return `<div class="banner info" style="margin:12px 12px 0"><span>ℹ️</span><span>Mostrando só: <b>Frete grátis abaixo de R$ ${PROBLEM_RULES.freeShippingFloor}</b> (na sua conta inteira) — nesses anúncios o frete sai do seu bolso — <button type="button" class="chip-clear-link" id="freeShipClearBtn">voltar para a minha lista</button></span></div>`;
 }
 function wireFreeShipClearBtn() {
   const fb = document.getElementById('freeShipClearBtn');
   if (fb) fb.addEventListener('click', () => {
     state.freeShipUnder = false;
     $('#freeShipChip').classList.toggle('active', false);
+    state.offset = 0;
     syncClearBtn();
-    writeStateToUrl();
-    renderCurrentRows();
+    loadPage();
   });
 }
 
@@ -9720,8 +9828,8 @@ function emptyStateMsg() {
     // a escada já passou por título e pelos dois campos de SKU
     return `Nenhum anúncio com <b>${escapeHtml(state.search)}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
   }
-  if (state.freeShipUnder) return `Nenhum anúncio desta página está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
-  if (state.discountOnly) return 'Nenhum anúncio desta página está com desconto.';
+  if (state.freeShipUnder) return `Nenhum anúncio da sua conta está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
+  if (state.discountOnly) return 'Nenhum anúncio da sua conta está com desconto.';
   return 'Nenhum anúncio bate com esses filtros. Tente ajustar a busca ou limpar os filtros.';
 }
 
@@ -9988,12 +10096,14 @@ function pagerHtml() {
   // agrupamento por família: se a página exibe menos linhas que anúncios, mostra "· N produtos"
   const grouped = (CONFIG.GROUP_FAMILIES && state.displayCount != null && state.displayCount < (shownTo - state.offset))
     ? ` · agrupados em <b>${state.displayCount}</b> produtos` : '';
-  // Recorte client-side ativo: o pager conta o que a tabela realmente mostra
+  // Recorte de conta inteira: o total já é o do recorte, então o pager conta como
+  // qualquer outra lista — só diz de que recorte se trata.
   const cuts = [];
   if (state.discountOnly) cuts.push('com desconto');
   if (state.freeShipUnder) cuts.push(`com frete grátis abaixo de R$ ${PROBLEM_RULES.freeShippingFloor}`);
+  const varridos = state.scan ? Math.min(state.scan.varridos, CONFIG.OFFSET_CAP) : 0;
   const info = cuts.length
-    ? `Mostrando <b>${state.displayCount}</b> anúncios ${cuts.join(' e ')} (dos <b>${shownFrom}–${shownTo}</b> de <b>${total}</b>)`
+    ? `Mostrando <b>${shownFrom}–${shownTo}</b> de <b>${total}</b> anúncios ${cuts.join(' e ')}${grouped} <span class="pager-scope">— procurados em ${varridos} anúncios da sua conta</span>`
     : `Mostrando <b>${shownFrom}–${shownTo}</b> de <b>${total}</b> anúncios${grouped}`;
   return `<div class="pager">
     <div class="pager-info">${info}</div>
@@ -10027,6 +10137,11 @@ function wirePager() {
    ========================================================================= */
 async function loadPage() {
   const host = $('#tableHost');
+  // Carga tem geração: a varredura de conta inteira leva alguns segundos, e trocar de
+  // filtro no meio dela dispara outra carga. Sem isso, a resposta da carga ABANDONADA
+  // chega depois e pinta a tela com números de um filtro que não está mais ligado.
+  const geracao = ++state.carga;
+  const desatualizada = () => geracao !== state.carga;
   state.loading = true;
   writeStateToUrl();           // mantém a URL em sincronia (F5 preserva, link compartilhável)
   host.innerHTML = loadingHtml('Carregando seus anúncios…');
@@ -10037,6 +10152,7 @@ async function loadPage() {
     // Caso especial: busca por ID MLB/MLBU -> hidrata direto, resultado único
     if (state.search && MLB_RE.test(state.search)) {
       const items = await hydrate([state.search.toUpperCase()]);
+      if (desatualizada()) return;
       state.total = items.length;
       state.lastItems = items;
       state.loading = false;
@@ -10045,7 +10161,32 @@ async function loadPage() {
       return;
     }
 
+    // Recorte de conta inteira ligado: varre tudo uma vez e pagina sobre o resultado
+    if (quickFilterAtivo()) {
+      const scan = await scanAccount(() => !desatualizada());
+      if (desatualizada()) return;
+      state.scanAtivo = true;
+      state.total = scan.itens.length;
+      if (state.offset >= state.total) state.offset = 0;
+      const pageItems = scan.itens.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
+      state.lastItems = pageItems;
+      state.loading = false;
+      renderRows(pageItems);
+      // Conta maior que o teto de navegação da ML: dizer onde a busca parou, senão o
+      // vendedor lê o resultado como se fosse a conta inteira.
+      if (scan.parcial) {
+        setBanner('warn', `Parte dos seus anúncios não respondeu agora — este recorte saiu de ${scan.varridos} anúncios, não da conta inteira. Clique no filtro de novo em alguns segundos para refazer a busca.`);
+      } else if (scan.truncado) {
+        setBanner('info', `Procuramos nos primeiros ${CONFIG.OFFSET_CAP} anúncios (o Mercado Livre limita a navegação a esse número). Use os filtros acima para varrer o resto da conta.`);
+      }
+      loadAttrNames();
+      loadVisitsForPage(pageItems.map((i) => i.id));
+      return;
+    }
+    state.scanAtivo = false;
+
     const searchResp = await mlGet(buildListUrl());
+    if (desatualizada()) return;
     const results = Array.isArray(searchResp.results) ? searchResp.results : [];
     // results é array de STRINGS (ids) — mapeamento defensivo
     const ids = results
@@ -10074,6 +10215,7 @@ async function loadPage() {
     }
     if (!ids.length) { state.lastItems = []; state.loading = false; renderRows([]); return; }
     const items = await hydrate(ids);
+    if (desatualizada()) return;
     state.lastItems = items;
     state.loading = false;
     renderRows(items);
@@ -10117,6 +10259,20 @@ function renderError(err) {
     if (rc) rc.addEventListener('click', () => window.open(CONFIG.RECONNECT_URL, '_blank'));
     const rd = $('#reconnectedBtn');
     if (rd) rd.addEventListener('click', () => location.reload());
+    return;
+  }
+  if (err && err.status === 429) {
+    // Excesso de consultas seguidas (varredura de conta inteira, muitos filtros em
+    // sequência). Não é conta desconectada nem erro do app: em um minuto volta.
+    host.innerHTML = `<div class="state">
+      <span class="emoji">⏳</span>
+      <h3>Muitas consultas ao Mercado Livre de uma vez</h3>
+      <p>Fizemos consultas demais em pouco tempo e o Mercado Livre pediu uma pausa. Espere cerca de um minuto e tente de novo — nada foi perdido.</p>
+      <button class="btn-retry" id="retryBtn">Tentar de novo</button>
+    </div>`;
+    const rb429 = $('#retryBtn');
+    // sem sellerId o boot nem chegou ao fim: recarregar é o caminho honesto
+    if (rb429) rb429.addEventListener('click', () => { if (state.sellerId) loadPage(); else location.reload(); });
     return;
   }
   host.innerHTML = `<div class="state">
@@ -10306,16 +10462,16 @@ function csvFromItems(items, filename) {
       (decisão Lucas 04/07). Única exceção: "Com desconto" é um recorte client-side
       da página carregada — aí a planilha respeita exatamente o que a tabela mostra. ── */
 function exportCsv() {
-  if (state.discountOnly || state.freeShipUnder) {
-    let items = state.lastItems || [];
-    if (state.discountOnly) items = items.filter((it) => discountPct(it) > 0);
-    if (state.freeShipUnder) items = items.filter(isCheapFreeShipping);
-    if (!items.length) { setBanner('info', 'Não há anúncios nesse recorte nesta página para colocar na planilha.'); return; }
+  // Recorte de conta inteira: a varredura já tem TODOS os anúncios que batem —
+  // a planilha sai completa, sem chamada nova (antes saía só o pedaço da página).
+  if (quickFilterAtivo() && state.scan && state.scan.chave === scanKey()) {
+    const items = state.scan.itens;
+    if (!items.length) { setBanner('info', 'Não há anúncios nesse recorte para colocar na planilha.'); return; }
     const fname = (state.discountOnly && !state.freeShipUnder)
       ? `anuncios-com-desconto-${new Date().toISOString().slice(0, 10)}.csv`
       : `anuncios-recorte-${new Date().toISOString().slice(0, 10)}.csv`;
     csvFromItems(items, fname);
-    setBanner('info', 'Planilha baixada com os ' + items.length + ' anúncios do recorte desta página.');
+    setBanner('info', 'Planilha baixada com os ' + items.length + ' anúncios do recorte, procurados na conta inteira.');
     return;
   }
   exportAllCsv();
@@ -10434,6 +10590,7 @@ function refreshCounts() {
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
   state.moderationMap = {}; state.fichaMap = {};
+  invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);
   loadFichaTecnica(state.sellerId);
   loadQuestions(state.sellerId);
@@ -10475,19 +10632,21 @@ function wireControls() {
   // tipo de anúncio (validado) e logística (validado)
   $('#typeSelect').addEventListener('change', (e) => { state.listingType = e.target.value; state.offset = 0; syncClearBtn(); loadPage(); });
   $('#logisticSelect').addEventListener('change', (e) => { state.logisticType = e.target.value; state.offset = 0; syncClearBtn(); loadPage(); });
-  // quick-filter client-side "Com desconto" (só a página carregada)
+  // recorte de conta inteira "Com desconto" (varre a lista toda — ver scanAccount)
   $('#discountChip').addEventListener('click', () => {
     state.discountOnly = !state.discountOnly;
     $('#discountChip').classList.toggle('active', state.discountOnly);
-    syncClearBtn(); writeStateToUrl();
-    renderCurrentRows();
+    state.offset = 0;
+    syncClearBtn();
+    loadPage();
   });
-  // quick-filter client-side "Frete grátis abaixo de R$ 79" (frete pago do próprio bolso)
+  // recorte de conta inteira "Frete grátis abaixo de R$ 79" (frete pago do próprio bolso)
   $('#freeShipChip').addEventListener('click', () => {
     state.freeShipUnder = !state.freeShipUnder;
     $('#freeShipChip').classList.toggle('active', state.freeShipUnder);
-    syncClearBtn(); writeStateToUrl();
-    renderCurrentRows();
+    state.offset = 0;
+    syncClearBtn();
+    loadPage();
   });
   // exportar CSV
   $('#exportBtn').addEventListener('click', exportCsv);
@@ -10597,16 +10756,23 @@ async function boot() {
     // parece que a tela mudou sozinha. Então o painel FICA, dizendo o que houve e
     // com o botão de reconectar. Qualquer outra falha (proxy fora, erro
     // inesperado) continua recolhendo pro fluxo antigo.
-    if (err && err.status === 401) {
+    // 429 = consultas demais em pouco tempo (a varredura de conta inteira usa várias
+    // por vez). Cair no fluxo legado aqui seria pior: a tela "muda sozinha" por causa
+    // de uma pausa que passa em um minuto. O painel fica, com o estado explicado.
+    if (err && (err.status === 401 || err.status === 429)) {
       const chips = document.getElementById('chipsCard');
       const filters = document.getElementById('filtersCard');
       if (chips) chips.hidden = true;      // controles não fazem sentido sem conta conectada
       if (filters) filters.hidden = true;
       const sub = document.getElementById('subtitle');
-      if (sub) sub.textContent = 'Precisamos da sua conta do Mercado Livre conectada para listar seus anúncios.';
+      if (sub) {
+        sub.textContent = err.status === 401
+          ? 'Precisamos da sua conta do Mercado Livre conectada para listar seus anúncios.'
+          : 'O Mercado Livre pediu uma pausa nas consultas — é rápido.';
+      }
       const rc = document.getElementById('resultsContainer');
       if (rc) rc.style.display = 'none';
-      renderError(err);                    // tela "conta desconectada" + botão Reconectar
+      renderError(err);                    // "conta desconectada" ou "muitas consultas"
       return;
     }
     legacyFallback(); return;

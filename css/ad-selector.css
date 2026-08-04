@@ -326,6 +326,8 @@
 .ana-wrapper .mfsel .pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; flex-wrap: wrap; }
 .ana-wrapper .mfsel .pager-info { font-size: 0.86rem; color: var(--text-secondary); }
 .ana-wrapper .mfsel .pager-info b { color: var(--text); font-family: 'DM Mono', monospace; font-weight: 500; }
+/* "— procurados em N anúncios da sua conta": explica o alcance do recorte sem competir com a contagem */
+.ana-wrapper .mfsel .pager-scope { color: var(--text-muted); font-weight: 400; }
 .ana-wrapper .mfsel .pager-progress { flex: 1 1 140px; max-width: 240px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .ana-wrapper .mfsel .pager-progress span { display: block; height: 100%; background: var(--blue); border-radius: 2px; transition: width .2s; }
 .ana-wrapper .mfsel .pager-btns { display: flex; gap: 8px; }
