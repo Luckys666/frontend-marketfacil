@@ -89,10 +89,10 @@ const selectorHtml = `
     <div class="filters">
       <div class="search-box">
         <button type="button" class="ico" id="searchGo" title="Buscar" aria-label="Buscar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg></button>
-        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Buscar por nome, ID ou link" autocomplete="off">
-        <select class="search-mode" id="searchModeSelect" aria-label="Buscar por">
-          <option value="text">Nome ou ID</option>
-          <option value="sku">SKU</option>
+        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="Buscar por nome, ID, link ou SKU" autocomplete="off">
+        <select class="search-mode" id="searchModeSelect" aria-label="Buscar por" title="Por padrão procuramos no título e, se não achar, no SKU. Escolha “Só SKU” para procurar apenas por SKU.">
+          <option value="auto">Tudo</option>
+          <option value="sku">Só SKU</option>
         </select>
       </div>
       <div class="btn-group" id="statusGroup">

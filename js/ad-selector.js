@@ -144,10 +144,11 @@ const state = {
   status: 'active',              // active | paused | all
   order: 'last_updated_desc',
   search: '',
-  searchMode: 'text',            // 'text' (nome/ID) | 'sku' — escolhido no seletor dentro do campo
+  searchMode: 'auto',            // 'auto' (nome/ID e, sem resultado, SKU) | 'sku' (só SKU, forçado no seletor)
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   skuStatusRestore: null,        // status a devolver quando a busca por SKU (que força "Todos") sair
-  skuAltTried: false,            // true depois de repetir a busca de SKU no param alternativo (sku= / seller_sku=)
+  skuTried: false,               // true depois de a escada de busca já ter tentado o SELLER_SKU
+  skuAltTried: false,            // true depois de tentar também o seller_custom_field (sku=)
   pendingBanner: null,           // aviso a exibir na próxima carga (loadPage limpa a área de aviso ao começar)
   activeChip: null,
   prevStatus: null,              // status escolhido pelo usuário antes de um chip fixar outro (devolvido ao desativar)
@@ -548,6 +549,19 @@ async function loadVisitsForPage(ids) {
 /* =========================================================================
    Construção da URL de busca da página
    ========================================================================= */
+// Degraus da busca, em ordem: nome -> SELLER_SKU -> seller_custom_field.
+// Devolve o próximo param a tentar, ou null quando a escada acabou.
+function nextSearchParam() {
+  if (state.searchParam === 'q' && state.searchMode === 'auto' && !state.skuTried) return CONFIG.SKU_PARAM;
+  if (state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried) return CONFIG.SKU_PARAM_ALT;
+  return null;
+}
+// Recomeça a escada (toda busca nova entra pelo primeiro degrau)
+function resetSearchLadder() {
+  state.skuTried = false;
+  state.skuAltTried = false;
+}
+
 function buildListUrl(offsetOverride) {
   const p = new URLSearchParams();
 
@@ -1053,10 +1067,11 @@ function relationSubrowHtml(rel) {
 // case-sensitive na ML, e isso não é adivinhável: a mensagem diz.
 function emptyStateMsg() {
   if (state.search && state.searchMode === 'sku') {
-    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. Procuramos nos dois campos de SKU do Mercado Livre e a busca é exata: confira letras maiúsculas, minúsculas e traços — ou troque para “Nome ou ID”.`;
+    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. Procuramos nos dois campos de SKU do Mercado Livre e a busca é exata: confira letras maiúsculas, minúsculas e traços — ou volte para “Tudo”.`;
   }
-  if (state.search && state.searchParam === CONFIG.SKU_PARAM) {
-    return 'Não achamos por esse texto. Cole o ID ou o link do anúncio — é só copiar o endereço da página do anúncio no Mercado Livre.';
+  if (state.search) {
+    // a escada já passou por título e pelos dois campos de SKU
+    return `Nenhum anúncio com <b>${escapeHtml(state.search)}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
   }
   if (state.freeShipUnder) return `Nenhum anúncio desta página está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
   if (state.discountOnly) return 'Nenhum anúncio desta página está com desconto.';
@@ -1392,20 +1407,34 @@ async function loadPage() {
 
     state.total = (searchResp.paging && typeof searchResp.paging.total === 'number') ? searchResp.paging.total : ids.length;
 
-    // Modo SKU sem resultado: o SKU pode estar no OUTRO campo da ML
-    // (SELLER_SKU x seller_custom_field). Repete a busca no param alternativo
-    // uma única vez antes de dizer "não achei".
-    if (!ids.length && state.search && state.searchMode === 'sku'
-        && state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried) {
-      state.skuAltTried = true;
-      state.searchParam = CONFIG.SKU_PARAM_ALT;
-      return loadPage();
+    // Escada de busca sem resultado — o vendedor digita uma coisa só e a lista se
+    // vira. Cada degrau só roda quando o anterior volta VAZIO, então a busca comum
+    // (nome que existe) continua custando UMA chamada:
+    //   1. q=            (nome, modo automático)
+    //   2. seller_sku=   (atributo SELLER_SKU) — em todos os status, porque procurar
+    //                     SKU é pontual e o anúncio costuma estar pausado
+    //   3. sku=          (campo seller_custom_field, o outro SKU da ML)
+    if (!ids.length && state.search) {
+      const proximoParam = nextSearchParam();
+      if (proximoParam) {
+        state.searchParam = proximoParam;
+        if (proximoParam === CONFIG.SKU_PARAM) state.skuTried = true;
+        else state.skuAltTried = true;
+        // SKU casa exato: manter "Ativos" esconderia o anúncio pausado procurado
+        if (state.status !== 'all') { state.skuStatusRestore = state.status; setStatusToggle('all'); }
+        return loadPage();
+      }
     }
     if (!ids.length) { state.lastItems = []; state.loading = false; renderRows([]); return; }
     const items = await hydrate(ids);
     state.lastItems = items;
     state.loading = false;
     renderRows(items);
+    // Achou por SKU depois de o nome não achar: o resultado precisa se explicar,
+    // senão o vendedor vê a lista mudar de status sem entender por quê.
+    if (state.searchMode === 'auto' && state.searchParam !== 'q') {
+      setBanner('info', 'Não achamos esse texto no título dos anúncios — estes são os que batem com o SKU, entre ativos e pausados.');
+    }
     loadVisitsForPage(ids);   // camada C — visitas 30d da página (assíncrono, enriquece depois)
   } catch (err) {
     // Fallback de busca por nome: se q= falhou, tenta o SKU com aviso amigável.
@@ -1707,7 +1736,8 @@ function readStateFromUrl() {
   if (p.get('buscapor') === 'sku') state.searchMode = 'sku';
   if (p.get('busca')) {
     state.search = p.get('busca');
-    state.searchParam = state.searchMode === 'sku' ? CONFIG.SKU_PARAM : (CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM);
+    if (state.searchMode === 'sku') { state.searchParam = CONFIG.SKU_PARAM; state.skuTried = true; }
+    else state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
   }
   if (p.get('chip')) state.activeChip = p.get('chip');
   if (p.get('tipo')) state.listingType = p.get('tipo');
@@ -1730,7 +1760,7 @@ function applySearchMode() {
   inp.placeholder = isSku
     ? (small ? 'SKU exato' : 'Buscar pelo SKU exato')
     : (CONFIG.USE_Q_PARAM
-      ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID ou link')
+      ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID, link ou SKU')
       : (small ? 'ID do anúncio' : 'ID ou link do anúncio (ex.: MLB123456789)'));
 }
 // Devolve o status que a busca por SKU trocou por "Todos" (só se o usuário não
@@ -1827,7 +1857,7 @@ function wireControls() {
   // seletor "Nome ou ID / SKU" dentro do campo: troca o modo e, se já havia texto
   // digitado, refaz a busca no modo novo (o usuário não precisa apertar Enter de novo)
   $('#searchModeSelect').addEventListener('change', (e) => {
-    state.searchMode = e.target.value === 'sku' ? 'sku' : 'text';
+    state.searchMode = e.target.value === 'sku' ? 'sku' : 'auto';
     applySearchMode();
     if ($('#searchInput').value.trim() || state.search) submitSearch();
   });
@@ -1846,15 +1876,16 @@ function wireControls() {
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
     // ID/link vira análise: não é uma busca — o mesmo ID pode ser reenviado depois de voltar
     if (pid) { lastSubmit = null; enterAnalysis(pid, '', '', pid, { rawInput: v }); return; }
-    state.search = v; state.offset = 0; state.skuAltTried = false;
+    state.search = v; state.offset = 0;
+    resetSearchLadder();          // busca nova entra pelo primeiro degrau
     if (!v) {
       state.searchParam = null;
       restoreStatusAfterSku();
     } else if (state.searchMode === 'sku') {
+      // "Só SKU": já entra pelo degrau do SELLER_SKU e varre todos os status —
+      // o SKU casa exato e o anúncio procurado costuma estar pausado.
       state.searchParam = CONFIG.SKU_PARAM;
-      // seller_sku combina com status= — buscar SKU com "Ativos" ligado esconde o
-      // anúncio pausado que o vendedor está procurando (validado na conta real).
-      // Busca de SKU é pontual: varre todos os status e avisa que fez isso.
+      state.skuTried = true;
       if (state.status !== 'all') {
         state.skuStatusRestore = state.status;
         setStatusToggle('all');
@@ -1864,9 +1895,10 @@ function wireControls() {
         setBannerNextLoad('info', 'Buscando o SKU em todos os anúncios, ativos e pausados.');
       }
     } else {
+      // Automático: começa pelo nome; se voltar vazio, o loadPage desce a escada
+      // até o SKU sozinho (sem o vendedor precisar saber o que é SKU).
       state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
       restoreStatusAfterSku();
-      if (!CONFIG.USE_Q_PARAM) setBanner('warn', 'A busca por nome ainda não está disponível — tentando pelo SKU. Para o resultado exato, cole o ID (ex.: MLB123456789).');
     }
     syncClearBtn(); loadPage();
   }
@@ -1883,7 +1915,7 @@ function wireControls() {
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
-    state.search = ''; state.searchMode = 'text'; state.searchParam = null;
+    state.search = ''; state.searchMode = 'auto'; state.searchParam = null; resetSearchLadder();
     state.skuStatusRestore = null; state.skuAltTried = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
