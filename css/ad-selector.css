@@ -23,17 +23,19 @@
 }
 .ana-wrapper .mfsel * { box-sizing: border-box; }
 .ana-wrapper .mfsel, .ana-wrapper .mfsel { margin: 0; padding: 0; }
+/* SEM background próprio: o .ana-wrapper (analyzer) já pinta o mesmo #f4f6fa e dá
+   24px de padding. Pintar de novo aqui criava uma segunda camada com padding
+   duplo — sobrava moldura cinza em volta do conteúdo e um vazio grande no rodapé. */
 .ana-wrapper .mfsel {
   font-family: 'DM Sans', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text); line-height: 1.5;
-  background-color: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 .ana-wrapper .mfsel .mono {
   font-family: 'DM Mono', 'Geist Mono', 'Consolas', monospace;
   font-variant-numeric: tabular-nums;
 }
-.ana-wrapper .mfsel { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+.ana-wrapper .mfsel { max-width: 1180px; margin: 0 auto; padding: 0 0 8px; }
 /* telas largas: a tabela (com coluna Vendas) precisa de mais respiro pra caber sem scroll horizontal */
 @media (min-width: 1320px) { .ana-wrapper .mfsel { max-width: 1330px; } }
 
@@ -454,7 +456,7 @@
    abaixo disso rola com a sombra do botão como pista. Constantes com ~20px de
    folga pra barra de rolagem clássica do Windows (vw inclui a barra). */
 @media (min-width: 721px) and (max-width: 1345px) {
-  .ana-wrapper .mfsel { padding-left: 14px; padding-right: 14px; }
+  .ana-wrapper .mfsel { padding-left: 0; padding-right: 0; }
   .ana-wrapper .mfsel .thumb { width: 44px; height: 44px; }
   .ana-wrapper .mfsel .visits-line .spark { display: none; }
   .ana-wrapper .mfsel .cell-title { max-width: clamp(104px, 42vw - 289px, 190px); }
@@ -474,7 +476,7 @@
 }
 
 @media (max-width: 720px) {
-  .ana-wrapper .mfsel { padding: 18px 12px 48px; }
+  .ana-wrapper .mfsel { padding: 0 0 8px; }
   .ana-wrapper .mfsel table.grid thead { display: none; }
   .ana-wrapper .mfsel table.grid, .ana-wrapper .mfsel table.grid tbody, .ana-wrapper .mfsel table.grid tr, .ana-wrapper .mfsel table.grid td { display: block; width: 100%; }
   .ana-wrapper .mfsel table.grid tbody tr {
@@ -572,6 +574,28 @@
   .ana-wrapper .mfsel table.grid tbody td[data-label="Preço"] .badge-off { margin-left: auto; }
 }
 
+
+/* ── Telas largas: o painel usa o espaço que a página oferece ──
+   Fica AQUI, depois das regras base, de propósito: media query não muda
+   especificidade, então o `.cell-title { max-width: 300px }` lá de cima venceria
+   se estas regras estivessem antes. As faixas são exclusivas por largura, então
+   não brigam com o tier compacto (721–1345) nem com o bloco mobile.
+   As larguras continuam FIXAS por faixa (não dependem do conteúdo) — a invariante
+   "tabela com a mesma largura fechada × expandida" segue valendo. */
+@media (min-width: 1500px) {
+  .ana-wrapper .mfsel { max-width: 1460px; }
+  .ana-wrapper .mfsel .cell-title { max-width: 400px; }
+  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 400px; }
+  .ana-wrapper .mfsel .badges { width: 400px; }
+  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 400px; }
+}
+@media (min-width: 1700px) {
+  .ana-wrapper .mfsel { max-width: 1640px; }
+  .ana-wrapper .mfsel .cell-title { max-width: 520px; }
+  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 520px; }
+  .ana-wrapper .mfsel .badges { width: 440px; }
+  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 440px; }
+}
 
 /* ==== PORT F4 — regras que só existem no widget (não no protótipo) ==== */
 /* Neutraliza o .ana-wrapper button (azul/uppercase do analyzer) dentro do painel:

@@ -715,6 +715,10 @@ function badgesHtml(list, rowKey) {
   const sorted = list.slice().sort((a, b) =>
     (a.cls in BADGE_SEVERITY ? BADGE_SEVERITY[a.cls] : 9) - (b.cls in BADGE_SEVERITY ? BADGE_SEVERITY[b.cls] : 9));
   const isMobile = window.matchMedia('(max-width:720px)').matches;
+  // tela larga tem faixa de sinais maior (ver CSS >=1500px) — cabe mais um sinal
+  // visível antes do "+N" (matchMedia é lido no render: resize sem reload mantém o
+  // valor anterior, igual ao resto do arquivo)
+  const maxVisiveis = window.matchMedia('(min-width:1500px)').matches ? 3 : 2;
   const expanded = !!(rowKey != null && state.expandedBadges[rowKey]);
   // mobile também colapsa (P6 do design review): card mostra os 2 mais graves + "+N sinais ▾"
   const showAll = expanded;
@@ -726,7 +730,7 @@ function badgesHtml(list, rowKey) {
   // Só informativos: mostra UM (o resto continua no "+N") — dois já empurravam a pill
   // "N variações" pra uma segunda linha e engordavam a linha à toa.
   const severe = sorted.filter((b) => !isInfo(b));
-  const collapsedShown = severe.length ? severe.slice(0, 2) : sorted.slice(0, 1);
+  const collapsedShown = severe.length ? severe.slice(0, maxVisiveis) : sorted.slice(0, 1);
   const shown = showAll ? sorted : collapsedShown;
   const resto = showAll ? [] : sorted.filter((b) => collapsedShown.indexOf(b) === -1);
   let html = shown.map((b) => {
