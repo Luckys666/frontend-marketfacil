@@ -2810,8 +2810,11 @@
 .ana-wrapper .mfsel .badge {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 0; border-radius: 4px;
-  font-size: 0.74rem; font-weight: 500; white-space: nowrap; line-height: 1.5;
+  font-size: 0.74rem; font-weight: 500; line-height: 1.5;
   color: var(--text-secondary); background: transparent;
+  /* nenhum sinal passa da faixa da coluna: texto comprido quebra dentro do badge
+     em vez de alargar a tabela e cair por baixo do botão Analisar (sticky) */
+  max-width: 100%; white-space: normal; overflow-wrap: anywhere;
 }
 .ana-wrapper .mfsel .badge::before { content: ''; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .ana-wrapper .mfsel .badge.red::before { background: var(--red); }
@@ -8528,7 +8531,9 @@ const CONFIG = {
   // e traz a conta inteira em UMA chamada. Hoje o painel só sabe dizer "incompleta"
   // (tag do ML) — com isto ele diz o que preencher.
   SHOW_FICHA: true,
-  FICHA_CATEGORIAS_CAP: 8,   // teto de categorias distintas traduzidas por página
+  FICHA_CATEGORIAS_CAP: 20,  // teto de categorias BUSCADAS na rede por página (cache de sessão não conta)
+  FICHA_CATEGORIAS_LOTE: 4,  // quantas categorias traduzidas em paralelo por vez
+  FICHA_TEXTO_MAX: 46,       // teto do texto do badge (a coluna de sinais tem largura fixa)
   VISITS_WINDOW_DAYS: 30,
   VISITS_CONCURRENCY: 6,       // no máx. N chamadas de visita em voo ao mesmo tempo
   // Camada C — vendas 30d POR CONTA via orders/search (1-3 chamadas/conta, cache 10min).
@@ -9100,20 +9105,34 @@ async function loadAttrNames() {
   });
   if (!cats.length) return;
   let mudou = false;
-  for (const cat of cats.slice(0, CONFIG.FICHA_CATEGORIAS_CAP)) {
-    const cacheKey = 'mf_sel_attrs_' + cat;
-    const emCache = getCachedJson(cacheKey);
-    if (emCache && emCache.nomes) { state.attrNames[cat] = emCache.nomes; mudou = true; continue; }
-    try {
-      const lista = await proxyGet(`/api/attributes/${encodeURIComponent(cat)}`);
-      const nomes = {};
-      (Array.isArray(lista) ? lista : []).forEach((a) => { if (a && a.id && a.name) nomes[a.id] = a.name; });
-      state.attrNames[cat] = nomes;
-      setCachedJson(cacheKey, { nomes: nomes });
-      mudou = true;
-    } catch (e) { state.attrNames[cat] = {}; }
-  }
+
+  // Cache de sessão custa zero chamada: vale pra TODAS as categorias da página.
+  // (O teto abaixo é de rede — cortar o cache junto deixava anúncio com o nome do
+  // campo já guardado exibindo o texto genérico "faltam N campos".)
+  const pendentes = [];
+  cats.forEach((cat) => {
+    const emCache = getCachedJson('mf_sel_attrs_' + cat);
+    if (emCache && emCache.nomes) { state.attrNames[cat] = emCache.nomes; mudou = true; }
+    else pendentes.push(cat);
+  });
   if (mudou) renderCurrentRows();
+
+  // O que falta buscar vai em lotes pequenos e paralelos: uma página de 50 anúncios
+  // passa de 15 categorias distintas com facilidade, e em fila isso levava segundos.
+  const aBuscar = pendentes.slice(0, CONFIG.FICHA_CATEGORIAS_CAP);
+  for (let i = 0; i < aBuscar.length; i += CONFIG.FICHA_CATEGORIAS_LOTE) {
+    const lote = aBuscar.slice(i, i + CONFIG.FICHA_CATEGORIAS_LOTE);
+    await Promise.all(lote.map(async (cat) => {
+      try {
+        const lista = await proxyGet(`/api/attributes/${encodeURIComponent(cat)}`);
+        const nomes = {};
+        (Array.isArray(lista) ? lista : []).forEach((a) => { if (a && a.id && a.name) nomes[a.id] = a.name; });
+        state.attrNames[cat] = nomes;
+        setCachedJson('mf_sel_attrs_' + cat, { nomes: nomes });
+      } catch (e) { state.attrNames[cat] = {}; }
+    }));
+    renderCurrentRows();
+  }
 }
 
 // "WEDGE_SHAPE" -> "Formato do salto" quando a categoria já foi traduzida
@@ -9222,10 +9241,21 @@ function computeBadges(item) {
   const faltando = (ficha && ficha.missing) || [];
   if (faltando.length) {
     const nomes = faltando.map((c) => nomeDoAtributo(item, c)).filter(Boolean);
-    const doisPrimeiros = nomes.slice(0, 2).join(', ');
-    const texto = doisPrimeiros
-      ? (faltando.length > 2 ? `Ficha: falta ${doisPrimeiros} +${faltando.length - 2}` : `Ficha: falta ${doisPrimeiros}`)
-      : (faltando.length === 1 ? 'Ficha técnica: falta 1 campo' : `Ficha técnica: faltam ${faltando.length} campos`);
+    // A coluna de sinais tem largura fixa e nome de atributo do ML chega a 30 letras
+    // ("Temperatura máxima suportada"): dois deles juntos passavam por cima do botão
+    // Analisar. Mostra quantos couberem e o resto vira "+N" — a lista inteira fica na dica.
+    const montaTexto = (qtd) => {
+      const resto = faltando.length - qtd;
+      return `Ficha: falta ${nomes.slice(0, qtd).join(', ')}` + (resto > 0 ? ` +${resto}` : '');
+    };
+    let texto = '';
+    if (nomes.length) {
+      texto = montaTexto(Math.min(2, nomes.length));
+      if (texto.length > CONFIG.FICHA_TEXTO_MAX && nomes.length > 1) texto = montaTexto(1);
+    }
+    if (!texto || texto.length > CONFIG.FICHA_TEXTO_MAX) {
+      texto = faltando.length === 1 ? 'Ficha técnica: falta 1 campo' : `Ficha técnica: faltam ${faltando.length} campos`;
+    }
     const hint = nomes.length
       ? 'O Mercado Livre considera a ficha incompleta. Falta preencher: ' + nomes.join(', ') + '.'
       : 'O Mercado Livre considera a ficha incompleta (' + faltando.length + ' campo(s)).';
@@ -9504,6 +9534,19 @@ function unionBadges(items, agg) {
   }));
   let arr = [...seen.values()];
   if (arr.length > 1) arr = arr.filter((b) => b.cls !== 'green');
+  // Ficha técnica: cada variação tem campos diferentes, então a união rendia dois ou
+  // três "Ficha: falta ..." empilhados na mesma linha. Na linha-família o que decide é
+  // QUANTAS variações estão incompletas — os campos aparecem ao expandir.
+  const fichas = arr.filter((b) => /^Ficha/.test(b.text));
+  if (multi && fichas.length > 1) {
+    const incompletas = items.filter((it) => {
+      const f = state.fichaMap[it.id];
+      return !!(f && f.missing && f.missing.length);
+    }).length;
+    const primeira = arr.indexOf(fichas[0]);
+    arr = arr.filter((b) => !/^Ficha/.test(b.text));
+    arr.splice(primeira, 0, { text: `Ficha incompleta em ${incompletas} variações`, cls: 'orange' });
+  }
   return arr;
 }
 // Agrupa os itens da página por family_id (2+); famílias de 1 item viram linha simples.

@@ -236,8 +236,11 @@
 .ana-wrapper .mfsel .badge {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 0; border-radius: 4px;
-  font-size: 0.74rem; font-weight: 500; white-space: nowrap; line-height: 1.5;
+  font-size: 0.74rem; font-weight: 500; line-height: 1.5;
   color: var(--text-secondary); background: transparent;
+  /* nenhum sinal passa da faixa da coluna: texto comprido quebra dentro do badge
+     em vez de alargar a tabela e cair por baixo do botão Analisar (sticky) */
+  max-width: 100%; white-space: normal; overflow-wrap: anywhere;
 }
 .ana-wrapper .mfsel .badge::before { content: ''; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .ana-wrapper .mfsel .badge.red::before { background: var(--red); }
