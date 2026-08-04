@@ -102,9 +102,8 @@
 
 /* ── Barra de filtros ── */
 .ana-wrapper .mfsel .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-/* A caixa de busca é o container com borda (o input fica transparente dentro):
-   assim o seletor "Nome ou ID / SKU" mora DENTRO do campo, sem virar mais um
-   controle solto na barra de filtros. */
+/* Campo de busca único: nome, ID, link ou SKU no mesmo lugar — quem decide onde
+   procurar é a escada de busca do JS, não o usuário. */
 .ana-wrapper .mfsel .search-box {
   position: relative; flex: 1 1 320px; min-width: 240px;
   display: flex; align-items: stretch;
@@ -113,22 +112,12 @@
 }
 .ana-wrapper .mfsel .search-box:focus-within { border-color: var(--blue); background: #fff; }
 .ana-wrapper .mfsel .search-box input {
-  flex: 1 1 auto; min-width: 0; padding: 9px 10px 9px 36px;
+  flex: 1 1 auto; min-width: 0; padding: 9px 12px 9px 36px;
   border: none; background: transparent;
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm); font-family: inherit; font-size: 0.92rem;
+  border-radius: var(--radius-sm); font-family: inherit; font-size: 0.92rem;
   color: var(--text);
 }
 .ana-wrapper .mfsel .search-box input:focus { outline: none; }
-/* modo da busca (nome/ID × SKU) — controle discreto colado no fim do campo */
-.ana-wrapper .mfsel .search-mode {
-  flex: 0 0 auto; border: none; border-left: 1px solid var(--border);
-  background: transparent; padding: 0 8px; cursor: pointer;
-  font-family: inherit; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-.ana-wrapper .mfsel .search-mode:focus { outline: none; color: var(--blue); }
-.ana-wrapper .mfsel .search-box.mode-sku { border-color: #c9dcff; }
-.ana-wrapper .mfsel .search-box.mode-sku .search-mode { color: var(--blue); font-weight: 600; }
 .ana-wrapper .mfsel .search-box .ico {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: var(--text-muted); font-size: 0.95rem;
@@ -521,8 +510,7 @@
   .ana-wrapper .mfsel .sel { padding: 12px; }
   .ana-wrapper .mfsel .search-box input { padding: 12px 12px 12px 38px; }
   /* 16px no foco: elimina o auto-zoom do Safari/Chrome iOS sem bloquear o pinch-zoom */
-  .ana-wrapper .mfsel .search-box input, .ana-wrapper .mfsel .sel, .ana-wrapper .mfsel .search-mode { font-size: 1rem; }
-  .ana-wrapper .mfsel .search-mode { padding: 0 10px; }
+  .ana-wrapper .mfsel .search-box input, .ana-wrapper .mfsel .sel { font-size: 1rem; }
   .ana-wrapper .mfsel .search-box .ico { padding: 14px; margin: 0 0 0 -14px; }
   .ana-wrapper .mfsel .icon-btn { width: auto; height: 44px; padding: 0 14px; }
   .ana-wrapper .mfsel .badge.variations, .ana-wrapper .mfsel .badge-more { padding: 12px 14px; margin: -6px 0; font-size: 0.8rem; }

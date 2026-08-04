@@ -144,7 +144,6 @@ const state = {
   status: 'active',              // active | paused | all
   order: 'last_updated_desc',
   search: '',
-  searchMode: 'auto',            // 'auto' (nome/ID e, sem resultado, SKU) | 'sku' (só SKU, forçado no seletor)
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   skuStatusRestore: null,        // status a devolver quando a busca por SKU (que força "Todos") sair
   skuTried: false,               // true depois de a escada de busca já ter tentado o SELLER_SKU
@@ -552,7 +551,7 @@ async function loadVisitsForPage(ids) {
 // Degraus da busca, em ordem: nome -> SELLER_SKU -> seller_custom_field.
 // Devolve o próximo param a tentar, ou null quando a escada acabou.
 function nextSearchParam() {
-  if (state.searchParam === 'q' && state.searchMode === 'auto' && !state.skuTried) return CONFIG.SKU_PARAM;
+  if (state.searchParam === 'q' && !state.skuTried) return CONFIG.SKU_PARAM;
   if (state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried) return CONFIG.SKU_PARAM_ALT;
   return null;
 }
@@ -1066,9 +1065,6 @@ function relationSubrowHtml(rel) {
 // o que fazer, não que "não há resultados"). No modo SKU o casamento é EXATO e
 // case-sensitive na ML, e isso não é adivinhável: a mensagem diz.
 function emptyStateMsg() {
-  if (state.search && state.searchMode === 'sku') {
-    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. Procuramos nos dois campos de SKU do Mercado Livre e a busca é exata: confira letras maiúsculas, minúsculas e traços — ou volte para “Tudo”.`;
-  }
   if (state.search) {
     // a escada já passou por título e pelos dois campos de SKU
     return `Nenhum anúncio com <b>${escapeHtml(state.search)}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
@@ -1432,7 +1428,10 @@ async function loadPage() {
     renderRows(items);
     // Achou por SKU depois de o nome não achar: o resultado precisa se explicar,
     // senão o vendedor vê a lista mudar de status sem entender por quê.
-    if (state.searchMode === 'auto' && state.searchParam !== 'q') {
+    // Só quando há busca E ela caiu num degrau de SKU — sem texto o searchParam é
+    // null, e um "!== 'q'" solto fazia o aviso aparecer na carga limpa da página.
+    const veioDeSku = state.searchParam === CONFIG.SKU_PARAM || state.searchParam === CONFIG.SKU_PARAM_ALT;
+    if (state.search && veioDeSku) {
       setBanner('info', 'Não achamos esse texto no título dos anúncios — estes são os que batem com o SKU, entre ativos e pausados.');
     }
     loadVisitsForPage(ids);   // camada C — visitas 30d da página (assíncrono, enriquece depois)
@@ -1719,7 +1718,6 @@ function writeStateToUrl() {
   if (state.status !== 'active') p.set('status', state.status);
   if (state.order !== 'last_updated_desc') p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
-  if (state.searchMode === 'sku') p.set('buscapor', 'sku');
   if (state.activeChip) p.set('chip', state.activeChip);
   if (state.listingType) p.set('tipo', state.listingType);
   if (state.logisticType) p.set('log', state.logisticType);
@@ -1733,11 +1731,9 @@ function readStateFromUrl() {
   const p = new URLSearchParams(location.search);
   if (p.get('status')) state.status = p.get('status');
   if (p.get('order')) state.order = p.get('order');
-  if (p.get('buscapor') === 'sku') state.searchMode = 'sku';
   if (p.get('busca')) {
     state.search = p.get('busca');
-    if (state.searchMode === 'sku') { state.searchParam = CONFIG.SKU_PARAM; state.skuTried = true; }
-    else state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+    state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
   }
   if (p.get('chip')) state.activeChip = p.get('chip');
   if (p.get('tipo')) state.listingType = p.get('tipo');
@@ -1749,19 +1745,15 @@ function readStateFromUrl() {
 /* ── Modo da busca (nome/ID × SKU) ──
    O SKU casa EXATO na ML (case-sensitive), então o campo precisa dizer isso: o
    placeholder muda junto com o modo e o estado vazio explica o casamento exato. */
-function applySearchMode() {
+function applySearchPlaceholder() {
   const inp = $('#searchInput');
-  const box = inp && inp.closest('.search-box');
-  const isSku = state.searchMode === 'sku';
-  if (box) box.classList.toggle('mode-sku', isSku);
   if (!inp) return;
-  // No celular o seletor come metade do campo: placeholder curto pra não sair cortado
+  // Campo único: o texto do placeholder é a única explicação do que ele aceita.
+  // No celular a versão curta, senão sai cortado.
   const small = window.matchMedia('(max-width:720px)').matches;
-  inp.placeholder = isSku
-    ? (small ? 'SKU exato' : 'Buscar pelo SKU exato')
-    : (CONFIG.USE_Q_PARAM
-      ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID, link ou SKU')
-      : (small ? 'ID do anúncio' : 'ID ou link do anúncio (ex.: MLB123456789)'));
+  inp.placeholder = CONFIG.USE_Q_PARAM
+    ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID, link ou SKU')
+    : (small ? 'ID do anúncio' : 'ID ou link do anúncio (ex.: MLB123456789)');
 }
 // Devolve o status que a busca por SKU trocou por "Todos" (só se o usuário não
 // tiver escolhido outro no meio do caminho — nesse caso o restore já foi zerado).
@@ -1773,8 +1765,7 @@ function restoreStatusAfterSku() {
 // espelha o estado (vindo da URL) nos controles da UI
 function syncControlsToState() {
   $('#searchInput').value = state.search || '';
-  $('#searchModeSelect').value = state.searchMode;
-  applySearchMode();
+  applySearchPlaceholder();
   $('#orderSelect').value = state.order;
   $('#typeSelect').value = state.listingType || '';
   $('#logisticSelect').value = state.logisticType || '';
@@ -1854,24 +1845,15 @@ function wireControls() {
     refreshCounts().finally(() => { b.disabled = false; });
     loadPage();
   });
-  // seletor "Nome ou ID / SKU" dentro do campo: troca o modo e, se já havia texto
-  // digitado, refaz a busca no modo novo (o usuário não precisa apertar Enter de novo)
-  $('#searchModeSelect').addEventListener('change', (e) => {
-    state.searchMode = e.target.value === 'sku' ? 'sku' : 'auto';
-    applySearchMode();
-    if ($('#searchInput').value.trim() || state.search) submitSearch();
-  });
   // busca (Enter ou clique na lupa): link/ID colado -> análise direta; texto livre -> filtra
   // lastSubmit: Enter num input type=search dispara keydown E o evento 'search' — sem
   // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª)
   let lastSubmit = null;
   function submitSearch() {
     const v = $('#searchInput').value.trim();
-    const sig = state.searchMode + '|' + v;
-    if (sig === lastSubmit) return;
-    lastSubmit = sig;
-    // No modo SKU o texto é SKU, não link: um SKU tipo "MLB123" não deve virar análise.
-    const pid = state.searchMode === 'sku' ? null : parseItemId(v);
+    if (v === lastSubmit) return;
+    lastSubmit = v;
+    const pid = parseItemId(v);
     // PORT F4: manda o texto ORIGINAL (rawInput) — link de catálogo/edição
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
     // ID/link vira análise: não é uma busca — o mesmo ID pode ser reenviado depois de voltar
@@ -1881,22 +1863,9 @@ function wireControls() {
     if (!v) {
       state.searchParam = null;
       restoreStatusAfterSku();
-    } else if (state.searchMode === 'sku') {
-      // "Só SKU": já entra pelo degrau do SELLER_SKU e varre todos os status —
-      // o SKU casa exato e o anúncio procurado costuma estar pausado.
-      state.searchParam = CONFIG.SKU_PARAM;
-      state.skuTried = true;
-      if (state.status !== 'all') {
-        state.skuStatusRestore = state.status;
-        setStatusToggle('all');
-      }
-      // repõe o aviso a cada busca enquanto o "Todos" for nosso (e não escolha dele)
-      if (state.skuStatusRestore != null) {
-        setBannerNextLoad('info', 'Buscando o SKU em todos os anúncios, ativos e pausados.');
-      }
     } else {
-      // Automático: começa pelo nome; se voltar vazio, o loadPage desce a escada
-      // até o SKU sozinho (sem o vendedor precisar saber o que é SKU).
+      // Começa pelo nome; se voltar vazio, o loadPage desce a escada até o SKU
+      // sozinho — o vendedor não precisa saber o que é SKU nem escolher nada.
       state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
       restoreStatusAfterSku();
     }
@@ -1908,14 +1877,14 @@ function wireControls() {
   });
   $('#searchGo').addEventListener('click', submitSearch);
   // girar o celular troca o tamanho do placeholder (o texto longo some cortado no retrato)
-  window.addEventListener('resize', () => { clearTimeout(applySearchMode._t); applySearchMode._t = setTimeout(applySearchMode, 150); });
+  window.addEventListener('resize', () => { clearTimeout(applySearchPlaceholder._t); applySearchPlaceholder._t = setTimeout(applySearchPlaceholder, 150); });
   // "x" nativo do input type=search também refaz a lista (submitSearch é idempotente)
   $('#searchInput').addEventListener('search', submitSearch);
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
-    state.search = ''; state.searchMode = 'auto'; state.searchParam = null; resetSearchLadder();
+    state.search = ''; state.searchParam = null; resetSearchLadder();
     state.skuStatusRestore = null; state.skuAltTried = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
