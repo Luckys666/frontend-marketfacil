@@ -68,6 +68,12 @@ const CONFIG = {
   SHOW_VISITS: false,
   SHOW_QUESTIONS: false,
   SHOW_SALES30: false,
+  // Moderação do ML: anúncio pausado/derrubado por infração — o problema mais caro
+  // que existe (está fora do ar) e o único onde o próprio ML manda o texto do que
+  // fazer. Custo: 1 chamada por conta + 1 por anúncio moderado (contas saudáveis
+  // têm zero; o teto evita surpresa em conta problemática).
+  SHOW_MODERATION: true,
+  MODERATION_DETAIL_CAP: 12,
   VISITS_WINDOW_DAYS: 30,
   VISITS_CONCURRENCY: 6,       // no máx. N chamadas de visita em voo ao mesmo tempo
   // Camada C — vendas 30d POR CONTA via orders/search (1-3 chamadas/conta, cache 10min).
@@ -109,6 +115,7 @@ const PROBLEM_RULES = {
 
 /* Chips de problema da conta. countKey aponta para a chave em `counts`. */
 const PROBLEM_CHIPS = [
+  { id: 'moderacao',       sev: 'red',    label: 'Parado pelo Mercado Livre',      filter: { status: 'pending' },                   countKey: 'status_pending' },
   { id: 'unhealthy',       sev: 'red',    label: 'Perdendo exposição',            filter: { reputation_health_gauge: 'unhealthy' }, countKey: 'gauge_unhealthy' },
   { id: 'warning',         sev: 'orange', label: 'Risco de perder exposição',     filter: { reputation_health_gauge: 'warning' },   countKey: 'gauge_warning' },
   { id: 'incomplete_specs',sev: 'orange', label: 'Ficha técnica incompleta',      filter: { labels: 'incomplete_technical_specs' }, countKey: 'label_incomplete_technical_specs' },
@@ -170,6 +177,7 @@ const state = {
   visitsSeries: {},      // itemId -> [visitas por dia, 30 posições] (mesma chamada do total — custo zero extra)
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
+  moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
   expandedRelations: {}, // itemId (catálogo) -> true (anúncios vinculados abertos)
   lastItems: [],         // itens da página atual, para re-render incremental
 };
@@ -258,6 +266,18 @@ async function mlGet(mlPath) {
   if (!res.ok) {
     const err = new Error('erro_ml'); err.status = res.status; err.body = data; throw err;
   }
+  return data;
+}
+
+// Rotas próprias do proxy (moderação, qualidade da ficha): não têm equivalente no
+// caminho "estilo ML" que o mfselProxyUrl traduz, então vão direto.
+async function proxyGet(rota) {
+  const token = await mfselToken();
+  const res = await fetch(MFSEL_PROXY + rota, { headers: { Authorization: 'Bearer ' + token } });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* corpo não-JSON */ }
+  if (res.status === 401) { mfselTokCache = { v: null, ts: 0 }; const e = new Error('sessao_expirada'); e.status = 401; throw e; }
+  if (!res.ok) { const e = new Error('erro_proxy'); e.status = res.status; e.body = data; throw e; }
   return data;
 }
 
@@ -546,6 +566,41 @@ async function loadVisitsForPage(ids) {
 }
 
 /* =========================================================================
+   Camada moderação — anúncio parado pelo ML (1 chamada/conta + 1 por moderado)
+   O ML devolve o motivo (REASON) e o que fazer (REMEDY) já escritos em português;
+   é o único sinal do painel que vem com a solução pronta da própria plataforma.
+   ========================================================================= */
+async function loadModerations(sellerId) {
+  if (!CONFIG.SHOW_MODERATION || !sellerId) return;
+  const cached = getCachedJson('mf_sel_moderation');
+  if (cached && cached.map) { state.moderationMap = cached.map; renderCurrentRows(); return; }
+  try {
+    const lista = await proxyGet(`/api/moderations/items?seller_id=${encodeURIComponent(sellerId)}&limit=50`);
+    const ids = (lista && Array.isArray(lista.results) ? lista.results : [])
+      .map((x) => (typeof x === 'string' ? x : (x && x.id)))
+      .filter(Boolean);
+    const map = {};
+    for (const id of ids.slice(0, CONFIG.MODERATION_DETAIL_CAP)) {
+      try {
+        const det = await proxyGet(`/api/moderations/details?item_id=${encodeURIComponent(id)}`);
+        const m = Array.isArray(det) ? det[0] : null;
+        const w = (m && Array.isArray(m.wordings)) ? m.wordings : [];
+        const pega = (tipo) => {
+          const achado = w.find((x) => String(x.type).toUpperCase() === tipo);
+          return achado ? String(achado.value).replace(/<[^>]+>/g, '').trim() : '';
+        };
+        map[id] = { reason: pega('REASON'), remedy: pega('REMEDY') };
+      } catch (e) { map[id] = { reason: '', remedy: '' }; }   // está moderado mesmo sem detalhe
+    }
+    // IDs sem detalhe buscado (acima do teto) continuam marcados como moderados
+    ids.slice(CONFIG.MODERATION_DETAIL_CAP).forEach((id) => { if (!map[id]) map[id] = { reason: '', remedy: '' }; });
+    state.moderationMap = map;
+    setCachedJson('mf_sel_moderation', { map: map });
+    renderCurrentRows();
+  } catch (e) { /* sem moderação disponível: o painel segue sem esse sinal */ }
+}
+
+/* =========================================================================
    Construção da URL de busca da página
    ========================================================================= */
 // Degraus da busca, em ordem: nome -> SELLER_SKU -> seller_custom_field.
@@ -615,6 +670,14 @@ function computeBadges(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const id = item.id || '';
   const inSet = (sigId) => !!(state.signalSets[sigId] && state.signalSets[sigId].has(id));
+
+  // Moderação do ML vem PRIMEIRO: o anúncio está fora do ar até ser corrigido, e o
+  // texto do que fazer é do próprio Mercado Livre (não é palpite nosso).
+  const mod = state.moderationMap[id];
+  if (mod) {
+    const detalhe = [mod.reason, mod.remedy].filter(Boolean).join(' — ');
+    problems.push({ text: 'Parado pelo Mercado Livre', cls: 'red', hint: detalhe || 'O Mercado Livre pausou este anúncio. Abra o anúncio no ML para ver o que precisa corrigir.' });
+  }
 
   // sub_status (array na ML)
   const subs = Array.isArray(item.sub_status) ? item.sub_status : (item.sub_status ? [item.sub_status] : []);
@@ -750,8 +813,9 @@ function badgesHtml(list, rowKey) {
   const shown = showAll ? sorted : collapsedShown;
   const resto = showAll ? [] : sorted.filter((b) => collapsedShown.indexOf(b) === -1);
   let html = shown.map((b) => {
-    // hover no desktop (title=) + toque no mobile (data-hint, ligado em wireRows)
-    const hint = badgeTitle(b.text);
+    // hover no desktop (title=) + toque no mobile (data-hint, ligado em wireRows).
+    // b.hint tem prioridade: é o texto que o ML mandou para ESTE anúncio.
+    const hint = b.hint || badgeTitle(b.text);
     return `<span class="badge ${b.cls}"${hint ? ` title="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}"` : ''}>${escapeHtml(b.text)}</span>`;
   }).join('');
   if (resto.length) {
@@ -1789,6 +1853,8 @@ function refreshCounts() {
   try { Object.keys(sessionStorage).forEach((k) => { if (/^mf_sel_/.test(k)) sessionStorage.removeItem(k); }); } catch (e) {}
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
+  state.moderationMap = {};
+  loadModerations(state.sellerId);
   loadQuestions(state.sellerId);
   loadSales30(state.sellerId);
   // retorna a promise pro chamador saber quando terminou (reabilitar o botão);
@@ -1989,6 +2055,8 @@ async function boot() {
     })
     .catch(() => { $('#chipsArea').innerHTML = '<p class="chips-tip">Não deu para carregar o resumo agora — toque ou clique em “Atualizar” para tentar de novo.</p>'; });
 
+  // moderação — anúncio parado pelo ML (1 chamada por conta)
+  loadModerations(state.sellerId);
   // camada C — perguntas sem resposta (1 chamada por conta)
   loadQuestions(state.sellerId);
   // camada C — vendas 30d por conta (1-3 chamadas; conversão + previsão de estoque)
