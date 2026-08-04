@@ -9835,14 +9835,20 @@ async function loadPage() {
 function renderError(err) {
   const host = $('#tableHost');
   if (err && err.status === 401) {
+    // Estado explícito em vez de tela em branco/antiga: a conexão do ML é a mesma
+    // que a análise usa, então enquanto ela não voltar NADA aqui funciona. O 2º
+    // botão evita o "e agora?" depois de reconectar na outra aba.
     host.innerHTML = `<div class="state">
       <span class="emoji">🔌</span>
-      <h3>Sua conta do Mercado Livre desconectou</h3>
-      <p>Reconecte sua conta do Mercado Livre para ver seus anúncios.</p>
+      <h3>Sua conta do Mercado Livre precisa ser reconectada</h3>
+      <p>A conexão com o Mercado Livre expirou. Reconecte em <b>Minha Conta → Adicionar Conta</b> — leva alguns segundos e suas outras ferramentas voltam junto.</p>
       <button class="btn-retry" id="reconnectBtn">Reconectar conta</button>
+      <button class="btn-retry" id="reconnectedBtn" style="margin-left:8px;background:transparent;color:var(--blue)">Já reconectei</button>
     </div>`;
     const rc = $('#reconnectBtn');
     if (rc) rc.addEventListener('click', () => window.open(CONFIG.RECONNECT_URL, '_blank'));
+    const rd = $('#reconnectedBtn');
+    if (rd) rd.addEventListener('click', () => location.reload());
     return;
   }
   host.innerHTML = `<div class="state">
@@ -10342,8 +10348,23 @@ async function boot() {
     const me = await mlGet('users/me');
     state.sellerId = me.id;
   } catch (err) {
-    // Sem sessão/erro: o 401 do protótipo tinha tela própria; no app o fluxo
-    // legado já cobre esse estado (o analyzer mostra o erro dele) — recolhe.
+    // 401 = conexão do Mercado Livre vencida. Aqui o fluxo legado NÃO ajuda: o
+    // analyzer usa o MESMO token e vai falhar do mesmo jeito, e o painel sumindo
+    // parece que a tela mudou sozinha. Então o painel FICA, dizendo o que houve e
+    // com o botão de reconectar. Qualquer outra falha (proxy fora, erro
+    // inesperado) continua recolhendo pro fluxo antigo.
+    if (err && err.status === 401) {
+      const chips = document.getElementById('chipsCard');
+      const filters = document.getElementById('filtersCard');
+      if (chips) chips.hidden = true;      // controles não fazem sentido sem conta conectada
+      if (filters) filters.hidden = true;
+      const sub = document.getElementById('subtitle');
+      if (sub) sub.textContent = 'Precisamos da sua conta do Mercado Livre conectada para listar seus anúncios.';
+      const rc = document.getElementById('resultsContainer');
+      if (rc) rc.style.display = 'none';
+      renderError(err);                    // tela "conta desconectada" + botão Reconectar
+      return;
+    }
     legacyFallback(); return;
   }
 
