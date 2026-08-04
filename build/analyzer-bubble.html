@@ -8442,12 +8442,18 @@ const CONFIG = {
   // com status=. O switch fica como kill-switch: se a ML mudar o comportamento,
   // USE_Q_PARAM=false esconde a tentativa de q= e cai direto no aviso + SKU.
   USE_Q_PARAM: true,
-  // Busca por SKU — param validado com token real (03/08/2026, conta 649733403):
-  //   seller_sku=panela123 -> 1 resultado  |  sku=panela123 -> 0 (sku= é do
-  //   catálogo/inventário, NÃO do vendedor — não usar).
-  // É casamento EXATO e case-sensitive ("PANELA123" e "panela" devolvem 0) e
-  // combina com status=, por isso o modo SKU busca em todos os status.
+  // Busca por SKU — a ML tem DOIS campos de SKU e um param para cada (doc oficial
+  // "Busca de itens > Obter itens da conta de um vendedor > Por SKU"):
+  //   seller_sku= -> atributo SELLER_SKU        (o que a conta 649733403 usa)
+  //   sku=        -> campo seller_custom_field  (SKU do próprio item, estilo antigo)
+  // O vendedor não sabe (nem precisa saber) em qual dos dois o SKU dele está, então
+  // a busca tenta SELLER_SKU e, sem resultado, repete no seller_custom_field.
+  // Validado com token real (03/08/2026): seller_sku=panela123 -> MLB1669552989;
+  // sku=panela123 -> 0 (a conta não usa seller_custom_field em nenhum item).
+  // Casamento EXATO e case-sensitive ("PANELA123" e "panela" devolvem 0) e combina
+  // com status=, por isso o modo SKU busca em todos os status.
   SKU_PARAM: 'seller_sku',
+  SKU_PARAM_ALT: 'sku',
   ANALYZE_URL: 'https://app.marketfacil.com.br/analise-anuncio',
   RECONNECT_URL: 'https://app.marketfacil.com.br/minha-conta',  // conexão ML fica em Minha Conta (verificado 23/07 — /conexoes é 404)
   PAGE_SIZE: 50,
@@ -8557,6 +8563,7 @@ const state = {
   searchMode: 'text',            // 'text' (nome/ID) | 'sku' — escolhido no seletor dentro do campo
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   skuStatusRestore: null,        // status a devolver quando a busca por SKU (que força "Todos") sair
+  skuAltTried: false,            // true depois de repetir a busca de SKU no param alternativo (sku= / seller_sku=)
   pendingBanner: null,           // aviso a exibir na próxima carga (loadPage limpa a área de aviso ao começar)
   activeChip: null,
   prevStatus: null,              // status escolhido pelo usuário antes de um chip fixar outro (devolvido ao desativar)
@@ -9458,7 +9465,7 @@ function relationSubrowHtml(rel) {
 // case-sensitive na ML, e isso não é adivinhável: a mensagem diz.
 function emptyStateMsg() {
   if (state.search && state.searchMode === 'sku') {
-    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. A busca por SKU é exata: confira letras maiúsculas, minúsculas e traços — ou troque para “Nome ou ID”.`;
+    return `Nenhum anúncio com o SKU <b>${escapeHtml(state.search)}</b>. Procuramos nos dois campos de SKU do Mercado Livre e a busca é exata: confira letras maiúsculas, minúsculas e traços — ou troque para “Nome ou ID”.`;
   }
   if (state.search && state.searchParam === CONFIG.SKU_PARAM) {
     return 'Não achamos por esse texto. Cole o ID ou o link do anúncio — é só copiar o endereço da página do anúncio no Mercado Livre.';
@@ -9797,6 +9804,15 @@ async function loadPage() {
 
     state.total = (searchResp.paging && typeof searchResp.paging.total === 'number') ? searchResp.paging.total : ids.length;
 
+    // Modo SKU sem resultado: o SKU pode estar no OUTRO campo da ML
+    // (SELLER_SKU x seller_custom_field). Repete a busca no param alternativo
+    // uma única vez antes de dizer "não achei".
+    if (!ids.length && state.search && state.searchMode === 'sku'
+        && state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried) {
+      state.skuAltTried = true;
+      state.searchParam = CONFIG.SKU_PARAM_ALT;
+      return loadPage();
+    }
     if (!ids.length) { state.lastItems = []; state.loading = false; renderRows([]); return; }
     const items = await hydrate(ids);
     state.lastItems = items;
@@ -10236,7 +10252,7 @@ function wireControls() {
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
     // ID/link vira análise: não é uma busca — o mesmo ID pode ser reenviado depois de voltar
     if (pid) { lastSubmit = null; enterAnalysis(pid, '', '', pid, { rawInput: v }); return; }
-    state.search = v; state.offset = 0;
+    state.search = v; state.offset = 0; state.skuAltTried = false;
     if (!v) {
       state.searchParam = null;
       restoreStatusAfterSku();
@@ -10274,7 +10290,7 @@ function wireControls() {
     lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
     state.search = ''; state.searchMode = 'text'; state.searchParam = null;
-    state.skuStatusRestore = null; state.activeChip = null; state.prevStatus = null;
+    state.skuStatusRestore = null; state.skuAltTried = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
     renderChipsFresh(); loadPage();
