@@ -3349,6 +3349,29 @@ const PONTOS_PENALIDADE_MODERATION_PENALTY = -50;
 const PONTOS_BONUS_DESCRICAO = 5;
 const ATRIBUTOS_IGNORADOS_REPETICAO = new Set([]); // Lista limpa para ser mais rigoroso
 const ATRIBUTOS_IGNORADOS_COMPLETAMENTE = new Set(['GTIN', 'SKU', 'SELLER_SKU', 'INMETRO_CERTIFICATION_REGISTRATION_NUMBER']);
+
+// Atributos que o PRÓPRIO ML preenche e o vendedor não edita — não são ficha técnica.
+// O caso que trouxe isso à tona: GIFTABLE aparece como "Regalavel: vppfull" (nome em
+// espanhol, valor em código interno) em anúncios sem que ninguém saiba o que é, e ainda
+// levava penalidade de "atributo muito curto" no score.
+// A régua é `read_only` na definição da categoria, NUNCA `hidden`: campo hidden sem
+// read_only é preenchível — o ML só não mostra no formulário — e vale ouro justamente
+// por quase ninguém preencher (PRODUCT_DATA_SOURCE "Fonte do produto", IS_KIT, medidas
+// de roupa). Esses continuam aparecendo normalmente.
+// A lista fixa cobre os que vêm no item mas nem constam na lista da categoria (é o caso
+// do GIFTABLE), onde não há tags pra consultar.
+const ATRIBUTOS_SISTEMA_ML = new Set([
+    'GIFTABLE', 'VERTICAL_TAGS', 'DESCRIPTIVE_TAGS', 'PACKAGE_DATA_SOURCE',
+    'SELLER_PACKAGE_DATA_SOURCE', 'SHIPMENT_PACKING', 'HAZMAT_TRANSPORTABILITY',
+    'WITH_POSITIVE_IMPACT', 'PRODUCT_CHEMICAL_FEATURES', 'BATTERIES_FEATURES'
+]);
+function ehAtributoDeSistema(attrId) {
+    if (ATRIBUTOS_SISTEMA_ML.has(attrId)) return true;
+    const cats = window.currentAnalysisState && window.currentAnalysisState.categoryAttributes;
+    if (!Array.isArray(cats) || !cats.length) return false;   // sem a lista da categoria, não esconde nada
+    const def = cats.find(c => c && c.id === attrId);
+    return !!(def && def.tags && def.tags.read_only);
+}
 const VALORES_IGNORADOS_PENALIDADE = new Set(['isento', 'não aplicável', 'na']);
 
 const tagSignificados = {
@@ -4692,7 +4715,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
     }
 
     const pTit = getPalavrasUnicas(titulo);
-    const validAttrs = fichaTecnica.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id));
+    const validAttrs = fichaTecnica.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id) && !ehAtributoDeSistema(a.id));
 
     const problemAttrs = [];
     const okAttrs = [];
@@ -5790,7 +5813,7 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             return `
              <div class="attribute-item" style="min-width:0; ${!isFilled ? 'background:var(--red-light); border-color:var(--red);' : 'background:var(--green-light); border-color:var(--green);'} ${isIgnored ? 'opacity: 0.5; filter: grayscale(1);' : ''}">
                 <div id="attr-edit-wrapper-${catAttr.id}" style="flex-grow: 1; min-width:0; overflow:hidden;">
-                    <span class="text-label" style="margin-bottom:2px;">${catAttr.name}</span>
+                    <span class="text-label" style="margin-bottom:2px;">${catAttr.name}${catAttr.tags?.hidden ? ` <span title="O Mercado Livre não mostra este campo no formulário de publicação — a maioria dos concorrentes deixa em branco." style="font-size:0.62rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--blue); border:1px solid #c9dcff; border-radius:4px; padding:0 5px; margin-left:6px; cursor:help; white-space:nowrap;">campo extra</span>` : ''}</span>
                     ${isFilled ? `<span class="text-value" style="word-break:break-word; ${isIgnored ? 'text-decoration: line-through;' : ''}">${adValue}</span>` : '<span class="text-small" style="color:var(--red);">Não preenchido</span>'}
                 </div>
                 <div style="display:flex; align-items:center; gap: 6px; flex-shrink:0;">
@@ -8373,7 +8396,7 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     let attrPenalty = 0;
     if (Array.isArray(detail.attributes) && detail.attributes.length > 0) {
         let validCount = 0;
-        const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id) && !window.ignoredAdAttributes.has(a.id));
+        const validAttrs = detail.attributes.filter(a => typeof a === 'object' && a && a.value_type === 'string' && typeof a.value_name === 'string' && !ATRIBUTOS_IGNORADOS_COMPLETAMENTE.has(a.id) && !window.ignoredAdAttributes.has(a.id) && !ehAtributoDeSistema(a.id));
         const pPorAttr = new Map(); validAttrs.forEach(a => pPorAttr.set(a.id, getPalavrasUnicas(a.value_name)));
         validAttrs.forEach(attr => {
             validCount++;
