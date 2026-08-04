@@ -3145,14 +3145,15 @@
    As larguras continuam FIXAS por faixa (não dependem do conteúdo) — a invariante
    "tabela com a mesma largura fechada × expandida" segue valendo. */
 @media (min-width: 1500px) {
-  .ana-wrapper .mfsel { max-width: 1460px; }
+  /* Sem teto fixo: acompanha a largura que a página do Bubble oferece. Com o teto de
+     1460/1640 uma tela de 2400 (ou 1920 com zoom out) deixava ~477px vazios à direita. */
+  .ana-wrapper .mfsel { max-width: 100%; }
   .ana-wrapper .mfsel .cell-title { max-width: 400px; }
   .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 400px; }
   .ana-wrapper .mfsel .badges { width: 400px; }
   .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 400px; }
 }
 @media (min-width: 1700px) {
-  .ana-wrapper .mfsel { max-width: 1640px; }
   .ana-wrapper .mfsel .cell-title { max-width: 520px; }
   .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 520px; }
   .ana-wrapper .mfsel .badges { width: 440px; }
