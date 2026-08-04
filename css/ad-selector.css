@@ -570,20 +570,22 @@
    não brigam com o tier compacto (721–1345) nem com o bloco mobile.
    As larguras continuam FIXAS por faixa (não dependem do conteúdo) — a invariante
    "tabela com a mesma largura fechada × expandida" segue valendo. */
-@media (min-width: 1500px) {
-  /* Sem teto fixo: acompanha a largura que a página do Bubble oferece. Com o teto de
-     1460/1640 uma tela de 2400 (ou 1920 com zoom out) deixava ~477px vazios à direita. */
+/* ── Acima do tier compacto: painel sem teto, colunas FLUIDAS ──
+   Sem teto o painel acompanha a página (o teto de 1460/1640 deixava ~477px vazios
+   numa tela de 2400). Mas as colunas NÃO podem crescer em degraus de viewport: a
+   página do app tem menu lateral, então o container é ~350px menor que a janela —
+   com larguras fixas por breakpoint a tabela estourou 114px em 1500. Aqui elas
+   crescem com o vw descontando esse desconto, igual ao tier compacto faz embaixo.
+   Continuam dependendo da JANELA (não do conteúdo): expandir família segue sem
+   mudar a largura da tabela. */
+@media (min-width: 1346px) {
   .ana-wrapper .mfsel { max-width: 100%; }
-  .ana-wrapper .mfsel .cell-title { max-width: 400px; }
-  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 400px; }
-  .ana-wrapper .mfsel .badges { width: 400px; }
-  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 400px; }
-}
-@media (min-width: 1700px) {
-  .ana-wrapper .mfsel .cell-title { max-width: 520px; }
-  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: 520px; }
-  .ana-wrapper .mfsel .badges { width: 440px; }
-  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: 440px; }
+  /* pisos = tetos do tier compacto (190/258): sem isso havia um degrau de 72px na
+     fronteira dos 1345px e a tabela estourava 77px logo ali em 1366 */
+  .ana-wrapper .mfsel .cell-title { max-width: clamp(190px, 26vw - 120px, 640px); }
+  .ana-wrapper .mfsel tr.subrow .cell-title { max-width: clamp(190px, 26vw - 120px, 640px); }
+  .ana-wrapper .mfsel .badges { width: clamp(258px, 22vw - 60px, 480px); }
+  .ana-wrapper .mfsel table.grid thead th.th-sinais { min-width: clamp(258px, 22vw - 60px, 480px); }
 }
 
 /* ==== PORT F4 — regras que só existem no widget (não no protótipo) ==== */

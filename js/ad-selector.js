@@ -53,7 +53,7 @@ const CONFIG = {
   // item_relations VALIDADO com token real (22/07): vem populado nas DUAS pontas do
   // vínculo (o item de catálogo E o irmão não-catálogo apontam um pro outro); a pill
   // "vinculados" renderiza só no lado catálogo (isCatalogItem), evitando duplicar.
-  MULTIGET_ATTRS: 'id,title,price,original_price,thumbnail,status,sub_status,health,tags,sold_quantity,available_quantity,permalink,warranty,catalog_listing,listing_type_id,shipping,date_created,family_id,user_product_id,item_relations',
+  MULTIGET_ATTRS: 'id,title,price,original_price,thumbnail,status,sub_status,health,tags,sold_quantity,available_quantity,permalink,warranty,catalog_listing,listing_type_id,shipping,date_created,family_id,user_product_id,item_relations,category_id',
   GROUP_FAMILIES: true,        // agrupar variações da mesma família (UP) em 1 linha-produto
   ANALYZE_BY_PRODUCT: true,    // clique num grupo analisa o produto (user_product_id) em vez da variação
   // Camada B — Sets de IDs por sinal (interseção). Só varre sinais com contador > 0.
@@ -74,6 +74,11 @@ const CONFIG = {
   // têm zero; o teto evita surpresa em conta problemática).
   SHOW_MODERATION: true,
   MODERATION_DETAIL_CAP: 12,
+  // Ficha técnica: /api/catalog-quality diz QUAIS atributos faltam em cada anúncio,
+  // e traz a conta inteira em UMA chamada. Hoje o painel só sabe dizer "incompleta"
+  // (tag do ML) — com isto ele diz o que preencher.
+  SHOW_FICHA: true,
+  FICHA_CATEGORIAS_CAP: 8,   // teto de categorias distintas traduzidas por página
   VISITS_WINDOW_DAYS: 30,
   VISITS_CONCURRENCY: 6,       // no máx. N chamadas de visita em voo ao mesmo tempo
   // Camada C — vendas 30d POR CONTA via orders/search (1-3 chamadas/conta, cache 10min).
@@ -178,6 +183,8 @@ const state = {
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
   moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
+  fichaMap: {},          // itemId -> { missing: [codigos], semGtin: bool } (catalog_quality)
+  attrNames: {},         // categoryId -> { ATTR_ID: 'Nome amigável' }
   expandedRelations: {}, // itemId (catálogo) -> true (anúncios vinculados abertos)
   lastItems: [],         // itens da página atual, para re-render incremental
 };
@@ -601,6 +608,71 @@ async function loadModerations(sellerId) {
 }
 
 /* =========================================================================
+   Camada ficha técnica — o que falta preencher em cada anúncio
+   1 chamada por conta (/api/catalog-quality) + 1 por categoria distinta da página
+   (/api/attributes/{id}) só para traduzir os códigos: o ML devolve "WEDGE_SHAPE",
+   e ninguém vende mais por causa de um código na tela.
+   ⚠️ A API só cobre anúncio ATIVO (pausado devolve 400) — quem não vier na
+   resposta simplesmente não ganha o detalhe, e o sinal antigo (tag do ML) segue.
+   ========================================================================= */
+async function loadFichaTecnica(sellerId) {
+  if (!CONFIG.SHOW_FICHA || !sellerId) return;
+  const cached = getCachedJson('mf_sel_ficha');
+  if (cached && cached.map) { state.fichaMap = cached.map; renderCurrentRows(); return; }
+  try {
+    const d = await proxyGet(`/api/catalog-quality?seller_id=${encodeURIComponent(sellerId)}&include_items=true`);
+    if (!d || !Array.isArray(d.domains)) return;
+    const map = {};
+    d.domains.forEach((dom) => {
+      (dom.items || []).forEach((it) => {
+        const st = it.adoption_status || {};
+        const ft = st.ft || {};
+        const pi = st.pi || {};
+        map[it.item_id] = {
+          missing: Array.isArray(ft.missing_attributes) ? ft.missing_attributes : [],
+          semGtin: pi.complete === false
+        };
+      });
+    });
+    state.fichaMap = map;
+    setCachedJson('mf_sel_ficha', { map: map });
+    renderCurrentRows();
+    loadAttrNames();   // traduz os códigos da página atual
+  } catch (e) { /* sem detalhe de ficha: o sinal antigo (tag) continua valendo */ }
+}
+
+// Nomes amigáveis dos atributos, por categoria (cache de sessão; poucas categorias por página)
+async function loadAttrNames() {
+  const cats = [];
+  (state.lastItems || []).forEach((it) => {
+    const c = it && it.category_id;
+    if (c && !state.attrNames[c] && cats.indexOf(c) === -1) cats.push(c);
+  });
+  if (!cats.length) return;
+  let mudou = false;
+  for (const cat of cats.slice(0, CONFIG.FICHA_CATEGORIAS_CAP)) {
+    const cacheKey = 'mf_sel_attrs_' + cat;
+    const emCache = getCachedJson(cacheKey);
+    if (emCache && emCache.nomes) { state.attrNames[cat] = emCache.nomes; mudou = true; continue; }
+    try {
+      const lista = await proxyGet(`/api/attributes/${encodeURIComponent(cat)}`);
+      const nomes = {};
+      (Array.isArray(lista) ? lista : []).forEach((a) => { if (a && a.id && a.name) nomes[a.id] = a.name; });
+      state.attrNames[cat] = nomes;
+      setCachedJson(cacheKey, { nomes: nomes });
+      mudou = true;
+    } catch (e) { state.attrNames[cat] = {}; }
+  }
+  if (mudou) renderCurrentRows();
+}
+
+// "WEDGE_SHAPE" -> "Formato do salto" quando a categoria já foi traduzida
+function nomeDoAtributo(item, code) {
+  const nomes = (item && item.category_id && state.attrNames[item.category_id]) || null;
+  return (nomes && nomes[code]) || null;
+}
+
+/* =========================================================================
    Construção da URL de busca da página
    ========================================================================= */
 // Degraus da busca, em ordem: nome -> SELLER_SKU -> seller_custom_field.
@@ -695,8 +767,22 @@ function computeBadges(item) {
   if (inSet('unhealthy')) problems.push({ text: 'Perdendo exposição', cls: 'red' });
   else if (inSet('warning')) problems.push({ text: 'Risco de perder exposição', cls: 'orange' });
 
-  // Ficha técnica incompleta (tag do multiget)
-  if (tags.includes(PROBLEM_RULES.incompleteSpecsTag)) problems.push({ text: 'Ficha técnica incompleta', cls: 'orange' });
+  // Ficha técnica incompleta — com os campos que faltam quando a camada respondeu
+  const ficha = state.fichaMap[id];
+  const faltando = (ficha && ficha.missing) || [];
+  if (faltando.length) {
+    const nomes = faltando.map((c) => nomeDoAtributo(item, c)).filter(Boolean);
+    const doisPrimeiros = nomes.slice(0, 2).join(', ');
+    const texto = doisPrimeiros
+      ? (faltando.length > 2 ? `Ficha: falta ${doisPrimeiros} +${faltando.length - 2}` : `Ficha: falta ${doisPrimeiros}`)
+      : (faltando.length === 1 ? 'Ficha técnica: falta 1 campo' : `Ficha técnica: faltam ${faltando.length} campos`);
+    const hint = nomes.length
+      ? 'O Mercado Livre considera a ficha incompleta. Falta preencher: ' + nomes.join(', ') + '.'
+      : 'O Mercado Livre considera a ficha incompleta (' + faltando.length + ' campo(s)).';
+    problems.push({ text: texto, cls: 'orange', hint: hint });
+  } else if (tags.includes(PROBLEM_RULES.incompleteSpecsTag)) {
+    problems.push({ text: 'Ficha técnica incompleta', cls: 'orange' });
+  }
 
   // Foto de baixa qualidade — Camada B (autoritativo) OU tag (redundância) -> 1 badge só
   if (inSet('low_quality_img') || PROBLEM_RULES.lowQualityPhotoTags.some((t) => tags.includes(t))) {
@@ -1498,6 +1584,7 @@ async function loadPage() {
     state.lastItems = items;
     state.loading = false;
     renderRows(items);
+    loadAttrNames();   // nomes dos atributos da categoria dos itens desta página
     // Achou por SKU depois de o nome não achar: o resultado precisa se explicar,
     // senão o vendedor vê a lista mudar de status sem entender por quê.
     // Só quando há busca E ela caiu num degrau de SKU — sem texto o searchParam é
@@ -1853,8 +1940,9 @@ function refreshCounts() {
   try { Object.keys(sessionStorage).forEach((k) => { if (/^mf_sel_/.test(k)) sessionStorage.removeItem(k); }); } catch (e) {}
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
-  state.moderationMap = {};
+  state.moderationMap = {}; state.fichaMap = {};
   loadModerations(state.sellerId);
+  loadFichaTecnica(state.sellerId);
   loadQuestions(state.sellerId);
   loadSales30(state.sellerId);
   // retorna a promise pro chamador saber quando terminou (reabilitar o botão);
@@ -2057,6 +2145,8 @@ async function boot() {
 
   // moderação — anúncio parado pelo ML (1 chamada por conta)
   loadModerations(state.sellerId);
+  // ficha técnica — o que falta preencher em cada anúncio (1 chamada por conta)
+  loadFichaTecnica(state.sellerId);
   // camada C — perguntas sem resposta (1 chamada por conta)
   loadQuestions(state.sellerId);
   // camada C — vendas 30d por conta (1-3 chamadas; conversão + previsão de estoque)
