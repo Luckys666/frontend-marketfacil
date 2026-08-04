@@ -740,10 +740,13 @@ function badgesHtml(list, rowKey) {
   // deixava a coluna Sinais vazia com uma pill azul — o vendedor tinha que clicar
   // para descobrir que não havia nada urgente.
   const isInfo = (b) => b.cls === 'gray' || b.cls === 'blue';
-  // Só informativos: mostra UM (o resto continua no "+N") — dois já empurravam a pill
-  // "N variações" pra uma segunda linha e engordavam a linha à toa.
-  const severe = sorted.filter((b) => !isInfo(b));
-  const collapsedShown = severe.length ? severe.slice(0, maxVisiveis) : sorted.slice(0, 1);
+  const isOk = (b) => b.cls === 'green';   // "Sem problemas" — ausência de problema, não sinal
+  // Só o que precisa de atenção disputa as vagas visíveis. O verde entra junto dos
+  // informativos: "Sem problemas" com um "+1 sinal" pendurado do lado se contradiz
+  // (se não há problema, que sinal é esse?), então quando não existe nada grave os
+  // detalhes aparecem na linha e o rótulo do resto vira "detalhes", não "sinais".
+  const graves = sorted.filter((b) => !isInfo(b) && !isOk(b));
+  const collapsedShown = graves.length ? graves.slice(0, maxVisiveis) : sorted.slice(0, 2);
   const shown = showAll ? sorted : collapsedShown;
   const resto = showAll ? [] : sorted.filter((b) => collapsedShown.indexOf(b) === -1);
   let html = shown.map((b) => {
@@ -751,7 +754,12 @@ function badgesHtml(list, rowKey) {
     const hint = badgeTitle(b.text);
     return `<span class="badge ${b.cls}"${hint ? ` title="${escapeHtml(hint)}" data-hint="${escapeHtml(hint)}"` : ''}>${escapeHtml(b.text)}</span>`;
   }).join('');
-  if (resto.length) html += `<span class="badge badge-more" data-more="${escapeHtml(rowKey)}" title="${escapeHtml(resto.map((b) => b.text).join(' · '))}">${resto.length === 1 ? '+1 sinal ▾' : `+${resto.length} sinais ▾`}</span>`;
+  if (resto.length) {
+    const rotulo = graves.length
+      ? (resto.length === 1 ? '+1 sinal ▾' : `+${resto.length} sinais ▾`)
+      : (resto.length === 1 ? '+1 detalhe ▾' : `+${resto.length} detalhes ▾`);
+    html += `<span class="badge badge-more" data-more="${escapeHtml(rowKey)}" title="${escapeHtml(resto.map((b) => b.text).join(' · '))}">${rotulo}</span>`;
+  }
   else if (expanded && sorted.length > collapsedShown.length) html += `<span class="badge badge-more" data-more="${escapeHtml(rowKey)}">− mostrar menos ▴</span>`;
   return html;
 }
