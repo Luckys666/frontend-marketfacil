@@ -1811,7 +1811,7 @@ function wireControls() {
   let lastSubmit = null;
   function submitSearch() {
     const v = $('#searchInput').value.trim();
-    const sig = state.searchMode + ' ' + v;
+    const sig = state.searchMode + '|' + v;
     if (sig === lastSubmit) return;
     lastSubmit = sig;
     // No modo SKU o texto é SKU, não link: um SKU tipo "MLB123" não deve virar análise.
