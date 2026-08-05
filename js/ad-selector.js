@@ -78,6 +78,8 @@ const CONFIG = {
   // Ficha técnica: /api/catalog-quality diz QUAIS atributos faltam em cada anúncio,
   // e traz a conta inteira em UMA chamada. Hoje o painel só sabe dizer "incompleta"
   // (tag do ML) — com isto ele diz o que preencher.
+  // Promoções: preço de campanha (a única fonte real de desconto — ver loadPromocoes)
+  SHOW_PROMOCOES: true,
   SHOW_FICHA: true,
   FICHA_CATEGORIAS_CAP: 20,  // teto de categorias BUSCADAS na rede por página (cache de sessão não conta)
   FICHA_CATEGORIAS_LOTE: 4,  // quantas categorias traduzidas em paralelo por vez
@@ -186,6 +188,8 @@ const state = {
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
   moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
+  promoMap: {},          // itemId -> { price, original_price, discount_percent, promotion_name }
+  promoTruncado: false,  // true quando alguma campanha não pôde ser lida inteira
   fichaMap: {},          // itemId -> { missing: [codigos], semGtin: bool } (catalog_quality)
   attrNames: {},         // categoryId -> { ATTR_ID: 'Nome amigável' }
   expandedRelations: {}, // itemId (catálogo) -> true (anúncios vinculados abertos)
@@ -614,6 +618,28 @@ async function loadModerations(sellerId) {
 }
 
 /* =========================================================================
+   Camada promoções — quem está com preço de campanha AGORA
+   Uma chamada por conta (/api/discounted-items). É a única fonte honesta de
+   desconto: no multiget o item em campanha vem com o preço cheio e
+   original_price null, então "com desconto" pelo item era cego justamente nas
+   campanhas cofinanciadas — as mais comuns.
+   ========================================================================= */
+async function loadPromocoes(sellerId) {
+  if (!CONFIG.SHOW_PROMOCOES || !sellerId) return;
+  const cached = getCachedJson('mf_sel_promo');
+  if (cached && cached.map) { state.promoMap = cached.map; renderCurrentRows(); return; }
+  try {
+    const d = await proxyGet(`/api/discounted-items?seller_id=${encodeURIComponent(sellerId)}`);
+    const map = {};
+    (d && Array.isArray(d.items) ? d.items : []).forEach((i) => { if (i && i.id) map[i.id] = i; });
+    state.promoMap = map;
+    state.promoTruncado = !!(d && d.truncated);
+    setCachedJson('mf_sel_promo', { map: map });
+    renderCurrentRows();
+  } catch (e) { /* sem promoções disponíveis: o painel segue com o preço do item */ }
+}
+
+/* =========================================================================
    Camada ficha técnica — o que falta preencher em cada anúncio
    1 chamada por conta (/api/catalog-quality) + 1 por categoria distinta da página
    (/api/attributes/{id}) só para traduzir os códigos: o ML devolve "WEDGE_SHAPE",
@@ -773,6 +799,34 @@ function quickFilterAtivo() { return !!(state.discountOnly || state.freeShipUnde
 function podeFiltrarFreteNoServidor() {
   return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search);
 }
+// "Com desconto" também sai pronto da ML — pela Central de Promoções, não pela busca
+// de itens (que não filtra desconto). A rota devolve os anúncios em campanha com o
+// preço promocional; aqui basta hidratar esses ids e aplicar o status escolhido.
+function podeFiltrarDescontoNoServidor() {
+  return !!(state.discountOnly && !state.freeShipUnder && !state.activeChip && !state.search);
+}
+async function buscaAnunciosComDesconto(atual) {
+  const vivo = () => (typeof atual === 'function' ? atual() : true);
+  const host = $('#tableHost');
+  const d = await proxyGet(`/api/discounted-items?seller_id=${encodeURIComponent(state.sellerId)}`);
+  const promos = (d && Array.isArray(d.items) ? d.items : []).filter((i) => i && i.id);
+  // aproveita a resposta também como camada de preço da tela toda
+  const mapa = {};
+  promos.forEach((i) => { mapa[i.id] = i; });
+  state.promoMap = Object.assign({}, state.promoMap, mapa);
+  setCachedJson('mf_sel_promo', { map: state.promoMap });
+
+  const ids = promos.map((i) => i.id).slice(0, CONFIG.OFFSET_CAP);
+  const itens = [];
+  for (let i = 0; i < ids.length; i += CONFIG.HYDRATE_CHUNK) {
+    if (host && vivo()) host.innerHTML = loadingHtml(`Buscando seus anúncios em campanha… ${Math.min(i + CONFIG.HYDRATE_CHUNK, ids.length)} de ${ids.length}`);
+    const parte = await hydrate(ids.slice(i, i + CONFIG.HYDRATE_CHUNK));
+    itens.push.apply(itens, parte);
+  }
+  // o recorte respeita o status escolhido na tela (a rota devolve a conta toda)
+  const porStatus = state.status === 'all' ? itens : itens.filter((it) => String(it.status) === state.status);
+  return { itens: porStatus, varridos: ids.length, truncado: !!(d && d.truncated) };
+}
 async function buscaFreteAbaixoDoPiso(atual) {
   const vivo = () => (typeof atual === 'function' ? atual() : true);
   const host = $('#tableHost');
@@ -846,6 +900,17 @@ async function scanAccount(atual) {
       return state.scan;
     } catch (e) {
       // filtro do servidor indisponível (label recusado, proxy antigo): varre como antes
+    }
+  }
+  // Desconto: a Central de Promoções sabe quem está em campanha — e é a ÚNICA que sabe,
+  // já que no item o preço de campanha nem aparece.
+  if (podeFiltrarDescontoNoServidor()) {
+    try {
+      const r = await buscaAnunciosComDesconto(atual);
+      state.scan = { chave: chave, itens: r.itens, varridos: r.varridos, total: r.varridos, truncado: r.truncado, parcial: false, viaServidor: true };
+      return state.scan;
+    } catch (e) {
+      // rota indisponível: cai na varredura (que só enxerga original_price)
     }
   }
   const progresso = (feitos, alvo) => {
@@ -1193,9 +1258,32 @@ function stockCellHtml(stock, lowClass, est) {
   return d ? `<span class="stock-wrap">${num}${d}</span>` : num;
 }
 // Desconto: % arredondado quando original_price > price
-function discountPct(item) {
+/* Preço que o comprador vê hoje.
+   O multiget do item devolve o preço CHEIO e `original_price: null` quando o desconto
+   vem de campanha (SMART, DEAL, MARKETPLACE_CAMPAIGN…) — medido na conta 1267924722:
+   44 anúncios em campanha apareciam aqui como "sem desconto". Quem sabe o preço real
+   é a Central de Promoções, que a camada `loadPromocoes` traz em uma chamada. */
+function promoDe(item) {
+  const p = state.promoMap[item && item.id];
+  return (p && p.price > 0 && p.original_price > p.price) ? p : null;
+}
+function precoVigente(item) {
+  const promo = promoDe(item);
+  if (promo) return { preco: promo.price, cheio: promo.original_price, off: promo.discount_percent };
   const o = Number(item.original_price), p = Number(item.price);
-  return (o && p && o > p) ? Math.round((1 - p / o) * 100) : 0;
+  const off = (o && p && o > p) ? Math.round((1 - p / o) * 100) : 0;
+  return { preco: p, cheio: off ? o : null, off: off };
+}
+function discountPct(item) {
+  return precoVigente(item).off;
+}
+// Célula de preço já com o desconto de campanha, quando houver
+function priceCell(item) {
+  const v = precoVigente(item);
+  const promo = promoDe(item);
+  const html = priceHtml(v.preco, v.cheio, v.off);
+  if (!promo || !promo.promotion_name) return html;
+  return `<span title="${escapeHtml('Preço de campanha: ' + promo.promotion_name)}">${html}</span>`;
 }
 // Frete grátis pago do próprio bolso: preço abaixo do piso de obrigatoriedade do ML
 // e frete grátis ligado — o vendedor banca o frete e a margem despenca
@@ -1389,7 +1477,7 @@ function relationSubrowHtml(rel) {
         <div class="cell-title" title="${escapeHtml(it.title || '')}">${escapeHtml(it.title || '—')}</div>
         <div class="row-id"><span class="mono cell-id">${escapeHtml(rid)}</span>${idActionsHtml(rid, it.permalink)}</div>
       </div></div></td>
-      <td class="num fit" data-label="Preço">${priceHtml(it.price, it.original_price, off)}</td>
+      <td class="num fit" data-label="Preço">${priceCell(it)}</td>
       <td class="num fit" data-label="Estoque">${stockCellHtml(it.available_quantity, false, stockDaysFor(it, it.available_quantity))}</td>
       <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
       ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[rid], rid)}</td>` : ''}
@@ -1475,7 +1563,7 @@ function renderRows(items) {
           <div class="cell-title" title="${escapeHtml(item.title || '')}">${escapeHtml(item.title || '—')}</div>
           <div class="row-id">${catalogTagHtml(item)}<span class="mono cell-id">${escapeHtml(id)}</span>${idActionsHtml(id, item.permalink)}</div>
         </div></div></td>
-        <td class="num fit" data-label="Preço">${priceHtml(item.price, item.original_price, off)}</td>
+        <td class="num fit" data-label="Preço">${priceCell(item)}</td>
         <td class="num fit" data-label="Estoque">${stockCellHtml(stock, typeof stock === 'number' && stock <= 3, stockDaysFor(item, stock))}</td>
         <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${item.sold_quantity != null ? escapeHtml(String(item.sold_quantity)) : '—'}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[id], id)}</td>` : ''}
@@ -1497,7 +1585,7 @@ function renderRows(items) {
       const origRange = (a.maxOff && a.origMin != null && a.origMin === a.origMax)
         ? `<span class="price-orig">${escapeHtml(fmtPrice(a.origMin))}</span>` : '';
       const offPill = a.maxOff ? `<span class="badge-off">${a.count > 1 && a.origMin != null ? 'até ' : ''}-${a.maxOff}%</span>` : '';
-      const priceCell = a.min === a.max ? priceHtml(a.min, a.rep.original_price, a.maxOff)
+      const precoFamiliaHtml = a.min === a.max ? priceCell(a.rep)
         : `${origRange}${offPill}<span class="mono cell-price">${escapeHtml(fmtPrice(a.min))}</span><span class="price-range-max">até ${escapeHtml(fmtPrice(a.max))}</span>`;
       const visitsTxt = a.visitsPending ? '…' : String(a.visitsSum);
       // severidade primeiro, pill de ação por último (P1 do design review: a pill azul
@@ -1527,7 +1615,7 @@ function renderRows(items) {
           <div class="cell-title" title="${escapeHtml(famTitle || '')}">${escapeHtml(famTitle || '—')}</div>
           <div class="row-id">${catItem ? catalogTagHtml(catItem) : ''}<span class="mono cell-id">${escapeHtml(a.rep.id)}</span>${idActionsHtml(a.rep.id, a.rep.permalink)}</div>
         </div></div></td>
-        <td class="num fit" data-label="Preço">${priceCell}</td>
+        <td class="num fit" data-label="Preço">${precoFamiliaHtml}</td>
         <td class="num fit" data-label="Estoque">${stockCellHtml(a.stock, false, famEst)}</td>
         <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${a.sales}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${famVisits}</td>` : ''}
@@ -1543,7 +1631,7 @@ function renderRows(items) {
               <div class="cell-title" title="${escapeHtml(it.title || '')}">${escapeHtml(it.title || '—')}</div>
               <div class="row-id">${catalogTagHtml(it)}<span class="mono cell-id">${escapeHtml(it.id)}</span>${idActionsHtml(it.id, it.permalink)}</div>
             </div></div></td>
-            <td class="num fit" data-label="Preço">${priceHtml(it.price, it.original_price, off)}</td>
+            <td class="num fit" data-label="Preço">${priceCell(it)}</td>
             <td class="num fit" data-label="Estoque">${stockCellHtml(it.available_quantity, false, stockDaysFor(it, it.available_quantity))}</td>
             <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
             ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[it.id], it.id)}</td>` : ''}
@@ -2186,9 +2274,10 @@ function refreshCounts() {
   try { Object.keys(sessionStorage).forEach((k) => { if (/^mf_sel_/.test(k)) sessionStorage.removeItem(k); }); } catch (e) {}
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
-  state.moderationMap = {}; state.fichaMap = {};
+  state.moderationMap = {}; state.fichaMap = {}; state.promoMap = {};
   invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);
+  loadPromocoes(state.sellerId);
   loadFichaTecnica(state.sellerId);
   loadQuestions(state.sellerId);
   loadSales30(state.sellerId);
@@ -2401,6 +2490,8 @@ async function boot() {
 
   // moderação — anúncio parado pelo ML (1 chamada por conta)
   loadModerations(state.sellerId);
+  // promoções — preço de campanha vigente (1 chamada por conta)
+  loadPromocoes(state.sellerId);
   // ficha técnica — o que falta preencher em cada anúncio (1 chamada por conta)
   loadFichaTecnica(state.sellerId);
   // camada C — perguntas sem resposta (1 chamada por conta)
