@@ -9220,6 +9220,42 @@ async function hydrate(ids) {
    Custo: uma varredura por combinação de filtros, reaproveitada até algo mudar.
    ========================================================================= */
 function quickFilterAtivo() { return !!(state.discountOnly || state.freeShipUnder); }
+// Frete grátis a ML FILTRA no servidor (labels=with_free_shipping) e ordena por preço.
+// Então esse recorte não precisa de varredura: pede a lista já filtrada, do mais barato
+// pro mais caro, e para no primeiro que passa do piso. Só vale sozinho — junto com
+// "Com desconto", com busca ou com um chip (que também usa labels=) a conta não fecha,
+// e aí a varredura completa assume.
+function podeFiltrarFreteNoServidor() {
+  return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search);
+}
+async function buscaFreteAbaixoDoPiso(atual) {
+  const vivo = () => (typeof atual === 'function' ? atual() : true);
+  const host = $('#tableHost');
+  const achados = [];
+  let vistos = 0;
+  let passouDoPiso = false;
+  for (let off = 0; off < CONFIG.OFFSET_CAP && !passouDoPiso; off += CONFIG.PAGE_SIZE) {
+    const p = new URLSearchParams();
+    p.set('seller_id', state.sellerId);
+    p.set('status', state.status === 'all' ? 'all' : state.status);
+    p.set('labels', 'with_free_shipping');
+    p.set('order', 'price_asc');
+    p.set('limit', String(CONFIG.PAGE_SIZE));
+    p.set('offset', String(off));
+    const resp = await proxyGet('/api/fetch-ads?' + p.toString());
+    const ids = idsDaResposta(resp || {});
+    if (!ids.length) break;
+    const itens = await hydrate(ids);
+    vistos += itens.length;
+    itens.forEach((it) => {
+      if (Number(it.price) >= PROBLEM_RULES.freeShippingFloor) { passouDoPiso = true; return; }
+      if (isCheapFreeShipping(it)) achados.push(it);
+    });
+    if (host && vivo() && !passouDoPiso) host.innerHTML = loadingHtml(`Procurando os anúncios com frete grátis mais baratos… ${vistos}`);
+    if (ids.length < CONFIG.PAGE_SIZE) break;
+  }
+  return { itens: achados, varridos: vistos };
+}
 function scanKey() {
   return JSON.stringify([state.status, state.search, state.searchParam, state.activeChip,
     state.listingType, state.logisticType, state.discountOnly, state.freeShipUnder, MOCK]);
@@ -9256,6 +9292,17 @@ async function scanAccount(atual) {
   if (state.scan && state.scan.chave === chave) return state.scan;
   const host = $('#tableHost');
   const vivo = () => (typeof atual === 'function' ? atual() : true);
+
+  // Caminho curto: a ML entrega esse recorte pronto (2 a 3 chamadas em vez de ~55)
+  if (podeFiltrarFreteNoServidor()) {
+    try {
+      const r = await buscaFreteAbaixoDoPiso(atual);
+      state.scan = { chave: chave, itens: r.itens, varridos: r.varridos, total: r.varridos, truncado: false, parcial: false, viaServidor: true };
+      return state.scan;
+    } catch (e) {
+      // filtro do servidor indisponível (label recusado, proxy antigo): varre como antes
+    }
+  }
   const progresso = (feitos, alvo) => {
     if (host && vivo()) host.innerHTML = loadingHtml(`Procurando na sua conta inteira… ${Math.min(feitos, alvo)} de ${alvo} anúncios`);
   };
@@ -10102,8 +10149,13 @@ function pagerHtml() {
   if (state.discountOnly) cuts.push('com desconto');
   if (state.freeShipUnder) cuts.push(`com frete grátis abaixo de R$ ${PROBLEM_RULES.freeShippingFloor}`);
   const varridos = state.scan ? Math.min(state.scan.varridos, CONFIG.OFFSET_CAP) : 0;
+  // Filtro feito pela própria ML não "varre" nada: dizer um número de anúncios
+  // percorridos ali seria mentira (só os com frete grátis passaram pela conta).
+  const alcance = (state.scan && state.scan.viaServidor)
+    ? 'procurados na sua conta inteira'
+    : `procurados em ${varridos} anúncios da sua conta`;
   const info = cuts.length
-    ? `Mostrando <b>${shownFrom}–${shownTo}</b> de <b>${total}</b> anúncios ${cuts.join(' e ')}${grouped} <span class="pager-scope">— procurados em ${varridos} anúncios da sua conta</span>`
+    ? `Mostrando <b>${shownFrom}–${shownTo}</b> de <b>${total}</b> anúncios ${cuts.join(' e ')}${grouped} <span class="pager-scope">— ${alcance}</span>`
     : `Mostrando <b>${shownFrom}–${shownTo}</b> de <b>${total}</b> anúncios${grouped}`;
   return `<div class="pager">
     <div class="pager-info">${info}</div>
