@@ -3391,7 +3391,14 @@ const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'numb
  * Três motivos tiram o campo da conta:
  *   - `read_only` / lista de sistema: quem preenche é o ML (GIFTABLE e cia);
  *   - atributo de variação num anúncio com variações: edita-se na tela de variações;
- *   - PARENT_PK/FAMILY em anúncio de família: a API pública devolve 403 (family editor).
+ *   - PARENT_PK/FAMILY em anúncio de família (user_product_id): mexer aqui NÃO é só
+ *     um 403 da API — os atributos PARENT_PK são o que agrupa as variações. A doc do
+ *     ML (User Products) diz, com todas as letras, que "modificar os atributos dos
+ *     itens pode fazer com que saiam da família atual, por exemplo, ao alterar a marca,
+ *     modelo". O editor oficial de família (POST /user-products-families/{id}/tasks)
+ *     só aceita CHILD_PK e atributos custom, e exige mandar TODOS os UPs da família.
+ *     Ou seja: pedir "preencha a Marca" num item de família é pedir pro vendedor
+ *     quebrar o agrupamento do produto.
  */
 function mfMotivoNaoEditavel(catAttr, detail) {
     if (!catAttr) return 'inexistente';
@@ -4744,7 +4751,9 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
 
                     ${state !== 'good' && !hasVariation && (detail?.sold_quantity || 0) === 0 ? `
                     <div class="info-box" style="margin-bottom:0; margin-top:8px; background:#fff7ed; border-color:#fed7aa; color:#9a3412;">
-                         <p><strong>Dica:</strong> Como esse anúncio ainda não vendeu, vale otimizar pra ${idealMin}+ caracteres. Depois de começar a vender, <strong>não mexa mais no título</strong> — alterá-lo reseta a indexação do ML.</p>
+                         <p><strong>Dica:</strong> ${detail?.family_name
+                            ? `neste anúncio o título é montado pelo Mercado Livre a partir do <strong>nome do produto</strong> — é ele que se edita, e só enquanto nenhuma variação tiver vendido.`
+                            : `como esse anúncio ainda não vendeu, vale otimizar pra ${idealMin}+ caracteres. Depois de começar a vender, <strong>não mexa mais no título</strong> — alterá-lo reseta a indexação do ML.`}</p>
                     </div>
                     ` : ''}
                     ${(() => {
@@ -5957,11 +5966,19 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         // O que ficou de fora vira UMA linha discreta — os nomes ficam no tooltip,
         // pra quem quiser conferir, sem virar parede de texto na tela.
-        const foraDaConta = (Array.isArray(categoryAttributes) ? categoryAttributes : [])
-            .filter((c) => { const m = mfMotivoNaoEditavel(c, detail); return m === 'sistema' || m === 'familia'; })
-            .map((c) => c.name || c.id);
+        const foraPorMotivo = { sistema: [], familia: [] };
+        (Array.isArray(categoryAttributes) ? categoryAttributes : []).forEach((c) => {
+            const m = mfMotivoNaoEditavel(c, detail);
+            if (m === 'sistema' || m === 'familia') foraPorMotivo[m].push(c.name || c.id);
+        });
+        const foraDaConta = foraPorMotivo.sistema.concat(foraPorMotivo.familia);
+        // Uma linha só. O detalhe que importa — mexer nos campos da família tira o
+        // anúncio do grupo de variações (regra do ML) — fica no tooltip.
+        const dicaFora = foraPorMotivo.familia.length
+            ? `Campos do produto (${foraPorMotivo.familia.join(', ')}) são iguais em todas as variações: mudar aqui tira este anúncio do grupo. Os outros o Mercado Livre preenche sozinho.`
+            : foraDaConta.join(', ');
         const notaForaDaConta = foraDaConta.length
-            ? `<p class="text-small" style="margin:2px 0 0; color:var(--text-muted); cursor:help;" title="${escapeHtml(foraDaConta.join(', '))}">${foraDaConta.length} campos são controlados pelo Mercado Livre e não contam aqui.</p>`
+            ? `<p class="text-small" style="margin:2px 0 0; color:var(--text-muted); cursor:help;" title="${escapeHtml(dicaFora)}">${foraDaConta.length} campos ${foraPorMotivo.familia.length ? 'vêm do produto ou do Mercado Livre' : 'são preenchidos pelo Mercado Livre'} e não contam aqui.</p>`
             : '';
 
         // Banner informativo pros atributos gerenciados por variação
