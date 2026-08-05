@@ -565,6 +565,30 @@ async function loadVisitsForPage(ids) {
   if (!CONFIG.SHOW_VISITS) return;
   const pending = ids.filter((id) => !(id in state.visitsMap));
   if (!pending.length) return;
+  const dia = (d) => new Date(d).toISOString().slice(0, 10);
+  const hoje = new Date();
+  const inicio = new Date(hoje.getTime() - CONFIG.VISITS_WINDOW_DAYS * 86400000);
+
+  // Visitas de vários itens numa chamada SÓ do browser (/api/fetch-visits-bulk).
+  // ⚠️ Não é bulk de verdade na ML: `items/visits?ids=` com intervalo de datas aceita
+  // UM item por chamada (documentado: "maximum amount of items to query is 1", e
+  // medido em 05/08/2026 — a resposta vem no formato time_window, do fallback). O que
+  // se ganha aqui é round-trip e rate limit do nosso proxy: 1 requisição do browser em
+  // vez de 50 por página. O custo na ML continua sendo por item — por isso a camada
+  // segue atrás de SHOW_VISITS.
+  try {
+    const resp = await proxyGet(`/api/fetch-visits-bulk?items=${encodeURIComponent(pending.join(','))}&date_from=${dia(inicio)}&date_to=${dia(hoje)}`);
+    if (resp && typeof resp === 'object') {
+      pending.forEach((id) => {
+        const v = resp[id];
+        state.visitsMap[id] = (v && typeof v.total_visits === 'number') ? v.total_visits : null;
+        if (v && Array.isArray(v.results)) state.visitsSeries[id] = v.results.map((r) => Number(r && r.total) || 0);
+      });
+      renderCurrentRows();
+      return;
+    }
+  } catch (e) { /* rota em lote indisponível: cai no item a item abaixo */ }
+
   let idx = 0;
   async function worker() {
     while (idx < pending.length) {
