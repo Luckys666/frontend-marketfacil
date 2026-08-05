@@ -2630,13 +2630,12 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             ? arr.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, preenchido)).join('')
             : `<p class="text-small" style="color:${preenchido ? 'var(--text-muted)' : 'var(--green)'};">${vazio}</p>`;
 
-        const etapa = (titulo, subtitulo, faltando, preenchidos, cor) => `
-            <div style="margin-bottom:18px;">
-                <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+        const etapa = (titulo, faltando, preenchidos, cor) => `
+            <div style="margin-bottom:16px;">
+                <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                     <span style="font-weight:600; font-size:0.92rem; color:${cor};">${titulo}</span>
-                    <span class="text-small" style="color:var(--text-muted);">${preenchidos.length} de ${faltando.length + preenchidos.length} preenchidos</span>
+                    <span class="text-small" style="color:var(--text-muted);">${preenchidos.length}/${faltando.length + preenchidos.length}</span>
                 </div>
-                <p class="text-small" style="margin:0 0 10px; color:var(--text-secondary);">${subtitulo}</p>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
                     <div>
                         <div class="specs-group-title problem" style="margin-bottom:8px;">⚠️ Faltando (${faltando.length})</div>
@@ -2644,30 +2643,22 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
                     </div>
                     <div>
                         <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Preenchidos (${preenchidos.length})</div>
-                        ${listar(preenchidos, true, 'Nenhum preenchido ainda.')}
+                        ${listar(preenchidos, true, '—')}
                     </div>
                 </div>
             </div>`;
 
         const etapasHtml =
-            etapa('1. Obrigatórios', 'O Mercado Livre exige estes campos — sem eles o anúncio perde exposição.', grupos.obrFalta, grupos.obrOk, 'var(--red-dark,#b91c1c)') +
-            etapa('2. Extras', 'Não são exigidos, mas todo campo preenchido conta na sua nota — e a maioria dos concorrentes deixa em branco.', grupos.extraFalta, grupos.extraOk, 'var(--blue)');
+            etapa('Obrigatórios', grupos.obrFalta, grupos.obrOk, 'var(--red-dark,#b91c1c)') +
+            etapa('Extras', grupos.extraFalta, grupos.extraOk, 'var(--blue)');
 
-        // Transparência: o que ficou FORA da conta e por quê (antes esses campos ou
-        // sumiam sem explicação ou apareciam como tarefa impossível)
+        // O que ficou de fora vira UMA linha discreta — os nomes ficam no tooltip,
+        // pra quem quiser conferir, sem virar parede de texto na tela.
         const foraDaConta = (Array.isArray(categoryAttributes) ? categoryAttributes : [])
-            .map((c) => ({ c, motivo: mfMotivoNaoEditavel(c, detail) }))
-            .filter((x) => x.motivo === 'sistema' || x.motivo === 'familia');
-        const textoMotivo = { sistema: 'preenchidos pelo próprio Mercado Livre', familia: 'controlados pela família de anúncios (só dá pra editar na tela de variações do ML)' };
-        const agrupadoFora = {};
-        foraDaConta.forEach(({ c, motivo }) => { (agrupadoFora[motivo] = agrupadoFora[motivo] || []).push(c.name || c.id); });
-        const notaForaDaConta = Object.keys(agrupadoFora).length
-            ? `<div style="margin-top:4px; padding:10px 12px; background:var(--bg-subtle,#f8fafc); border-radius:var(--radius-sm);">
-                ${Object.entries(agrupadoFora).map(([motivo, nomes]) => `
-                    <p class="text-small" style="margin:0 0 4px; color:var(--text-secondary);">
-                        <b>${nomes.length} campo${nomes.length > 1 ? 's' : ''} fora da conta</b> — ${textoMotivo[motivo]}: ${escapeHtml(nomes.slice(0, 6).join(', '))}${nomes.length > 6 ? ` e mais ${nomes.length - 6}` : ''}.
-                    </p>`).join('')}
-               </div>`
+            .filter((c) => { const m = mfMotivoNaoEditavel(c, detail); return m === 'sistema' || m === 'familia'; })
+            .map((c) => c.name || c.id);
+        const notaForaDaConta = foraDaConta.length
+            ? `<p class="text-small" style="margin:2px 0 0; color:var(--text-muted); cursor:help;" title="${escapeHtml(foraDaConta.join(', '))}">${foraDaConta.length} campos são controlados pelo Mercado Livre e não contam aqui.</p>`
             : '';
 
         // Banner informativo pros atributos gerenciados por variação
@@ -3433,13 +3424,12 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         else checks.push({ ok: true, text: `${filledCount} atributos preenchidos` });
         // Category fields
         if (d.categoryAttributes && Array.isArray(d.categoryAttributes)) {
-            const hasVar = Array.isArray(d.detail?.variations) && d.detail.variations.length > 0;
-            const catString = d.categoryAttributes.filter(a => a.value_type === 'string' && !a.tags?.read_only);
+            // Mesma régua da lista e da nota: só conta o que o vendedor consegue preencher
             const catMap = new Map();
             (d.detail?.attributes || []).forEach(a => { if (a?.value_name) catMap.set(a.id, a.value_name); });
-            const missing = catString.filter(c => {
+            const missing = d.categoryAttributes.filter(c => {
+                if (!mfCampoEditavel(c, d.detail)) return false;   // mesmos tipos e mesma régua da lista
                 if (window.ignoredAdAttributes.has(c.id)) return false;
-                if (hasVar && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(c.id).toUpperCase())) return false;
                 const v = catMap.get(c.id); return !v || v.trim() === '';
             });
             if (missing.length > 0) checks.push({ ok: false, text: `${missing.length} campos da categoria faltando` });
@@ -5506,7 +5496,7 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
         (detail.attributes || []).forEach(a => { if (a?.value_name) adMap.set(a.id, a.value_name); });
         let missingCount = 0;
         categoryAttributes.forEach(c => {
-            if (!c || c.value_type !== 'string') return;   // mesma base de antes (só texto)
+            // Mesma régua da lista: o que a tela mostra como faltando é o que pesa aqui
             if (!mfCampoEditavel(c, detail)) return;
             if (window.ignoredAdAttributes.has(c.id)) return;
             const v = adMap.get(c.id);
