@@ -77,6 +77,33 @@ function ehAtributoDeSistema(attrId) {
     const def = cats.find(c => c && c.id === attrId);
     return !!(def && def.tags && def.tags.read_only);
 }
+
+// Tipos que o vendedor consegue preencher (o resto nem tem campo de edição)
+const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
+
+/**
+ * O vendedor consegue mexer NESTE campo, NESTE anúncio?
+ * Régua única usada pela lista de campos E pela pontuação — se o campo não tem
+ * caminho de edição, não pode pesar na nota nem virar tarefa de "o que melhorar".
+ * Três motivos tiram o campo da conta:
+ *   - `read_only` / lista de sistema: quem preenche é o ML (GIFTABLE e cia);
+ *   - atributo de variação num anúncio com variações: edita-se na tela de variações;
+ *   - PARENT_PK/FAMILY em anúncio de família: a API pública devolve 403 (family editor).
+ */
+function mfMotivoNaoEditavel(catAttr, detail) {
+    if (!catAttr) return 'inexistente';
+    if (!MF_TIPOS_EDITAVEIS.has(catAttr.value_type)) return 'tipo';
+    if (catAttr.tags?.read_only || ATRIBUTOS_SISTEMA_ML.has(catAttr.id)) return 'sistema';
+    const temVariacoes = Array.isArray(detail?.variations) && detail.variations.length > 0;
+    if (temVariacoes && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase())) return 'variacao';
+    if (detail?.user_product_id && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY')) return 'familia';
+    return null;
+}
+function mfCampoEditavel(catAttr, detail) { return mfMotivoNaoEditavel(catAttr, detail) === null; }
+// Obrigatório para o ML (o resto é extra — vale ponto, mas ninguém é reprovado por ele)
+function mfCampoObrigatorio(catAttr) {
+    return !!(catAttr && catAttr.tags && (catAttr.tags.required || catAttr.tags.catalog_required));
+}
 const VALORES_IGNORADOS_PENALIDADE = new Set(['isento', 'não aplicável', 'na']);
 
 const tagSignificados = {
@@ -1260,6 +1287,20 @@ function definirCorPorQuantidadeCaracteres(caracteresValor, attributeId = null, 
     return 'red';
 }
 
+// Copiar ID (anúncio, produto, variação) — o vendedor cola direto na busca do ML
+window.MF_copiarId = function (valor, botao) {
+    const marcarOk = () => {
+        if (!botao) return;
+        const antes = botao.innerHTML;
+        botao.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        botao.style.color = 'var(--green)';
+        setTimeout(() => { botao.innerHTML = antes; botao.style.color = ''; }, 1400);
+    };
+    try {
+        navigator.clipboard.writeText(String(valor)).then(marcarOk, () => {});
+    } catch (e) { /* sem clipboard: o número está na tela pra copiar na mão */ }
+};
+
 function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detail = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -1314,20 +1355,61 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
     const badgeText = state === 'good' ? 'Excelente' : (state === 'neutral' ? 'Aceitável' : 'Muito Curto');
     const imgUrl = detail?.pictures?.[0]?.secure_url || '';
 
+    // Título leva pro anúncio à venda no ML — quem está analisando quer ver a página real
+    const permalink = detail?.permalink || (detail?.id ? `https://www.mercadolivre.com.br/anuncio/${detail.id}` : '');
+    const tituloTexto = hasVariation ? escapeHtml(tituloBase) : (escapeHtml(titulo) || 'Nenhum título encontrado');
+    const setaExterna = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0; opacity:.75;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+    const tituloExibidoHtml = (permalink && titulo)
+        ? `<a href="${escapeHtml(permalink)}" target="_blank" rel="noopener" title="Abrir o anúncio no Mercado Livre" style="color:inherit; text-decoration:none; display:inline-flex; align-items:baseline; gap:6px;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${tituloTexto}${setaExterna}</a>`
+        : tituloTexto;
+
+    // Qual variação exatamente está na tela? Analisando uma variação de um produto (MLBU),
+    // o nome sozinho não identifica: o vendedor precisa do ID pra achar na tela do ML.
+    let variacaoId = null;
+    if (Array.isArray(variations) && variations.length) {
+        if (detail?.attribute_combinations) {
+            const alvo = detail.attribute_combinations.map(a => a.value_name).join('|');
+            const achada = variations.find(v => Array.isArray(v.attribute_combinations) &&
+                v.attribute_combinations.map(a => a.value_name).join('|') === alvo);
+            if (achada) variacaoId = achada.id;
+        } else if (variations.length === 1) {
+            variacaoId = variations[0].id;   // anúncio com uma variação só: não há ambiguidade
+        } else if (variacaoNome) {
+            const achada = variations.find(v => Array.isArray(v.attribute_combinations) &&
+                v.attribute_combinations.map(a => a.value_name).join(' ') === variacaoNome);
+            if (achada) variacaoId = achada.id;
+        }
+    }
+    const copiaSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    const chipId = (rotulo, valor, titulo) => `
+        <span style="display:inline-flex; align-items:center; gap:5px; padding:3px 8px; background:var(--bg-subtle,#f1f5f9); border-radius:999px; font-size:0.72rem; color:var(--text-secondary);" title="${escapeHtml(titulo || '')}">
+            <span style="font-weight:600; color:var(--text-muted);">${rotulo}</span>
+            <span class="mono" style="color:var(--text);">${escapeHtml(String(valor))}</span>
+            <button type="button" onclick="window.MF_copiarId && window.MF_copiarId('${escapeHtml(String(valor))}', this)" title="Copiar" style="background:none; border:none; padding:0; cursor:pointer; color:var(--text-muted); display:inline-flex;">${copiaSvg}</button>
+        </span>`;
+
     // Variation info section
     let varHtml = '';
-    if (hasVariation) {
+    if (hasVariation || variacaoId) {
         const varState = lenVar >= 20 ? 'good' : (lenVar >= 10 ? 'neutral' : 'bad');
         varHtml = `
             <div style="margin-top:12px; padding:10px 14px; background:var(--blue-light); border-radius:var(--radius-sm); border-left:3px solid var(--blue);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                     <span style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--blue); font-weight:600;">Nome da Variação</span>
-                    <span class="status-badge ${varState === 'good' ? 'success' : (varState === 'neutral' ? 'muted' : 'error')}" style="font-size:0.65rem;">${lenVar} chars</span>
+                    ${hasVariation ? `<span class="status-badge ${varState === 'good' ? 'success' : (varState === 'neutral' ? 'muted' : 'error')}" style="font-size:0.65rem;">${lenVar} chars</span>` : ''}
                 </div>
-                <span style="font-weight:600; font-size:0.9rem; color:var(--text);">${escapeHtml(variacaoNome)}</span>
-                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">💡 Use até 30 caracteres para adicionar palavras-chave de busca extras.</div>
+                ${hasVariation ? `<span style="font-weight:600; font-size:0.9rem; color:var(--text);">${escapeHtml(variacaoNome)}</span>` : ''}
+                ${variacaoId ? `<div style="margin-top:6px;">${chipId('ID da variação', variacaoId, 'Use este número para achar a variação na tela de variações do Mercado Livre')}</div>` : ''}
+                ${hasVariation ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">💡 Use até 30 caracteres para adicionar palavras-chave de busca extras.</div>' : ''}
             </div>`;
     }
+
+    // Identificação do que está sendo analisado (anúncio, e o produto quando é família)
+    const idsHtml = (detail?.id || detail?.user_product_id) ? `
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">
+            ${detail?.id ? chipId('Anúncio', detail.id, 'ID do anúncio no Mercado Livre') : ''}
+            ${detail?.user_product_id ? chipId('Produto (MLBU)', detail.user_product_id, 'ID do produto que agrupa as variações') : ''}
+        </div>` : '';
 
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.1s;">
@@ -1338,10 +1420,12 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
             </div>
 
             <div style="display:flex; gap:20px; align-items:flex-start;">
-                ${imgUrl ? `<div class="cover-img-glow"><img src="${imgUrl}" style="width:90px; height:90px; object-fit:contain; border-radius:var(--radius-sm); display:block;"></div>` : ''}
+                ${imgUrl ? (permalink
+                    ? `<a href="${escapeHtml(permalink)}" target="_blank" rel="noopener" class="cover-img-glow" style="display:block;" title="Abrir o anúncio no Mercado Livre"><img src="${imgUrl}" style="width:90px; height:90px; object-fit:contain; border-radius:var(--radius-sm); display:block;"></a>`
+                    : `<div class="cover-img-glow"><img src="${imgUrl}" style="width:90px; height:90px; object-fit:contain; border-radius:var(--radius-sm); display:block;"></div>`) : ''}
                 <div style="flex:1; min-width:0;">
                     <div style="margin-bottom:${hasVariation ? '8' : '20'}px;">
-                        <p class="title-display">${hasVariation ? escapeHtml(tituloBase) : (escapeHtml(titulo) || 'Nenhum título encontrado')}</p>
+                        <p class="title-display">${tituloExibidoHtml}</p>
                         <div class="char-counter-bar">
                             <div class="char-progress ${state}" style="width: ${progressPercent}%"></div>
                         </div>
@@ -1350,6 +1434,8 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
                              <span class="text-small">Meta: ${idealMin}+</span>
                         </div>
                     </div>
+
+                    ${idsHtml}
 
                     ${varHtml}
 
@@ -2492,13 +2578,12 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
             const isFilled = adValue && adValue.trim() !== '';
-            const isVariationAttr = hasVariations && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase());
-            const isFamilyControlled = isInFamily && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY');
-            if (isVariationAttr) {
+            // Uma régua só, a mesma da pontuação: campo sem caminho de edição não vira tarefa
+            const motivo = mfMotivoNaoEditavel(catAttr, detail);
+            if (motivo === 'variacao') {
                 variationAttrs.push({ catAttr, adValue });
-            } else if (isFamilyControlled && !isFilled) {
-                // Não dá pra preencher PARENT_PK por aqui em anúncio em família.
-                // Se já está vazio, omite — evita mostrar "Faltando" sem caminho de edição.
+            } else if (motivo) {
+                // sistema/família: sai da conta; aparece na nota de rodapé com o motivo
                 return;
             } else if (isFilled) {
                 filledAttrs.push({ catAttr, adValue });
@@ -2531,13 +2616,59 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             </div>`;
         };
 
-        // Build 2-column layout
-        const missingHtml = missingAttrs.length > 0
-            ? missingAttrs.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, false)).join('')
-            : '<p class="text-small" style="color:var(--green);">Todos preenchidos 🎉</p>';
-        const filledHtml = filledAttrs.length > 0
-            ? filledAttrs.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, true)).join('')
-            : '<p class="text-small">Nenhum preenchido.</p>';
+        // Duas etapas: primeiro o que o ML EXIGE, depois os extras. O vendedor resolve
+        // os obrigatórios e só então investe tempo nos opcionais — e a nota só cobra
+        // o que ele consegue mexer (mfCampoEditavel).
+        const obrigatorio = (x) => mfCampoObrigatorio(x.catAttr);
+        const grupos = {
+            obrFalta: missingAttrs.filter(obrigatorio),
+            obrOk: filledAttrs.filter(obrigatorio),
+            extraFalta: missingAttrs.filter((x) => !obrigatorio(x)),
+            extraOk: filledAttrs.filter((x) => !obrigatorio(x))
+        };
+        const listar = (arr, preenchido, vazio) => arr.length
+            ? arr.map(({ catAttr, adValue }) => renderCatItem(catAttr, adValue, preenchido)).join('')
+            : `<p class="text-small" style="color:${preenchido ? 'var(--text-muted)' : 'var(--green)'};">${vazio}</p>`;
+
+        const etapa = (titulo, subtitulo, faltando, preenchidos, cor) => `
+            <div style="margin-bottom:18px;">
+                <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:2px;">
+                    <span style="font-weight:600; font-size:0.92rem; color:${cor};">${titulo}</span>
+                    <span class="text-small" style="color:var(--text-muted);">${preenchidos.length} de ${faltando.length + preenchidos.length} preenchidos</span>
+                </div>
+                <p class="text-small" style="margin:0 0 10px; color:var(--text-secondary);">${subtitulo}</p>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div>
+                        <div class="specs-group-title problem" style="margin-bottom:8px;">⚠️ Faltando (${faltando.length})</div>
+                        ${listar(faltando, false, 'Nenhum faltando 🎉')}
+                    </div>
+                    <div>
+                        <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Preenchidos (${preenchidos.length})</div>
+                        ${listar(preenchidos, true, 'Nenhum preenchido ainda.')}
+                    </div>
+                </div>
+            </div>`;
+
+        const etapasHtml =
+            etapa('1. Obrigatórios', 'O Mercado Livre exige estes campos — sem eles o anúncio perde exposição.', grupos.obrFalta, grupos.obrOk, 'var(--red-dark,#b91c1c)') +
+            etapa('2. Extras', 'Não são exigidos, mas todo campo preenchido conta na sua nota — e a maioria dos concorrentes deixa em branco.', grupos.extraFalta, grupos.extraOk, 'var(--blue)');
+
+        // Transparência: o que ficou FORA da conta e por quê (antes esses campos ou
+        // sumiam sem explicação ou apareciam como tarefa impossível)
+        const foraDaConta = (Array.isArray(categoryAttributes) ? categoryAttributes : [])
+            .map((c) => ({ c, motivo: mfMotivoNaoEditavel(c, detail) }))
+            .filter((x) => x.motivo === 'sistema' || x.motivo === 'familia');
+        const textoMotivo = { sistema: 'preenchidos pelo próprio Mercado Livre', familia: 'controlados pela família de anúncios (só dá pra editar na tela de variações do ML)' };
+        const agrupadoFora = {};
+        foraDaConta.forEach(({ c, motivo }) => { (agrupadoFora[motivo] = agrupadoFora[motivo] || []).push(c.name || c.id); });
+        const notaForaDaConta = Object.keys(agrupadoFora).length
+            ? `<div style="margin-top:4px; padding:10px 12px; background:var(--bg-subtle,#f8fafc); border-radius:var(--radius-sm);">
+                ${Object.entries(agrupadoFora).map(([motivo, nomes]) => `
+                    <p class="text-small" style="margin:0 0 4px; color:var(--text-secondary);">
+                        <b>${nomes.length} campo${nomes.length > 1 ? 's' : ''} fora da conta</b> — ${textoMotivo[motivo]}: ${escapeHtml(nomes.slice(0, 6).join(', '))}${nomes.length > 6 ? ` e mais ${nomes.length - 6}` : ''}.
+                    </p>`).join('')}
+               </div>`
+            : '';
 
         // Banner informativo pros atributos gerenciados por variação
         let variationBanner = '';
@@ -2558,19 +2689,15 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         contentHtml = `
             ${variationBanner}
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-                <div>
-                    <div class="specs-group-title valid" style="margin-bottom:8px;">✅ Preenchidos (${filledAttrs.length})</div>
-                    ${filledHtml}
-                </div>
-                <div>
-                    <div class="specs-group-title problem" style="margin-bottom:8px;">⚠️ Faltando (${missingAttrs.length})</div>
-                    ${missingHtml}
-                </div>
-            </div>`;
+            ${etapasHtml}
+            ${notaForaDaConta}`;
     }
 
-    const totalItems = Array.isArray(categoryAttributes) ? categoryAttributes.filter(a => EDITABLE_TYPES.has(a.value_type) && !a.tags?.read_only).length : 0;
+    // "N campos" no cabeçalho = o que realmente conta (o mesmo conjunto da nota)
+    const detalheAtual = window.currentAnalysisState?.detail;
+    const totalItems = Array.isArray(categoryAttributes)
+        ? categoryAttributes.filter(a => mfCampoEditavel(a, detalheAtual)).length
+        : 0;
 
     // Botão "Editar todas as variações" — só aparece se item está em família ML.
     // O modal abre carregando o overview agregado (tags/quality/experience por variação).
@@ -5370,17 +5497,18 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     }
 
     // --- CAMPOS DA CATEGORIA (-2 por campo faltando, max -20) ---
-    // Não penaliza atributos gerenciados por variação quando anúncio tem variações —
-    // o usuário não consegue editar isso pelo nosso app, é injusto descontar.
+    // Só entra na conta o campo que o vendedor CONSEGUE mexer neste anúncio
+    // (mfCampoEditavel): fora ficam os que o ML preenche sozinho, os gerenciados por
+    // variação e os controlados pela família — descontar por eles é cobrar uma tarefa
+    // que não existe. Obrigatório e extra pesam igual: os dois são preenchíveis.
     if (categoryAttributes && Array.isArray(categoryAttributes)) {
-        const hasVariations = Array.isArray(detail?.variations) && detail.variations.length > 0;
-        const catString = categoryAttributes.filter(a => a.value_type === 'string' && !(Array.isArray(a.tags) && a.tags.some(t => t === 'read_only' || t?.id === 'read_only')) && !a.tags?.read_only);
         const adMap = new Map();
         (detail.attributes || []).forEach(a => { if (a?.value_name) adMap.set(a.id, a.value_name); });
         let missingCount = 0;
-        catString.forEach(c => {
+        categoryAttributes.forEach(c => {
+            if (!c || c.value_type !== 'string') return;   // mesma base de antes (só texto)
+            if (!mfCampoEditavel(c, detail)) return;
             if (window.ignoredAdAttributes.has(c.id)) return;
-            if (hasVariations && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(c.id).toUpperCase())) return;
             const v = adMap.get(c.id);
             if (!v || v.trim() === '') missingCount++;
         });
