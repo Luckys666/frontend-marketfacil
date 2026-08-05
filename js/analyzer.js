@@ -2923,6 +2923,98 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
 }
 
 // Exibe Experiência de Compra do Mercado Livre (API /reputation/items/{id}/purchase_experience/integrators)
+/**
+ * Moderação ativa do Mercado Livre — o anúncio está parado e o ML já diz o porquê.
+ * Card em destaque: enquanto isso não for resolvido, nada mais na análise importa.
+ * Só aparece quando existe moderação; sem ela o card não ocupa espaço nenhum.
+ */
+function exibirModeracao(moderacoes, containerId = "moderacaoAtiva") {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!Array.isArray(moderacoes) || !moderacoes.length) { el.innerHTML = ''; return; }
+
+    const dataBr = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+    };
+    const blocos = moderacoes.map((m) => {
+        const quando = dataBr(m.data);
+        const titulo = m.titulo || 'O Mercado Livre pausou este anúncio';
+        return `
+            <div style="padding:12px 14px; background:var(--red-light,#fff1f2); border-left:3px solid var(--red); border-radius:var(--radius-sm); margin-top:10px;">
+                <div style="font-weight:600; color:var(--red-dark,#b91c1c); font-size:0.9rem;">${escapeHtml(titulo)}</div>
+                ${m.motivo ? `<p class="text-small" style="margin:6px 0 0; color:var(--text); line-height:1.45;"><b>Motivo do ML:</b> ${escapeHtml(m.motivo)}</p>` : ''}
+                ${m.solucao ? `<p class="text-small" style="margin:6px 0 0; color:var(--text); line-height:1.45;"><b>Como resolver:</b> ${escapeHtml(m.solucao)}</p>` : ''}
+                ${quando ? `<p class="text-small" style="margin:6px 0 0; color:var(--text-muted);">Desde ${escapeHtml(quando)}</p>` : ''}
+            </div>`;
+    }).join('');
+
+    el.innerHTML = `
+        <div class="ana-card" style="animation-delay: 0.05s; border:1px solid var(--red);">
+            <div class="ana-card-header">
+                <span class="ana-card-icon">🚫</span>
+                <span class="ana-card-title">Parado pelo Mercado Livre</span>
+            </div>
+            <p class="text-small" style="margin:0; color:var(--text-secondary);">Este anúncio está fora do ar até a correção abaixo ser feita. O texto é do próprio Mercado Livre.</p>
+            ${blocos}
+        </div>`;
+}
+
+/**
+ * Ficha técnica pelos olhos do ML (catalog_quality): quais campos ELE considera
+ * que faltam. Complementa — não substitui — a Ficha Técnica e os Campos da
+ * Categoria que a análise já mostra: aqui é o veredito da plataforma, não o nosso.
+ */
+function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qualidadeFicha") {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!qualidade) { el.innerHTML = ''; return; }
+
+    // Tradução dos códigos com os atributos da categoria que a análise já buscou
+    const nomes = {};
+    (Array.isArray(categoryAttributes) ? categoryAttributes : []).forEach((a) => {
+        if (a && a.id && a.name) nomes[a.id] = a.name;
+    });
+    const bonito = (codigo) => nomes[codigo] || codigo;
+
+    const faltando = qualidade.faltando || [];
+    const idsFaltando = qualidade.identificadoresFaltando || [];
+
+    if (!faltando.length && !qualidade.semIdentificador) {
+        el.innerHTML = `
+            <div class="ana-card" style="animation-delay: 0.35s;">
+                <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Ficha Técnica (visão do Mercado Livre)</span></div>
+                <p class="text-small" style="margin:0; color:var(--green-dark,#047857);">O Mercado Livre considera a ficha deste anúncio completa.</p>
+            </div>`;
+        return;
+    }
+
+    const listaFicha = faltando.length ? `
+        <p class="text-small" style="margin:10px 0 6px; color:var(--text-secondary);">Preenchendo estes campos, a ficha fica completa para o ML:</p>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${faltando.map((c) => `<span style="display:inline-block; padding:4px 10px; background:var(--yellow-light,#fef3c7); color:#92400e; border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}</span>`).join('')}
+        </div>` : '';
+
+    const listaIds = qualidade.semIdentificador ? `
+        <p class="text-small" style="margin:12px 0 0; color:var(--text);">
+            <b>Identificador do produto:</b> falta ${idsFaltando.length ? escapeHtml(idsFaltando.map(bonito).join(', ')) : 'o código de barras (GTIN/EAN)'} — é um dos requisitos de qualidade que o ML mais cobra.
+        </p>` : '';
+
+    el.innerHTML = `
+        <div class="ana-card" style="animation-delay: 0.35s;">
+            <div class="ana-card-header">
+                <span class="ana-card-icon">📋</span>
+                <span class="ana-card-title">Ficha Técnica (visão do Mercado Livre)</span>
+            </div>
+            <p class="text-small" style="margin:0; color:var(--text-secondary);">
+                ${faltando.length ? `O Mercado Livre aponta <b>${faltando.length} campo(s)</b> faltando na ficha técnica.` : 'A ficha técnica está completa, mas falta identificador do produto.'}
+            </p>
+            ${listaFicha}
+            ${listaIds}
+        </div>`;
+}
+
 function exibirExperienciaCompra(purchaseData, containerId = "purchaseExperience") {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -3535,6 +3627,48 @@ async function fetchPurchaseExperience(itemId, accessToken) {
     return raw && raw[itemId] ? raw[itemId] : raw;
 }
 async function fetchCategoryAttributes(categoryId, accessToken) { return fetchApiData(`${API_ATTRIBUTES_ENDPOINT}/${categoryId}`, accessToken); }
+
+// Moderação ativa do ML: por que o anúncio está parado e o que fazer para voltar.
+// O texto vem escrito pelo próprio Mercado Livre (REASON / REMEDY) — é o único
+// diagnóstico da análise que já chega com a solução oficial.
+async function fetchModeracaoAtiva(itemId, accessToken) {
+    const raw = await fetchApiData(`${BASE_URL_PROXY}/api/moderations/details?item_id=${itemId}`, accessToken);
+    const lista = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.results) ? raw.results : []);
+    if (!lista.length) return null;
+    const limpa = (v) => String(v || '').replace(/<[^>]+>/g, '').trim();
+    return lista.map((m) => {
+        const wordings = Array.isArray(m && m.wordings) ? m.wordings : [];
+        const pega = (tipo) => {
+            const achado = wordings.find((x) => String(x.type).toUpperCase() === tipo);
+            return achado ? limpa(achado.value) : '';
+        };
+        return {
+            nome: m && m.name ? String(m.name) : '',
+            data: m && m.date_created ? String(m.date_created) : '',
+            motivo: pega('REASON'),
+            solucao: pega('REMEDY'),
+            titulo: pega('TITLE')
+        };
+    }).filter((m) => m.motivo || m.solucao || m.titulo || m.nome);
+}
+
+// Ficha técnica pelos olhos do ML: quais atributos ele considera que faltam neste
+// anúncio (catalog_quality). Uma chamada por item; os códigos são traduzidos com
+// os atributos da categoria que a análise já carrega.
+async function fetchQualidadeFicha(itemId, accessToken) {
+    const raw = await fetchApiData(`${BASE_URL_PROXY}/api/catalog-quality?item_id=${itemId}`, accessToken);
+    if (!raw || raw.available === false) return null;
+    const st = (raw.adoption_status || {});
+    const ft = st.ft || {};
+    const pi = st.pi || {};
+    return {
+        faltando: Array.isArray(ft.missing_attributes) ? ft.missing_attributes : [],
+        preenchidos: Array.isArray(ft.attributes) ? ft.attributes : [],
+        fichaCompleta: ft.complete === true,
+        semIdentificador: pi.complete === false,
+        identificadoresFaltando: Array.isArray(pi.missing_attributes) ? pi.missing_attributes : []
+    };
+}
 
 function transformMlbuData(mlbuData) {
     if (!mlbuData || typeof mlbuData !== 'object') return null;
@@ -4552,7 +4686,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         const detectedSite = (window.MF_siteIdFromItemId ? window.MF_siteIdFromItemId(itemId) : 'MLB');
         window.MF_CURRENT_SITE = detectedSite;
         console.log(`--- Iniciando Análise: ${itemId} (tipo: ${parsed.type}, site: ${detectedSite}) ---`);
-        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null;
+        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null, moderacaoData = null, qualidadeFichaData = null;
 
         try {
             [accessToken, userId] = await Promise.all([fetchAccessToken(), fetchUserIdForScraping()]);
@@ -4683,13 +4817,18 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                 fetchReviews(detail.id, accessToken),
                 fetchAdsMetrics(detail.id, accessToken),
                 fetchPerformanceData(detail.id, accessToken).catch(() => null),
-                fetchPurchaseExperience(detail.id, accessToken).catch(() => null)
+                fetchPurchaseExperience(detail.id, accessToken).catch(() => null),
+                // Moderação e ficha pelos olhos do ML — uma chamada cada, junto das demais
+                fetchModeracaoAtiva(detail.id, accessToken).catch(() => null),
+                fetchQualidadeFicha(detail.id, accessToken).catch(() => null)
             ]);
             visitsData = results[0].status === 'fulfilled' ? results[0].value : null;
             reviewsData = results[1].status === 'fulfilled' ? results[1].value : null;
             adsData = results[2].status === 'fulfilled' ? results[2].value : null;
             performanceData = results[3].status === 'fulfilled' ? results[3].value : null;
             purchaseExperienceData = results[4].status === 'fulfilled' ? results[4].value : null;
+            moderacaoData = results[5].status === 'fulfilled' ? results[5].value : null;
+            qualidadeFichaData = results[6].status === 'fulfilled' ? results[6].value : null;
         }
 
         if (detail && detail.category_id && accessToken) {
@@ -4722,6 +4861,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                         <div id="reviewsContainer${containerIdSuffix}"></div>
                     </div>
 
+                    <!-- ROW 2.5: Parado pelo Mercado Livre (API /moderations/details) —
+                         vem antes dos números porque o anúncio está fora do ar -->
+                    <div id="moderacaoAtiva${containerIdSuffix}" style="margin-bottom:16px;"></div>
+
                     <!-- ROW 3: Product Ads -->
                     <div id="adsMetrics${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
@@ -4730,6 +4873,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
                     <!-- ROW 3.6: Experiência de Compra ML (API /reputation/items/{id}/purchase_experience) -->
                     <div id="purchaseExperience${containerIdSuffix}" style="margin-bottom:16px;"></div>
+
+                    <!-- ROW 3.7: Ficha técnica pelos olhos do ML (API /catalog_quality/status) —
+                         complementa a Ficha Técnica abaixo, não substitui -->
+                    <div id="qualidadeFicha${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
                     <!-- ROW 4: Ficha Técnica -->
                     <div id="fichaTecnicaTexto${containerIdSuffix}" style="margin-bottom:16px;"></div>
@@ -4752,7 +4899,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Store global state for UI toggles
             window.currentAnalysisState = {
-                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData
             };
 
             exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`, detail);
@@ -4772,6 +4919,12 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Experiência de Compra (API ML /reputation/items/{id}/purchase_experience)
             exibirExperienciaCompra(purchaseExperienceData, `purchaseExperience${containerIdSuffix}`);
+
+            // Moderação ativa (API ML /moderations/details) — motivo e solução do próprio ML
+            exibirModeracao(moderacaoData, `moderacaoAtiva${containerIdSuffix}`);
+
+            // Ficha técnica na visão do ML (API ML /catalog_quality/status)
+            exibirQualidadeFicha(qualidadeFichaData, categoryAttributes, `qualidadeFicha${containerIdSuffix}`);
 
             // Pass analysis data for improvements panel (includes visits & reviews)
             const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
