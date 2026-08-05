@@ -5966,20 +5966,11 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         // O que ficou de fora vira UMA linha discreta — os nomes ficam no tooltip,
         // pra quem quiser conferir, sem virar parede de texto na tela.
-        const foraPorMotivo = { sistema: [], familia: [] };
-        (Array.isArray(categoryAttributes) ? categoryAttributes : []).forEach((c) => {
-            const m = mfMotivoNaoEditavel(c, detail);
-            if (m === 'sistema' || m === 'familia') foraPorMotivo[m].push(c.name || c.id);
-        });
-        const foraDaConta = foraPorMotivo.sistema.concat(foraPorMotivo.familia);
-        // Uma linha só. O detalhe que importa — mexer nos campos da família tira o
-        // anúncio do grupo de variações (regra do ML) — fica no tooltip.
-        const dicaFora = foraPorMotivo.familia.length
-            ? `Campos do produto (${foraPorMotivo.familia.join(', ')}) são iguais em todas as variações: mudar aqui tira este anúncio do grupo. Os outros o Mercado Livre preenche sozinho.`
-            : foraDaConta.join(', ');
-        const notaForaDaConta = foraDaConta.length
-            ? `<p class="text-small" style="margin:2px 0 0; color:var(--text-muted); cursor:help;" title="${escapeHtml(dicaFora)}">${foraDaConta.length} campos ${foraPorMotivo.familia.length ? 'vêm do produto ou do Mercado Livre' : 'são preenchidos pelo Mercado Livre'} e não contam aqui.</p>`
-            : '';
+        // Campo que o vendedor não mexe simplesmente não aparece aqui. A explicação
+        // ficava numa linha solta que só confundia (Lucas, 05/08) — quando o campo
+        // importa de verdade (o ML pede na ficha), ele aparece marcado lá, na seção
+        // "Ficha Técnica (visão do Mercado Livre)".
+        const notaForaDaConta = '';
 
         // Banner informativo pros atributos gerenciados por variação
         let variationBanner = '';
@@ -6428,11 +6419,34 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
         return;
     }
 
+    // Dos campos que o ML pede, quais o vendedor NÃO consegue preencher por aqui?
+    // (atributo de família: o endpoint que edita a família inteira sem quebrar o
+    // vínculo é bloqueado pro nosso app, e mexer pelo item pode tirar o anúncio do
+    // grupo de variações). Marcar no próprio chip evita a pergunta "por que esse
+    // campo não aparece pra editar?".
+    const detalheAtual = window.currentAnalysisState?.detail;
+    const defPorId = {};
+    (Array.isArray(categoryAttributes) ? categoryAttributes : []).forEach((c) => { if (c && c.id) defPorId[c.id] = c; });
+    const soNoML = (codigo) => {
+        const def = defPorId[codigo];
+        if (!def) return false;
+        return mfMotivoNaoEditavel(def, detalheAtual) === 'familia';
+    };
+    const marcados = faltando.filter(soNoML).length;
+
     const listaFicha = faltando.length ? `
         <p class="text-small" style="margin:10px 0 6px; color:var(--text-secondary);">Preenchendo estes campos, a ficha fica completa para o ML:</p>
         <div style="display:flex; flex-wrap:wrap; gap:6px;">
-            ${faltando.map((c) => `<span style="display:inline-block; padding:4px 10px; background:var(--yellow-light,#fef3c7); color:#92400e; border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}</span>`).join('')}
-        </div>` : '';
+            ${faltando.map((c) => {
+                const fora = soNoML(c);
+                const selo = fora
+                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Vale para todas as variações do produto — só dá para preencher direto no Mercado Livre">só no ML</span>`
+                    : '';
+                const cor = fora ? 'background:var(--bg-subtle,#f1f5f9); color:var(--text-secondary);' : 'background:var(--yellow-light,#fef3c7); color:#92400e;';
+                return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
+            }).join('')}
+        </div>
+        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado vale' : 'Os campos marcados valem'} para todas as variações — edite no Mercado Livre.</p>` : ''}` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
