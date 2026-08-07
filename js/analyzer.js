@@ -142,6 +142,15 @@ function mfAtributoPreenchido(detail, attrId) {
     return Array.isArray(a.values) && a.values.some((v) => v && (v.name || v.id));
 }
 function mfCampoEditavel(catAttr, detail) { return mfMotivoNaoEditavel(catAttr, detail) === null; }
+// Explicação curta de por que o campo não pode ser mexido por aqui. Usada só quando algum
+// caminho conseguiu chegar no salvar — a tela normal nem oferece esses campos.
+function MF_textoCampoBloqueado(catAttr, motivo) {
+    const nome = catAttr?.name || 'Este campo';
+    if (motivo === 'familia') return `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo — edite no Mercado Livre.`;
+    if (motivo === 'variacao') return `${nome} é definido em cada variação — edite pela tela de variações.`;
+    if (motivo === 'sistema') return `${nome} é preenchido pelo próprio Mercado Livre.`;
+    return `${nome} não pode ser editado por aqui.`;
+}
 // Obrigatório para o ML (o resto é extra — vale ponto, mas ninguém é reprovado por ele)
 function mfCampoObrigatorio(catAttr) {
     return !!(catAttr && catAttr.tags && (catAttr.tags.required || catAttr.tags.catalog_required));
@@ -1121,6 +1130,23 @@ window.openAttrEditor = function (attrId) {
         return;
     }
 
+    // Campo sem caminho de edição não abre editor nenhum: em vez de deixar o vendedor
+    // digitar e levar erro depois, dizemos o motivo e mandamos pro lugar certo.
+    const motivoBloqueio = mfMotivoNaoEditavel(catAttr, state.detail);
+    if (motivoBloqueio) {
+        const idDoItem = state.detail?.id || '';
+        const urlML = idDoItem ? `https://www.mercadolivre.com.br/anuncios/${idDoItem}/modificar` : '';
+        wrapper.innerHTML = `
+            <div class="attr-edit-box" style="background:var(--yellow-light); border:1px solid var(--yellow); padding:8px; border-radius:6px;">
+                <div style="font-size:0.82rem; color:var(--text); margin-bottom:8px;">${escapeHtml(MF_textoCampoBloqueado(catAttr, motivoBloqueio))}</div>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    ${urlML ? `<a href="${urlML}" target="_blank" rel="noopener" class="attr-edit-save" style="text-decoration:none; padding:4px 10px; background:var(--blue); color:white; border-radius:4px; font-size:0.78rem;">Abrir no Mercado Livre →</a>` : ''}
+                    <button type="button" onclick="window.cancelAttrEditor('${attrId}')" class="attr-edit-cancel" title="Fechar">✕</button>
+                </div>
+            </div>`;
+        return;
+    }
+
     const currentAd = (state.detail.attributes || []).find(a => a.id === attrId) || {};
     const currentValueName = currentAd.value_name || '';
     const currentValueId = currentAd.value_id || '';
@@ -1229,6 +1255,10 @@ window.saveAttr = async function (attrId) {
     if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
 
     const catAttr = (state.categoryAttributes || []).find(a => a.id === attrId);
+    // Última checagem antes de sair da tela: campo bloqueado não vira requisição.
+    const motivoBloqueio = mfMotivoNaoEditavel(catAttr, state.detail);
+    if (motivoBloqueio) return showError(MF_textoCampoBloqueado(catAttr, motivoBloqueio));
+
     let attrPayload;
     if (input.tagName === 'SELECT') {
         const opt = input.options[input.selectedIndex];
@@ -2559,6 +2589,15 @@ window.MF_saveVariationAttr = async function (itemId, attrId, inputId, errorId) 
 
     const cats = state?.categoryAttributes || [];
     const catAttr = cats.find(c => c.id === attrId);
+
+    // Campo que não pode ser mexido não deve nem sair daqui: o painel já não oferece,
+    // mas se algum caminho renderizar o botão, a régua barra antes da requisição.
+    const variacaoAtual = (window.__mfFamilyOverview?.variations || []).find(v => v.item_id === itemId);
+    const motivoBloqueio = mfMotivoNaoEditavel(catAttr, {
+        user_product_id: variacaoAtual?.up_id || 'familia',
+        attributes: variacaoAtual?.item_attributes || []
+    });
+    if (motivoBloqueio) return showError(MF_textoCampoBloqueado(catAttr, motivoBloqueio));
 
     let attrPayload;
     if (input.tagName === 'SELECT') {

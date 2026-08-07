@@ -181,6 +181,30 @@ check('CHILD_PK vazio some da lista de tarefas', !html.includes('Desenho do teci
 check('CHILD_PK preenchido segue com lápis', html.includes("openAttrEditor('COLOR')"));
 check('Condição do item não tem lápis em anúncio de família', !html.includes("openAttrEditor('ITEM_CONDITION')"));
 
+// ── 3b. nem abrir editor, nem enviar: campo bloqueado não vira requisição ──
+const openAttrEditor = get('openAttrEditor') || sandbox.window.openAttrEditor;
+const saveAttr = sandbox.window.saveAttr;
+let houveFetch = 0;
+sandbox.fetch = async () => { houveFetch++; return { ok: true, status: 200, json: async () => ({}) }; };
+sandbox.window.fetch = sandbox.fetch;
+sandbox.window.currentAnalysisState.accessToken = 'token-de-teste';
+
+// abrir o editor de um campo bloqueado devolve explicação, não campo de digitação
+const wrapperCond = documentStub.getElementById('attr-edit-wrapper-ITEM_CONDITION');
+openAttrEditor('ITEM_CONDITION');
+check('abrir editor de campo bloqueado mostra o motivo, não um input',
+  /define o grupo de varia|Mercado Livre/.test(wrapperCond.innerHTML) && !wrapperCond.innerHTML.includes('attr-input-ITEM_CONDITION'),
+  wrapperCond.innerHTML.slice(0, 160));
+
+// e mesmo forçando o salvar, nada é enviado
+const inputForjado = documentStub.getElementById('attr-input-ITEM_CONDITION');
+inputForjado.value = 'Usado';
+inputForjado.tagName = 'INPUT';
+saveAttr('ITEM_CONDITION');   // a guarda roda antes de qualquer await, então não precisa esperar
+check('salvar campo bloqueado não dispara requisição', houveFetch === 0, `fetch chamado ${houveFetch}x`);
+const erroCond = documentStub.getElementById('attr-edit-error-ITEM_CONDITION');
+check('salvar campo bloqueado explica o motivo na tela', /grupo de varia/.test(erroCond.textContent || ''), erroCond.textContent);
+
 // ── 4. visão de família: selo e nota ─────────────────────────────────────
 looseQS = true;
 const overviewBody = mkEl('ov');
