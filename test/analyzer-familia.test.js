@@ -108,7 +108,11 @@ const A = {
   tipoEstranho: { id: 'SOME_BINARY', name: 'Binário', value_type: 'binary', hierarchy: 'ITEM', tags: {} }
 };
 
-const itemEmFamilia = { id: 'MLB6683355898', user_product_id: 'MLBU3935195960', family_id: '774884615150225', attributes: [] };
+const itemEmFamilia = {
+  id: 'MLB6683355898', user_product_id: 'MLBU3935195960', family_id: '774884615150225',
+  // COLOR já tem valor (seguro trocar); FABRIC_DESIGN está vazio (preencher desvincula)
+  attributes: [{ id: 'COLOR', value_name: 'Preto' }, { id: 'FABRIC_DESIGN', value_name: '' }],
+};
 const itemSolto = { id: 'MLB1111111111', attributes: [] };
 const itemComVariacoes = { id: 'MLB2222222222', attributes: [], variations: [{ id: 1 }] };
 
@@ -133,6 +137,15 @@ check('atributo de variação em anúncio COM variations continua na tela de var
 check('mfCampoEditavel concorda com mfMotivoNaoEditavel',
   mfCampoEditavel(A.familyAttr, itemEmFamilia) === true && mfCampoEditavel(A.parentPk, itemEmFamilia) === false);
 
+// ── 1b. CHILD_PK: vazio quebra a família, preenchido é seguro ────────────
+const fabric = { id: 'FABRIC_DESIGN', name: 'Desenho do tecido', value_type: 'string', hierarchy: 'CHILD_PK', tags: {} };
+check('CHILD_PK VAZIO em família fica bloqueado (preencher tiraria do grupo)',
+  mfMotivoNaoEditavel(fabric, itemEmFamilia) === 'familia', String(mfMotivoNaoEditavel(fabric, itemEmFamilia)));
+check('CHILD_PK JÁ PREENCHIDO segue editável (trocar valor não muda a assinatura)',
+  mfMotivoNaoEditavel(A.childPk, itemEmFamilia) === null, String(mfMotivoNaoEditavel(A.childPk, itemEmFamilia)));
+check('CHILD_PK vazio em anúncio SOLTO continua editável (não há família)',
+  mfMotivoNaoEditavel(fabric, itemSolto) === null);
+
 // ── 2. hierarquias do editor por variação ────────────────────────────────
 check('painel de variação passa a oferecer FAMILY', HIER_VARIACAO && HIER_VARIACAO.has('FAMILY'));
 check('painel de variação NÃO oferece PARENT_PK', HIER_VARIACAO && !HIER_VARIACAO.has('PARENT_PK'));
@@ -140,19 +153,23 @@ check('painel de variação mantém CHILD_PK/ITEM/PRODUCT_IDENTIFIER',
   ['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER'].every((h) => HIER_VARIACAO.has(h)));
 
 // ── 3. o que a tela renderiza ────────────────────────────────────────────
+const CATS_TELA = [A.familyAttr, A.parentPk, A.itemAttr, fabric, A.childPk];
 sandbox.window.currentAnalysisState = {
   detail: itemEmFamilia,
-  categoryAttributes: [A.familyAttr, A.parentPk, A.itemAttr],
+  categoryAttributes: CATS_TELA,
   containerIdSuffix: ''
 };
 sandbox.window.ignoredAdAttributes = new sandbox.Set();
 const alvo = documentStub.getElementById('categoryAttributes');
-exibirAtributosCategoria([A.familyAttr, A.parentPk, A.itemAttr], [], 'categoryAttributes');
+exibirAtributosCategoria(CATS_TELA, itemEmFamilia.attributes, 'categoryAttributes');
 const html = alvo.innerHTML;
 check('campo FAMILY aparece com lápis de edição', html.includes("openAttrEditor('BATTERY_VOLTAGE')"), html.slice(0, 200));
 check('campo PARENT_PK NÃO aparece com lápis', !html.includes("openAttrEditor('BRAND')"));
 check('campo PARENT_PK some da lista de tarefas (sai da conta)', !html.includes('Marca'));
 check('campo FAMILY entra na lista como campo a preencher', html.includes('Voltagem da bateria'));
+check('CHILD_PK vazio NÃO aparece com lápis', !html.includes("openAttrEditor('FABRIC_DESIGN')"));
+check('CHILD_PK vazio some da lista de tarefas', !html.includes('Desenho do tecido'));
+check('CHILD_PK preenchido segue com lápis', html.includes("openAttrEditor('COLOR')"));
 
 // ── 4. visão de família: selo e nota ─────────────────────────────────────
 looseQS = true;
