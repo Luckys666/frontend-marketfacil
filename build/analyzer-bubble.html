@@ -1816,6 +1816,13 @@
 }
 .mfd-fb-shared-value { font-size: 0.85rem; color: var(--text); word-break: break-word; line-height: 1.35; }
 .mfd-fb-shared-note { font-size: 0.74rem; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+/* Marca o campo que agrupa as variações (PARENT_PK) — o único que o vendedor não muda por aqui */
+.mfd-fb-shared-tag {
+    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+    color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 4px; margin-left: 5px;
+    text-transform: none; cursor: help; white-space: nowrap;
+}
 
 .mfd-fb-variations-grid {
     display: grid;
@@ -3384,6 +3391,11 @@ function ehAtributoDeSistema(attrId) {
 // Tipos que o vendedor consegue preencher (o resto nem tem campo de edição)
 const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
 
+// Hierarquias EDITÁVEIS por variação (per-UP). Só PARENT_PK fica fora — é ele que agrupa
+// as variações. `FAMILY` entrou em 05/08/2026: o PUT no item grava e o family_id não muda
+// (medido em conta real), e o valor vale para a variação editada.
+const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
+
 /**
  * O vendedor consegue mexer NESTE campo, NESTE anúncio?
  * Régua única usada pela lista de campos E pela pontuação — se o campo não tem
@@ -3391,14 +3403,19 @@ const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'numb
  * Três motivos tiram o campo da conta:
  *   - `read_only` / lista de sistema: quem preenche é o ML (GIFTABLE e cia);
  *   - atributo de variação num anúncio com variações: edita-se na tela de variações;
- *   - PARENT_PK/FAMILY em anúncio de família (user_product_id): mexer aqui NÃO é só
- *     um 403 da API — os atributos PARENT_PK são o que agrupa as variações. A doc do
- *     ML (User Products) diz, com todas as letras, que "modificar os atributos dos
- *     itens pode fazer com que saiam da família atual, por exemplo, ao alterar a marca,
- *     modelo". O editor oficial de família (POST /user-products-families/{id}/tasks)
- *     só aceita CHILD_PK e atributos custom, e exige mandar TODOS os UPs da família.
- *     Ou seja: pedir "preencha a Marca" num item de família é pedir pro vendedor
- *     quebrar o agrupamento do produto.
+ *   - PARENT_PK em anúncio de família (user_product_id): os atributos PARENT_PK são o
+ *     que agrupa as variações. A doc do ML (User Products) diz, com todas as letras, que
+ *     "modificar os atributos dos itens pode fazer com que saiam da família atual, por
+ *     exemplo, ao alterar a marca, modelo". Pedir "preencha a Marca" num item de família
+ *     é pedir pro vendedor quebrar o agrupamento do produto.
+ *
+ * `hierarchy: FAMILY` (Voltagem da bateria, Tipo de pilha, Forma de caimento…) FICA de
+ * fora dessa lista desde 05/08/2026: medido em conta real, o valor grava pelo PUT no item
+ * e o family_id dos 8 UPs da família não muda — FAMILY não está na lista fechada que a doc
+ * dá para o cálculo do family_id (family_name, domain_id, user_id, PARENT_PK, CHILD_PK,
+ * custom, ITEM_CONDITION). O proxy roteia esse tipo pelo PUT /items justamente porque o
+ * editor de família o descarta em silêncio. Só vale para o anúncio editado, não para as
+ * outras variações.
  */
 function mfMotivoNaoEditavel(catAttr, detail) {
     if (!catAttr) return 'inexistente';
@@ -3406,7 +3423,7 @@ function mfMotivoNaoEditavel(catAttr, detail) {
     if (catAttr.tags?.read_only || ATRIBUTOS_SISTEMA_ML.has(catAttr.id)) return 'sistema';
     const temVariacoes = Array.isArray(detail?.variations) && detail.variations.length > 0;
     if (temVariacoes && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase())) return 'variacao';
-    if (detail?.user_product_id && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY')) return 'familia';
+    if (detail?.user_product_id && catAttr.hierarchy === 'PARENT_PK') return 'familia';
     return null;
 }
 function mfCampoEditavel(catAttr, detail) { return mfMotivoNaoEditavel(catAttr, detail) === null; }
@@ -5030,8 +5047,10 @@ function MF_analyzeVariationProblems(variation, allVariations) {
     const itemAttrs = Array.isArray(variation.item_attributes) ? variation.item_attributes : [];
     const itemAttrMap = new Map(itemAttrs.map(a => [a.id, a]));
 
-    // 1) Atributos required + editáveis por variação que estão vazios
-    const VAR_HIER = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER']);
+    // 1) Atributos required + editáveis por variação que estão vazios.
+    // Mesma régua do painel de edição (MF_VARIATION_EDITABLE_HIERARCHIES) — se o cartão
+    // cobrar um campo, o painel tem que ter onde preencher.
+    const VAR_HIER = MF_VARIATION_EDITABLE_HIERARCHIES;
     const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
     const requiredMissing = [];
     const recommendedMissing = [];
@@ -5291,6 +5310,15 @@ function MF_renderFamilyOverview(data, body) {
         const cat = catById[a.id];
         return cat && (cat.hierarchy === 'PARENT_PK' || cat.hierarchy === 'FAMILY');
     });
+    // Só o PARENT_PK é intocável (agrupa as variações); o resto o vendedor preenche
+    // abrindo a variação — a nota do rodapé muda conforme o que caiu na lista.
+    const ehAgrupador = (a) => catById[a.id]?.hierarchy === 'PARENT_PK';
+    const qtdAgrupador = familyHierAttrs.filter(ehAgrupador).length;
+    const notaCompartilhados = qtdAgrupador === familyHierAttrs.length
+        ? 'Esses campos agrupam as variações — só o Mercado Livre edita.'
+        : (qtdAgrupador === 0
+            ? 'Preencha estes campos abrindo a variação.'
+            : 'Os marcados agrupam as variações (só o ML edita); os outros você preenche abrindo a variação.');
 
     const summary = MF_summarizeFamily(variations);
     const heroUpId = MF_pickHeroVariation(variations);
@@ -5327,13 +5355,16 @@ function MF_renderFamilyOverview(data, body) {
                         const cat = catById[a.id];
                         const name = cat?.name || a.name || a.id;
                         const value = a.value_name || (Array.isArray(a.values) ? a.values.map(v => v.name).filter(Boolean).join(', ') : '') || '—';
+                        const selo = ehAgrupador(a)
+                            ? ` <span class="mfd-fb-shared-tag" title="Este campo é o que agrupa as variações — mudar por aqui tiraria o anúncio do grupo.">só no ML</span>`
+                            : '';
                         return `<div class="mfd-fb-shared-row">
-                            <span class="mfd-fb-shared-label">${escapeHtml(name)}</span>
+                            <span class="mfd-fb-shared-label">${escapeHtml(name)}${selo}</span>
                             <span class="mfd-fb-shared-value">${escapeHtml(value)}</span>
                         </div>`;
                     }).join('')}
             </div>
-            <div class="mfd-fb-shared-note">Esses campos só podem ser editados direto no painel do Mercado Livre.</div>
+            <div class="mfd-fb-shared-note">${notaCompartilhados}</div>
         </div>
         <div class="mfd-fb-section">
             <div class="mfd-fb-toolbar">
@@ -5546,9 +5577,6 @@ function MF_renderVariationCard(v, idx, allVariations, heroUpId, familySummary) 
             </div>` : ''}
         </div>`;
 }
-
-// Hierarquias EDITÁVEIS por variação (per-UP). PARENT_PK/FAMILY ficam fora.
-const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER']);
 
 window.MF_expandVariation = function (upId) {
     const ov = window.__mfFamilyOverview;
@@ -5906,10 +5934,12 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const renderCatItem = (catAttr, adValue, isFilled) => {
             const isIgnored = window.ignoredAdAttributes.has(catAttr.id);
-            // Atributos PARENT_PK/FAMILY de itens em família ML não são editáveis pela API pública
-            // (o family editor exige scope que não temos). Em vez de mostrar o pencil e errar,
-            // omitimos a edição — o atributo continua visível como informação.
-            const isFamilyControlled = !!(detail?.user_product_id && (catAttr.hierarchy === 'PARENT_PK' || catAttr.hierarchy === 'FAMILY'));
+            // PARENT_PK (Marca, Modelo) de item em família define o agrupamento das variações:
+            // mudar por aqui tira o anúncio do grupo. Em vez de mostrar o lápis e estragar a
+            // família, omitimos a edição — o atributo continua visível como informação.
+            // Atributo `hierarchy: FAMILY` NÃO entra aqui: grava pelo item sem mexer no
+            // family_id (medido em conta real) — mesma régua do mfMotivoNaoEditavel.
+            const isFamilyControlled = mfMotivoNaoEditavel(catAttr, detail) === 'familia';
             const canEdit = !isIgnored && !catAttr.tags?.read_only && !isFamilyControlled;
             const pencilSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>`;
             return `
@@ -6420,10 +6450,9 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
     }
 
     // Dos campos que o ML pede, quais o vendedor NÃO consegue preencher por aqui?
-    // (atributo de família: o endpoint que edita a família inteira sem quebrar o
-    // vínculo é bloqueado pro nosso app, e mexer pelo item pode tirar o anúncio do
-    // grupo de variações). Marcar no próprio chip evita a pergunta "por que esse
-    // campo não aparece pra editar?".
+    // (PARENT_PK de item em família: mexer pelo item tira o anúncio do grupo de
+    // variações, e o editor de família descarta a mudança). Marcar no próprio chip
+    // evita a pergunta "por que esse campo não aparece pra editar?".
     const detalheAtual = window.currentAnalysisState?.detail;
     const defPorId = {};
     (Array.isArray(categoryAttributes) ? categoryAttributes : []).forEach((c) => { if (c && c.id) defPorId[c.id] = c; });
@@ -6440,13 +6469,13 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
             ${faltando.map((c) => {
                 const fora = soNoML(c);
                 const selo = fora
-                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Vale para todas as variações do produto — só dá para preencher direto no Mercado Livre">só no ML</span>`
+                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Este campo é o que agrupa as variações do produto — mudar por aqui tiraria o anúncio do grupo. Dá para preencher no Mercado Livre.">só no ML</span>`
                     : '';
                 const cor = fora ? 'background:var(--bg-subtle,#f1f5f9); color:var(--text-secondary);' : 'background:var(--yellow-light,#fef3c7); color:#92400e;';
                 return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
             }).join('')}
         </div>
-        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado vale' : 'Os campos marcados valem'} para todas as variações — edite no Mercado Livre.</p>` : ''}` : '';
+        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado agrupa' : 'Os campos marcados agrupam'} as variações do produto — edite no Mercado Livre.</p>` : ''}` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
