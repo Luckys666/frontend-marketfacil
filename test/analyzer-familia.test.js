@@ -146,6 +146,15 @@ check('CHILD_PK JÁ PREENCHIDO segue editável (trocar valor não muda a assinat
 check('CHILD_PK vazio em anúncio SOLTO continua editável (não há família)',
   mfMotivoNaoEditavel(fabric, itemSolto) === null);
 
+// ── 1c. ITEM_CONDITION: a hierarchy mente (vem como ITEM) ───────────────
+// A ML devolve hierarchy: ITEM, mas a doc lista ITEM_CONDITION entre os campos que
+// calculam o family_id — trocar Novo↔Usado em anúncio de família quebra o grupo.
+const condicao = { id: 'ITEM_CONDITION', name: 'Condição do item', value_type: 'list', hierarchy: 'ITEM', tags: { hidden: true }, values: [{ id: '1', name: 'Novo' }, { id: '2', name: 'Usado' }] };
+check('ITEM_CONDITION em anúncio de família fica bloqueado',
+  mfMotivoNaoEditavel(condicao, itemEmFamilia) === 'familia', String(mfMotivoNaoEditavel(condicao, itemEmFamilia)));
+check('ITEM_CONDITION em anúncio solto continua editável (não há grupo pra quebrar)',
+  mfMotivoNaoEditavel(condicao, itemSolto) === null);
+
 // ── 2. hierarquias do editor por variação ────────────────────────────────
 check('painel de variação passa a oferecer FAMILY', HIER_VARIACAO && HIER_VARIACAO.has('FAMILY'));
 check('painel de variação NÃO oferece PARENT_PK', HIER_VARIACAO && !HIER_VARIACAO.has('PARENT_PK'));
@@ -153,7 +162,7 @@ check('painel de variação mantém CHILD_PK/ITEM/PRODUCT_IDENTIFIER',
   ['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER'].every((h) => HIER_VARIACAO.has(h)));
 
 // ── 3. o que a tela renderiza ────────────────────────────────────────────
-const CATS_TELA = [A.familyAttr, A.parentPk, A.itemAttr, fabric, A.childPk];
+const CATS_TELA = [A.familyAttr, A.parentPk, A.itemAttr, fabric, A.childPk, condicao];
 sandbox.window.currentAnalysisState = {
   detail: itemEmFamilia,
   categoryAttributes: CATS_TELA,
@@ -170,6 +179,7 @@ check('campo FAMILY entra na lista como campo a preencher', html.includes('Volta
 check('CHILD_PK vazio NÃO aparece com lápis', !html.includes("openAttrEditor('FABRIC_DESIGN')"));
 check('CHILD_PK vazio some da lista de tarefas', !html.includes('Desenho do tecido'));
 check('CHILD_PK preenchido segue com lápis', html.includes("openAttrEditor('COLOR')"));
+check('Condição do item não tem lápis em anúncio de família', !html.includes("openAttrEditor('ITEM_CONDITION')"));
 
 // ── 4. visão de família: selo e nota ─────────────────────────────────────
 looseQS = true;

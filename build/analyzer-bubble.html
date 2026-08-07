@@ -3396,6 +3396,13 @@ const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'numb
 // (medido em conta real), e o valor vale para a variação editada.
 const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
 
+// Atributos que entram no cálculo do family_id sem que a `hierarchy` denuncie.
+// `ITEM_CONDITION` vem da ML como `hierarchy: ITEM` — cara de campo comum —, mas a doc
+// lista ele junto de family_name, domain_id, PARENT_PK e CHILD_PK entre as coisas que
+// DEFINEM a família. Trocar Novo↔Usado num anúncio de família muda a assinatura e o
+// anúncio sai do grupo. Fora de família não há grupo pra quebrar, então segue editável.
+const MF_ATTRS_DA_ASSINATURA = new Set(['ITEM_CONDITION']);
+
 /**
  * O vendedor consegue mexer NESTE campo, NESTE anúncio?
  * Régua única usada pela lista de campos E pela pontuação — se o campo não tem
@@ -3427,7 +3434,12 @@ function mfMotivoNaoEditavel(catAttr, detail) {
     if (!MF_TIPOS_EDITAVEIS.has(catAttr.value_type)) return 'tipo';
     if (catAttr.tags?.read_only || ATRIBUTOS_SISTEMA_ML.has(catAttr.id)) return 'sistema';
     const temVariacoes = Array.isArray(detail?.variations) && detail.variations.length > 0;
+    // Anúncio do modelo antigo (variations[]): atributo de variação editado no campo geral
+    // faz a ML devolver "Same attributes are used in more than one of item.attributes".
+    // A lista fixa cobria só 5 ids conhecidos; a hierarquia da categoria cobre o resto.
+    if (temVariacoes && (catAttr.hierarchy === 'CHILD_PK' || catAttr.hierarchy === 'CHILD_DEPENDENT')) return 'variacao';
     if (temVariacoes && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase())) return 'variacao';
+    if (detail?.user_product_id && MF_ATTRS_DA_ASSINATURA.has(catAttr.id)) return 'familia';
     if (detail?.user_product_id && catAttr.hierarchy === 'PARENT_PK') return 'familia';
     if (detail?.user_product_id && catAttr.hierarchy === 'CHILD_PK' && !mfAtributoPreenchido(detail, catAttr.id)) return 'familia';
     return null;
@@ -5074,8 +5086,8 @@ function MF_analyzeVariationProblems(variation, allVariations) {
         const filled = !!(a && (a.value_name || (Array.isArray(a.values) && a.values.length)));
         if (filled) continue;
         // CHILD_PK vazio não tem onde ser preenchido (tira a variação da família) —
-        // então também não vira problema no cartão.
-        if (c.hierarchy === 'CHILD_PK') continue;
+        // então também não vira problema no cartão. Idem os campos da assinatura.
+        if (c.hierarchy === 'CHILD_PK' || MF_ATTRS_DA_ASSINATURA.has(c.id)) continue;
         if (c.tags?.required) requiredMissing.push(c.name || c.id);
         else if (c.tags?.catalog_required || c.tags?.fixed) recommendedMissing.push(c.name || c.id);
     }
@@ -5645,6 +5657,7 @@ function MF_renderVariationEditPanel(variation) {
         EDITABLE_TYPES.has(c.value_type)
         && !c.tags?.read_only
         && MF_VARIATION_EDITABLE_HIERARCHIES.has(c.hierarchy)
+        && !MF_ATTRS_DA_ASSINATURA.has(c.id)
         && !(c.hierarchy === 'CHILD_PK' && !MF_variacaoTemValor(itemAttrMap, c.id))
     );
 
