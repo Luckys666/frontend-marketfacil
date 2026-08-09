@@ -1342,6 +1342,12 @@
   }
 
   .ana-wrapper .ana-metrics-grid { grid-template-columns: repeat(3, 1fr); }
+  /* A tabela de conversão por canal tinha virado classe mas ninguém a
+     sobrescrevia: no celular as 4 colunas fixas espremiam "CONVERSÃO" e os
+     números monoespaçados. O canal ganha a linha inteira e os 3 números
+     dividem a de baixo. */
+  .ana-wrapper .ana-channel-row { grid-template-columns: 1fr 1fr 1fr; gap: 4px 8px; }
+  .ana-wrapper .ana-channel-row > :first-child { grid-column: 1 / -1; }
 
   .ana-wrapper .performance-bucket { padding-left: 10px; }
   .ana-wrapper .performance-variable { padding-left: 6px; }

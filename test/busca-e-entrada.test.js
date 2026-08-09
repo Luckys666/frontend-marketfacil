@@ -78,7 +78,7 @@ console.log('busca-e-entrada.test.js');
 const selSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'ad-selector.js'), 'utf8');
 check('ad-selector ainda termina chamando boot() (o teste depende disso)', /\nboot\(\);\n/.test(selSrc));
 const selPatched = selSrc.replace(/\nboot\(\);\n/, `
-window.__internos = { pareceSku, nextSearchStep, avancarDegrau, emptyStateMsg, state, CONFIG };
+window.__internos = { pareceSku, termoLongoDemais, nextSearchStep, avancarDegrau, emptyStateMsg, state, CONFIG };
 `);
 const selBox = mkSandbox();
 selBox.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
@@ -147,6 +147,45 @@ I.state.search = 'panela123';
 vazio = I.emptyStateMsg();
 check('para termo que É um SKU possível, a mensagem segue citando o SKU',
   /no título nem no SKU/.test(vazio), vazio);
+
+/* =======================================================================
+   PARTE 1f — o que a revisão de 09/08 pegou na escada
+   Regra que vale acima de tudo: chamada que FALHOU não vira contagem zero.
+   ======================================================================= */
+const fonteSel = selSrc;
+check('só 400 num degrau de SKU continua a escada — 5xx é erro de verdade',
+  /emDegrauDeSku && err\.status === 400/.test(fonteSel) && !/err\.status >= 400 && err\.status !== 401/.test(fonteSel));
+check('o catch checa desatualizada() antes de mexer em estado',
+  /catch \(err\) \{[\s\S]{0,400}?if \(desatualizada\(\)\) return;/.test(fonteSel));
+check('lista vazia zera o total (o rodapé não mente sobre a contagem)',
+  /function mostrarListaVazia\(\)[\s\S]{0,200}state\.total = 0/.test(fonteSel));
+check('busca por ID não é tratada como degrau que não casou',
+  /!MLB_RE\.test\(state\.search\)/.test(fonteSel));
+check('avancarDegrau zera o offset', /avancarDegrau\(\)[\s\S]{0,700}?state\.offset = 0;/.test(fonteSel));
+check('status escolhido na mão não é alargado pela escada',
+  /state\.statusManual = true/.test(fonteSel) && /!state\.statusManual/.test(fonteSel));
+check('chip que fixa status impede o degrau de alargar', /chipFixaStatus/.test(fonteSel));
+check('a URL guarda o status do vendedor, não o "Todos" da escada',
+  /statusDoVendedor/.test(fonteSel));
+check('teto de 200 chars do proxy espelhado no front',
+  /MAX_BUSCA_TEXTO: 200/.test(fonteSel) && /termoLongoDemais/.test(fonteSel));
+
+resetEstado('sapatilha', 'active');
+I.state.statusManual = true;
+check('com status manual, a escada não oferece o degrau "todos os status"',
+  (I.nextSearchStep() || {}).param !== 'q' || I.nextSearchStep().todosOsStatus !== true);
+I.state.statusManual = false;
+
+I.state.search = 'a'.repeat(250);
+check('termo acima de 200 chars é barrado com explicação',
+  I.termoLongoDemais(I.state.search) === true && /até 200 caracteres/.test(I.emptyStateMsg()));
+I.state.search = 'sapatilha'; I.state.status = 'active';
+check('sem alargar, a mensagem diz que olhou só os ativos',
+  /entre os ativos/.test(I.emptyStateMsg()), I.emptyStateMsg());
+I.state.status = 'paused';
+check('e diz "pausados" quando o filtro é Pausados',
+  /entre os pausados/.test(I.emptyStateMsg()), I.emptyStateMsg());
+I.state.status = 'all';
 
 /* =======================================================================
    PARTE 2 — entrada por link/ID (js/analyzer.js)
@@ -226,6 +265,19 @@ check('normalizeMlbId entende link /p/ como catálogo',
     /displayMlbuResults\(detail, itemsData\.results, accessToken\)/.test(fonte));
   check('tags técnicas do produto (ex.: "primary") não vão pra tela',
     /const tagsHtml = '';/.test(fonte) && !/mlbuDetail\.tags\.forEach/.test(fonte));
+
+  /* ===================================================================
+     PARTE 6 — o que a revisão de 09/08 pegou no analyzer
+     =================================================================== */
+  check('bloqueio do ML (suspended/forbidden) aparece, venha com que status vier',
+    /MF_SUB_STATUS/.test(fonte) && /suspended:/.test(fonte) && /forbidden:/.test(fonte)
+    && /const bloqueio = _sub\.map/.test(fonte));
+  check('o bloqueio é checado ANTES do ramo "active" (não vira selo verde)',
+    fonte.indexOf('const bloqueio = _sub.map') < fonte.indexOf(`if (detail.status === 'active') return '<span class="status-badge success">`));
+  check('401 no item manda reconectar em vez de "tente de novo"',
+    /itemData\?\.code === 401/.test(fonte) && /e401\.isAuthError = true/.test(fonte));
+  check('atalho de produto não recursa no mesmo id nem em outro MLBU',
+    /unicoId !== itemId/.test(fonte) && /\.type === 'mlb'/.test(fonte));
 
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);

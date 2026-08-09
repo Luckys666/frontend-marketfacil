@@ -38,6 +38,10 @@ const CONFIG = {
   // com status=, por isso o modo SKU busca em todos os status.
   SKU_PARAM: 'seller_sku',
   SKU_PARAM_ALT: 'sku',
+  // Espelham mlb-proxy/utils/validators.js (isValidSearchText / isValidSku).
+  // Se um dia mudarem lá, mudam aqui — mandar fora da regra volta 400.
+  MAX_BUSCA_TEXTO: 200,
+  MAX_SKU: 100,
   ANALYZE_URL: 'https://app.marketfacil.com.br/analise-anuncio',
   RECONNECT_URL: 'https://app.marketfacil.com.br/minha-conta',  // conexão ML fica em Minha Conta (verificado 23/07 — /conexoes é 404)
   PAGE_SIZE: 50,
@@ -163,6 +167,7 @@ const state = {
   search: '',
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   statusRestore: null,           // status a devolver quando o degrau que força "Todos" sair
+  statusManual: false,           // o vendedor escolheu o status na mão — a escada não mexe mais
   qAllTried: false,              // true depois de repetir o nome sem o filtro de status
   skuTried: false,               // true depois de a escada de busca já ter tentado o SELLER_SKU
   skuAltTried: false,            // true depois de tentar também o seller_custom_field (sku=)
@@ -412,8 +417,11 @@ function wireChipButtons(area, counts) {
       // chip sem status próprio zera o filtro de status ("Todos") pra lista bater com a contagem do chip
       const chip = PROBLEM_CHIPS.find((c) => c.id === state.activeChip);
       if (chip) {
-        // guarda o status que o usuário tinha antes do chip (pra devolver quando ele sair)
-        if (state.prevStatus == null) state.prevStatus = state.status;
+        // Guarda o status que o VENDEDOR tinha antes do chip (pra devolver quando
+        // ele sair). Se a escada tinha forçado "Todos", o valor dele é o
+        // statusRestore — capturar state.status aqui perdia a escolha real.
+        if (state.prevStatus == null) state.prevStatus = (state.statusRestore != null ? state.statusRestore : state.status);
+        state.statusRestore = null;   // quem devolve o status agora é o chip
         if (chip.filter.status) setStatusToggle(chip.filter.status);
         else setStatusToggle('all');
       } else {
@@ -746,12 +754,16 @@ function nomeDoAtributo(item, code) {
 /* =========================================================================
    Construção da URL de busca da página
    ========================================================================= */
-// Um texto só pode virar consulta de SKU se puder SER um SKU: o proxy valida
-// /^[\w\-.]{1,100}$/ e devolve 400 pra espaço e acento. Tentar assim mesmo
-// gastava uma chamada e derrubava a busca inteira numa tela de erro — buscar
-// "sapatilha preta" e receber "não conseguimos carregar seus anúncios".
+// Espelho das duas regras do proxy (mlb-proxy/utils/validators.js): o texto
+// livre (q=) vai até MAX_BUSCA_TEXTO, e o SKU tem que ser alfanumérico com
+// _ - . até MAX_SKU. Mandar fora disso volta 400 — chamada gasta à toa e, do
+// lado do vendedor, uma tela de erro no lugar de "confira o que digitou".
 function pareceSku(texto) {
-  return /^[\w\-.]{1,100}$/.test(texto || '');
+  const t = texto || '';
+  return t.length <= CONFIG.MAX_SKU && /^[\w\-.]+$/.test(t);
+}
+function termoLongoDemais(texto) {
+  return (texto || '').length > CONFIG.MAX_BUSCA_TEXTO;
 }
 
 // Degraus da busca, em ordem: nome no status escolhido -> nome em todos os
@@ -759,9 +771,15 @@ function pareceSku(texto) {
 // null quando a escada acabou. `todosOsStatus` liga o "Todos" antes de repetir.
 function nextSearchStep() {
   const termo = state.search || '';
+  // Chip de problema fixa o status na URL depois do toggle (buildListUrl), então
+  // abrir para "Todos" não muda a consulta: repetiria a MESMA chamada e ainda
+  // faria a tela anunciar um escopo que não está valendo.
+  const chipFixaStatus = !!(state.activeChip && (PROBLEM_CHIPS.find((c) => c.id === state.activeChip) || {}).filter?.status);
   // O anúncio procurado costuma estar pausado, e o painel abre em "Ativos":
-  // medido na conta real — "sapatilha" dá 0 em ativos e 15 em todos.
-  if (state.searchParam === 'q' && !state.qAllTried && state.status !== 'all') {
+  // medido na conta real — "sapatilha" dá 0 em ativos e 15 em todos. Mas se o
+  // vendedor escolheu o status na mão, a escolha dele manda: não alargamos.
+  if (state.searchParam === 'q' && !state.qAllTried && state.status !== 'all'
+      && !state.statusManual && !chipFixaStatus) {
     return { param: 'q', todosOsStatus: true };
   }
   if (state.searchParam === 'q' && !state.skuTried && pareceSku(termo)) {
@@ -781,13 +799,27 @@ function avancarDegrau() {
   if (proximo.param === 'q') state.qAllTried = true;
   else if (proximo.param === CONFIG.SKU_PARAM) state.skuTried = true;
   else state.skuAltTried = true;
+  // Cada degrau é uma consulta NOVA: sem zerar o offset, um degrau rodava na
+  // página em que o vendedor estava e o SKU que existe no começo da lista era
+  // reportado como inexistente.
+  state.offset = 0;
   // SKU casa exato e o nome pode estar num pausado: manter "Ativos" esconderia
-  // justamente o anúncio procurado.
-  if (proximo.todosOsStatus && state.status !== 'all') {
+  // justamente o anúncio procurado. Escolha manual de status é intocável.
+  if (proximo.todosOsStatus && state.status !== 'all' && !state.statusManual) {
     state.statusRestore = state.status;
     setStatusToggle('all');
   }
   return true;
+}
+
+// Lista vazia de verdade. Zera o total junto: sem isso o rodapé seguia dizendo
+// "Mostrando 1–50 de 328 anúncios" embaixo de "nenhum anúncio encontrado", com
+// o "Próxima" ativo levando a outra página vazia.
+function mostrarListaVazia() {
+  state.total = 0;
+  state.lastItems = [];
+  state.loading = false;
+  renderRows([]);
 }
 
 // Recomeça a escada (toda busca nova entra pelo primeiro degrau)
@@ -1569,13 +1601,21 @@ function relationSubrowHtml(rel) {
 function emptyStateMsg() {
   if (state.search) {
     const termo = escapeHtml(state.search);
-    // Só afirmar o que a escada realmente checou: com espaço ou acento o SKU
-    // nem chega a ser consultado (a ML casa SKU exato, sem espaço), então dizer
-    // "nem no SKU" ali seria mentira.
-    if (!pareceSku(state.search)) {
-      return `Nenhum anúncio com <b>${termo}</b> no título, entre ativos e pausados. Se você procurava por SKU, digite o código sozinho (sem espaços); se for um anúncio específico, cole o ID ou o link dele.`;
+    if (termoLongoDemais(state.search)) {
+      return `A busca aceita até ${CONFIG.MAX_BUSCA_TEXTO} caracteres e esse texto tem ${state.search.length}. Use um pedaço do título, o SKU, ou cole o ID/link do anúncio.`;
     }
-    return `Nenhum anúncio com <b>${termo}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
+    // Só afirmar o escopo que a busca REALMENTE cobriu: com o status escolhido
+    // na mão a escada não alarga, então prometer "entre ativos e pausados" ali
+    // seria mentira — e o vendedor precisa saber que o filtro dele é a razão.
+    const soNesteStatus = state.status !== 'all'
+      ? ` entre os ${state.status === 'paused' ? 'pausados' : 'ativos'} — toque em <b>Todos</b> para procurar no resto da conta`
+      : ', entre ativos e pausados';
+    // Com espaço ou acento o SKU nem chega a ser consultado (a ML casa SKU
+    // exato), então dizer "nem no SKU" seria afirmar o que não foi checado.
+    if (!pareceSku(state.search)) {
+      return `Nenhum anúncio com <b>${termo}</b> no título${soNesteStatus}. Se você procurava por SKU, digite o código sozinho (sem espaços); se for um anúncio específico, cole o ID ou o link dele.`;
+    }
+    return `Nenhum anúncio com <b>${termo}</b> no título nem no SKU${soNesteStatus}. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
   }
   if (state.freeShipUnder) return `Nenhum anúncio da sua conta está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
   if (state.discountOnly) return 'Nenhum anúncio da sua conta está com desconto.';
@@ -1903,6 +1943,10 @@ async function loadPage() {
   if (state.pendingBanner) { setBanner(state.pendingBanner.kind, state.pendingBanner.msg); state.pendingBanner = null; }
 
   try {
+    // Texto acima do teto do proxy volta 400 em todos os degraus. Barrar aqui
+    // troca quatro chamadas perdidas por uma explicação do que fazer.
+    if (state.search && termoLongoDemais(state.search)) { mostrarListaVazia(); return; }
+
     // Caso especial: busca por ID MLB/MLBU -> hidrata direto, resultado único
     if (state.search && MLB_RE.test(state.search)) {
       const items = await hydrate([state.search.toUpperCase()]);
@@ -1957,7 +2001,7 @@ async function loadPage() {
     //   3. seller_sku=   (atributo SELLER_SKU) — só se o texto puder ser um SKU
     //   4. sku=          (campo seller_custom_field, o outro SKU da ML)
     if (!ids.length && state.search && avancarDegrau()) return loadPage();
-    if (!ids.length) { state.lastItems = []; state.loading = false; renderRows([]); return; }
+    if (!ids.length) { mostrarListaVazia(); return; }
     const items = await hydrate(ids);
     if (desatualizada()) return;
     state.lastItems = items;
@@ -1973,23 +2017,31 @@ async function loadPage() {
       setBanner('info', 'Não achamos esse texto no título dos anúncios — estes são os que batem com o SKU, entre ativos e pausados.');
     } else if (state.search && state.qAllTried && state.searchParam === 'q') {
       // Achou só depois de tirar o filtro de status: sem dizer isso, o vendedor
-      // vê a lista trocar de "Ativos" para "Todos" sozinha e não entende.
-      setBanner('info', 'Nenhum anúncio ativo com esse nome — estes incluem os pausados.');
+      // vê a lista trocar sozinha e não entende. O texto tem que citar o status
+      // que ELE tinha — dizer "nenhum ativo" pra quem filtrava "Pausados" é o
+      // contrário do que aconteceu.
+      const largado = state.statusRestore === 'paused' ? 'pausado' : 'ativo';
+      setBanner('info', `Nenhum anúncio ${largado} com esse nome — estes são de todos os status.`);
     }
     loadVisitsForPage(ids);   // camada C — visitas 30d da página (assíncrono, enriquece depois)
   } catch (err) {
-    // Degrau de busca que falha NÃO é app quebrado — é o termo que não serve
-    // pra aquele campo (o proxy recusa SKU com espaço ou acento). Antes isso
-    // caía em renderError e "batata frita 123" virava "não conseguimos carregar
-    // seus anúncios". Segue a escada; quando ela acaba, o resultado honesto é
-    // a lista vazia. Sessão expirada (401) e excesso de consultas (429) seguem
-    // sendo estado próprio, porque aí nada funciona mesmo.
-    const degrauFalhou = state.search && err.status && err.status >= 400 && err.status !== 401 && err.status !== 429;
-    if (degrauFalhou) {
+    // Resposta velha não pinta tela nem mexe em estado — o mesmo cuidado que os
+    // caminhos de sucesso já tinham. Sem isto, uma busca lenta que falha voltava
+    // DEPOIS do clique seguinte do vendedor e desfazia o filtro que ele escolheu.
+    if (desatualizada()) return;
+
+    // Aqui quase toda falha é falha DE VERDADE (proxy fora do ar, ML instável) e
+    // tem que aparecer como erro: chamada que falhou nunca vira contagem zero.
+    // A ÚNICA exceção é o proxy recusar o FORMATO do termo num degrau de SKU
+    // (400 de validação) — aí o degrau não serve pro termo e a escada segue.
+    // pareceSku() já evita esse caso antes de gastar a chamada; isto é a rede.
+    // Busca por ID entra por outro caminho (hydrate direto) e nenhum degrau a
+    // ajuda: falha dela é erro, não "não encontrado".
+    const emDegrauDeSku = state.searchParam === CONFIG.SKU_PARAM || state.searchParam === CONFIG.SKU_PARAM_ALT;
+    const termoNaoServeNesteCampo = state.search && emDegrauDeSku && err.status === 400 && !MLB_RE.test(state.search);
+    if (termoNaoServeNesteCampo) {
       if (avancarDegrau()) return loadPage();
-      state.lastItems = [];
-      state.loading = false;
-      renderRows([]);
+      mostrarListaVazia();
       return;
     }
     state.loading = false;
@@ -2278,7 +2330,11 @@ const MFSEL_URL_KEYS = ['status', 'order', 'busca', 'buscapor', 'chip', 'tipo', 
 function writeStateToUrl() {
   const p = new URLSearchParams(location.search);
   MFSEL_URL_KEYS.forEach((k) => p.delete(k));
-  if (state.status !== 'active') p.set('status', state.status);
+  // O status que vai pra URL é o do VENDEDOR, não o "Todos" que a escada liga
+  // sozinha: senão um F5 (ou um link compartilhado) devolvia a pessoa num filtro
+  // que ela nunca escolheu, e o statusRestore — que só existe em memória — sumia.
+  const statusDoVendedor = state.statusRestore != null ? state.statusRestore : state.status;
+  if (statusDoVendedor !== 'active') p.set('status', statusDoVendedor);
   if (state.order !== 'last_updated_desc') p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
   if (state.activeChip) p.set('chip', state.activeChip);
@@ -2380,6 +2436,9 @@ function wireControls() {
       }
       state.prevStatus = null;   // troca manual de status é escolha explícita — não devolver depois
       state.statusRestore = null;   // idem para o "Todos" que a escada de busca liga sozinha
+      // A partir daqui a escada não alarga mais o status sozinha: o vendedor
+      // clicava "Ativos" e o degrau de SKU o jogava de volta em "Todos".
+      state.statusManual = true;
       setStatusToggle(newStatus); state.offset = 0; syncClearBtn(); loadPage();
     });
   });
@@ -2455,7 +2514,7 @@ function wireControls() {
     lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
     state.search = ''; state.searchParam = null; resetSearchLadder();
-    state.statusRestore = null; state.activeChip = null; state.prevStatus = null;
+    state.statusRestore = null; state.statusManual = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
     renderChipsFresh(); loadPage();

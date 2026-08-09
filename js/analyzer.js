@@ -1487,12 +1487,23 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
     const _sub = Array.isArray(detail?.sub_status) ? detail.sub_status : [];
     const situacaoHtml = (() => {
         if (!detail?.status) return '';
+        // O sub_status manda, venha o status como vier: a ML devolve bloqueio
+        // dela junto de status 'active' também, e aí um selo verde "Ativo"
+        // escondia justamente o motivo de o anúncio não vender. Mesmo
+        // vocabulário do painel (ad-selector.js), pra não dizer duas coisas
+        // diferentes sobre o mesmo anúncio.
+        const MF_SUB_STATUS = {
+            suspended: { texto: 'Suspenso pelo Mercado Livre', classe: 'error', ajuda: 'O Mercado Livre suspendeu este anúncio. Só ele pode liberar — veja o motivo no painel do ML.' },
+            forbidden: { texto: 'Infração', classe: 'error', ajuda: 'O Mercado Livre bloqueou o anúncio por infração de política.' },
+            waiting_for_patch: { texto: 'Corrigir para reativar', classe: 'error', ajuda: 'O Mercado Livre pede uma correção antes de o anúncio voltar ao ar.' },
+            freezed: { texto: 'Congelado', classe: 'error', ajuda: 'O Mercado Livre congelou este anúncio.' },
+            out_of_stock: { texto: 'Pausado — sem estoque', classe: 'neutral', ajuda: 'O Mercado Livre pausou o anúncio porque o estoque acabou.' },
+            deleted: { texto: 'Excluído', classe: 'muted', ajuda: 'Este anúncio foi excluído.' },
+        };
+        const bloqueio = _sub.map(s => MF_SUB_STATUS[s]).find(Boolean);
+        if (bloqueio) return `<span class="status-badge ${bloqueio.classe}" title="${escapeHtml(bloqueio.ajuda)}">${bloqueio.texto}</span>`;
         if (detail.status === 'active') return '<span class="status-badge success">Ativo</span>';
-        if (detail.status === 'paused') {
-            return _sub.includes('out_of_stock')
-                ? '<span class="status-badge neutral" title="O Mercado Livre pausou o anúncio porque o estoque acabou.">Pausado — sem estoque</span>'
-                : '<span class="status-badge neutral" title="Este anúncio não está aparecendo para os compradores.">Pausado</span>';
-        }
+        if (detail.status === 'paused') return '<span class="status-badge neutral" title="Este anúncio não está aparecendo para os compradores.">Pausado</span>';
         const outros = { closed: 'Encerrado', under_review: 'Em revisão', inactive: 'Inativo', payment_required: 'Aguardando pagamento' };
         return `<span class="status-badge muted">${outros[detail.status] || 'Situação incomum'}</span>`;
     })();
@@ -5054,7 +5065,13 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                             if (itemsData.results.length === 1) {
                                 const unico = itemsData.results[0];
                                 const unicoId = typeof unico === 'string' ? unico : (unico?.id || unico?.item_id);
-                                if (unicoId) {
+                                // Só segue se for OUTRO id e um anúncio (MLB) de verdade.
+                                // Se a ML devolvesse aqui o próprio id do produto, o parse
+                                // classificaria como MLBU de novo e a análise recursaria
+                                // no mesmo id para sempre, travando a página.
+                                const ehOutroAnuncio = unicoId && unicoId !== itemId
+                                    && (normalizeMlbId(String(unicoId)) || {}).type === 'mlb';
+                                if (ehOutroAnuncio) {
                                     console.log(`Produto com um anúncio só (${unicoId}) — abrindo a análise dele direto.`);
                                     return await analisarAnuncio(unicoId, append);
                                 }
@@ -5104,6 +5121,13 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                     } else {
                         if (itemData?.code === 404) {
                             throw new Error(`Não encontramos esse anúncio no Mercado Livre. Confira se o link ou o código está certo — e lembre que a análise só funciona com anúncios da conta conectada ao app.`);
+                        }
+                        if (itemData?.code === 401) {
+                            // Falha permanente: mandar "tente de novo" faz o vendedor
+                            // repetir para sempre o que só reconectar resolve.
+                            const e401 = new Error(`A conexão com o Mercado Livre expirou. Reconecte sua conta em Minha Conta → Adicionar Conta e tente de novo.`);
+                            e401.isAuthError = true;
+                            throw e401;
                         }
                         throw new Error(`Não conseguimos trazer os dados desse anúncio agora. Tente de novo em alguns segundos; se continuar, confira se ele pertence à conta conectada.`);
                     }
