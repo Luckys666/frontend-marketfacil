@@ -162,7 +162,8 @@ const state = {
   order: 'last_updated_desc',
   search: '',
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
-  skuStatusRestore: null,        // status a devolver quando a busca por SKU (que força "Todos") sair
+  statusRestore: null,           // status a devolver quando o degrau que força "Todos" sair
+  qAllTried: false,              // true depois de repetir o nome sem o filtro de status
   skuTried: false,               // true depois de a escada de busca já ter tentado o SELLER_SKU
   skuAltTried: false,            // true depois de tentar também o seller_custom_field (sku=)
   pendingBanner: null,           // aviso a exibir na próxima carga (loadPage limpa a área de aviso ao começar)
@@ -745,15 +746,53 @@ function nomeDoAtributo(item, code) {
 /* =========================================================================
    Construção da URL de busca da página
    ========================================================================= */
-// Degraus da busca, em ordem: nome -> SELLER_SKU -> seller_custom_field.
-// Devolve o próximo param a tentar, ou null quando a escada acabou.
-function nextSearchParam() {
-  if (state.searchParam === 'q' && !state.skuTried) return CONFIG.SKU_PARAM;
-  if (state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried) return CONFIG.SKU_PARAM_ALT;
+// Um texto só pode virar consulta de SKU se puder SER um SKU: o proxy valida
+// /^[\w\-.]{1,100}$/ e devolve 400 pra espaço e acento. Tentar assim mesmo
+// gastava uma chamada e derrubava a busca inteira numa tela de erro — buscar
+// "sapatilha preta" e receber "não conseguimos carregar seus anúncios".
+function pareceSku(texto) {
+  return /^[\w\-.]{1,100}$/.test(texto || '');
+}
+
+// Degraus da busca, em ordem: nome no status escolhido -> nome em todos os
+// status -> SELLER_SKU -> seller_custom_field. Devolve o próximo degrau, ou
+// null quando a escada acabou. `todosOsStatus` liga o "Todos" antes de repetir.
+function nextSearchStep() {
+  const termo = state.search || '';
+  // O anúncio procurado costuma estar pausado, e o painel abre em "Ativos":
+  // medido na conta real — "sapatilha" dá 0 em ativos e 15 em todos.
+  if (state.searchParam === 'q' && !state.qAllTried && state.status !== 'all') {
+    return { param: 'q', todosOsStatus: true };
+  }
+  if (state.searchParam === 'q' && !state.skuTried && pareceSku(termo)) {
+    return { param: CONFIG.SKU_PARAM, todosOsStatus: true };
+  }
+  if (state.searchParam === CONFIG.SKU_PARAM && !state.skuAltTried && pareceSku(termo)) {
+    return { param: CONFIG.SKU_PARAM_ALT, todosOsStatus: true };
+  }
   return null;
 }
+
+// Sobe um degrau e devolve true quando conseguiu (quem chama faz o loadPage).
+function avancarDegrau() {
+  const proximo = nextSearchStep();
+  if (!proximo) return false;
+  state.searchParam = proximo.param;
+  if (proximo.param === 'q') state.qAllTried = true;
+  else if (proximo.param === CONFIG.SKU_PARAM) state.skuTried = true;
+  else state.skuAltTried = true;
+  // SKU casa exato e o nome pode estar num pausado: manter "Ativos" esconderia
+  // justamente o anúncio procurado.
+  if (proximo.todosOsStatus && state.status !== 'all') {
+    state.statusRestore = state.status;
+    setStatusToggle('all');
+  }
+  return true;
+}
+
 // Recomeça a escada (toda busca nova entra pelo primeiro degrau)
 function resetSearchLadder() {
+  state.qAllTried = false;
   state.skuTried = false;
   state.skuAltTried = false;
 }
@@ -1529,8 +1568,14 @@ function relationSubrowHtml(rel) {
 // case-sensitive na ML, e isso não é adivinhável: a mensagem diz.
 function emptyStateMsg() {
   if (state.search) {
-    // a escada já passou por título e pelos dois campos de SKU
-    return `Nenhum anúncio com <b>${escapeHtml(state.search)}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
+    const termo = escapeHtml(state.search);
+    // Só afirmar o que a escada realmente checou: com espaço ou acento o SKU
+    // nem chega a ser consultado (a ML casa SKU exato, sem espaço), então dizer
+    // "nem no SKU" ali seria mentira.
+    if (!pareceSku(state.search)) {
+      return `Nenhum anúncio com <b>${termo}</b> no título, entre ativos e pausados. Se você procurava por SKU, digite o código sozinho (sem espaços); se for um anúncio específico, cole o ID ou o link dele.`;
+    }
+    return `Nenhum anúncio com <b>${termo}</b> no título nem no SKU. Se for SKU, confira maiúsculas e traços (a busca é exata); se for um anúncio específico, cole o ID ou o link dele.`;
   }
   if (state.freeShipUnder) return `Nenhum anúncio da sua conta está abaixo de R$ ${PROBLEM_RULES.freeShippingFloor} com frete grátis.`;
   if (state.discountOnly) return 'Nenhum anúncio da sua conta está com desconto.';
@@ -1907,21 +1952,11 @@ async function loadPage() {
     // Escada de busca sem resultado — o vendedor digita uma coisa só e a lista se
     // vira. Cada degrau só roda quando o anterior volta VAZIO, então a busca comum
     // (nome que existe) continua custando UMA chamada:
-    //   1. q=            (nome, modo automático)
-    //   2. seller_sku=   (atributo SELLER_SKU) — em todos os status, porque procurar
-    //                     SKU é pontual e o anúncio costuma estar pausado
-    //   3. sku=          (campo seller_custom_field, o outro SKU da ML)
-    if (!ids.length && state.search) {
-      const proximoParam = nextSearchParam();
-      if (proximoParam) {
-        state.searchParam = proximoParam;
-        if (proximoParam === CONFIG.SKU_PARAM) state.skuTried = true;
-        else state.skuAltTried = true;
-        // SKU casa exato: manter "Ativos" esconderia o anúncio pausado procurado
-        if (state.status !== 'all') { state.skuStatusRestore = state.status; setStatusToggle('all'); }
-        return loadPage();
-      }
-    }
+    //   1. q=            (nome, no status que ele escolheu)
+    //   2. q= sem status (o mesmo nome entre pausados também)
+    //   3. seller_sku=   (atributo SELLER_SKU) — só se o texto puder ser um SKU
+    //   4. sku=          (campo seller_custom_field, o outro SKU da ML)
+    if (!ids.length && state.search && avancarDegrau()) return loadPage();
     if (!ids.length) { state.lastItems = []; state.loading = false; renderRows([]); return; }
     const items = await hydrate(ids);
     if (desatualizada()) return;
@@ -1936,15 +1971,26 @@ async function loadPage() {
     const veioDeSku = state.searchParam === CONFIG.SKU_PARAM || state.searchParam === CONFIG.SKU_PARAM_ALT;
     if (state.search && veioDeSku) {
       setBanner('info', 'Não achamos esse texto no título dos anúncios — estes são os que batem com o SKU, entre ativos e pausados.');
+    } else if (state.search && state.qAllTried && state.searchParam === 'q') {
+      // Achou só depois de tirar o filtro de status: sem dizer isso, o vendedor
+      // vê a lista trocar de "Ativos" para "Todos" sozinha e não entende.
+      setBanner('info', 'Nenhum anúncio ativo com esse nome — estes incluem os pausados.');
     }
     loadVisitsForPage(ids);   // camada C — visitas 30d da página (assíncrono, enriquece depois)
   } catch (err) {
-    // Fallback de busca por nome: se q= falhou, tenta o SKU com aviso amigável.
-    // (o param é seller_sku — sku= devolve 0 sempre, validado em 03/08)
-    if (state.search && state.searchParam === 'q' && err.status && err.status >= 400 && err.status !== 401) {
-      state.searchParam = CONFIG.SKU_PARAM;
-      setBannerNextLoad('warn', 'A busca por nome ainda não está disponível — tentando pelo SKU. Para o resultado exato, cole o ID do anúncio (ex.: MLB123456789).');
-      return loadPage();
+    // Degrau de busca que falha NÃO é app quebrado — é o termo que não serve
+    // pra aquele campo (o proxy recusa SKU com espaço ou acento). Antes isso
+    // caía em renderError e "batata frita 123" virava "não conseguimos carregar
+    // seus anúncios". Segue a escada; quando ela acaba, o resultado honesto é
+    // a lista vazia. Sessão expirada (401) e excesso de consultas (429) seguem
+    // sendo estado próprio, porque aí nada funciona mesmo.
+    const degrauFalhou = state.search && err.status && err.status >= 400 && err.status !== 401 && err.status !== 429;
+    if (degrauFalhou) {
+      if (avancarDegrau()) return loadPage();
+      state.lastItems = [];
+      state.loading = false;
+      renderRows([]);
+      return;
     }
     state.loading = false;
     renderError(err);
@@ -2272,12 +2318,12 @@ function applySearchPlaceholder() {
     ? (small ? 'Buscar anúncio' : 'Buscar por nome, ID, link ou SKU')
     : (small ? 'ID do anúncio' : 'ID ou link do anúncio (ex.: MLB123456789)');
 }
-// Devolve o status que a busca por SKU trocou por "Todos" (só se o usuário não
-// tiver escolhido outro no meio do caminho — nesse caso o restore já foi zerado).
+// Devolve o status que um degrau da busca trocou por "Todos" (só se o usuário
+// não tiver escolhido outro no meio do caminho — aí o restore já foi zerado).
 function restoreStatusAfterSku() {
-  if (state.skuStatusRestore == null) return;
-  setStatusToggle(state.skuStatusRestore);
-  state.skuStatusRestore = null;
+  if (state.statusRestore == null) return;
+  setStatusToggle(state.statusRestore);
+  state.statusRestore = null;
 }
 // espelha o estado (vindo da URL) nos controles da UI
 function syncControlsToState() {
@@ -2333,7 +2379,7 @@ function wireControls() {
         }
       }
       state.prevStatus = null;   // troca manual de status é escolha explícita — não devolver depois
-      state.skuStatusRestore = null;   // idem para o "Todos" que a busca por SKU liga sozinha
+      state.statusRestore = null;   // idem para o "Todos" que a escada de busca liga sozinha
       setStatusToggle(newStatus); state.offset = 0; syncClearBtn(); loadPage();
     });
   });
@@ -2409,7 +2455,7 @@ function wireControls() {
     lastSubmit = null;
     state.status = 'active'; state.order = 'last_updated_desc';
     state.search = ''; state.searchParam = null; resetSearchLadder();
-    state.skuStatusRestore = null; state.skuAltTried = false; state.activeChip = null; state.prevStatus = null;
+    state.statusRestore = null; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
     syncControlsToState(); clearBanner();
     renderChipsFresh(); loadPage();
