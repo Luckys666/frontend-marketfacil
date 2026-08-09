@@ -1320,10 +1320,28 @@
 }
 
 /* ── Responsive ── */
+/* ── Product Ads: grids que precisam respirar no celular ──
+   As métricas ficavam num grid inline de 6 colunas fixas: em 375px cada
+   coluna sobra ~55px, os rótulos truncavam ("IMPR…", "TAC…", "CON…") e a
+   sexta ficava cortada. Vira classe pra media query poder alcançar. */
+.ana-wrapper .ana-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ana-wrapper .ana-channel-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 8px;
+}
+
 @media (max-width: 768px) {
   .ana-wrapper {
     padding: 16px;
   }
+
+  .ana-wrapper .ana-metrics-grid { grid-template-columns: repeat(3, 1fr); }
 
   .ana-wrapper .performance-bucket { padding-left: 10px; }
   .ana-wrapper .performance-variable { padding-left: 6px; }
@@ -1348,6 +1366,8 @@
   .ana-wrapper {
     padding: 12px;
   }
+
+  .ana-wrapper .ana-metrics-grid { grid-template-columns: repeat(2, 1fr); }
 
   .ana-wrapper .input-area {
     flex-direction: column;
