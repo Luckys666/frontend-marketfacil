@@ -854,18 +854,22 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
         });
     }
 
-    // (7) Ads ativo mas em "hold" — anúncio elegível porém não rodando
-    const _adLevel = adsData?.ad_info?.current_level;
-    if (adsData?.has_ads && _adLevel === 'hold') {
+    // (7) Publicidade parada — o anúncio está na campanha mas o ML não exibe.
+    // Dois erros aqui: lia `current_level`, que é a REPUTAÇÃO do anúncio, então
+    // a condição nunca era verdadeira (o "hold" vive em `status`); e o texto
+    // mandava mexer no lance, quando a doc da ML diz que a causa é o anúncio
+    // estar pausado ou sem estoque no marketplace.
+    const _adStatus = adsData?.ad_info?.status;
+    if (adsData?.has_ads && _adStatus === 'hold') {
         push({
             kind: 'ads_hold',
             priority: 1,
             icon: MF_OPP_KIND_ICON.ads_hold,
-            title: `Ads em hold (não está rodando)`,
-            detail: `Sua campanha está ativa mas esse anúncio está com nível "hold" — provavelmente o lance está abaixo do mínimo da categoria. Aumente o lance ou troque a estratégia.`,
+            title: `Publicidade parada neste anúncio`,
+            detail: `O anúncio está na campanha, mas o Mercado Livre não o exibe enquanto ele estiver pausado ou sem estoque. Reative o anúncio ou reponha o estoque e a publicidade volta sozinha.`,
             value: 0,
             actions: [
-                { type: 'external', label: 'Ajustar no Planejador', href: '/planejador-ads' },
+                ...(editUrl ? [{ type: 'external', label: 'Abrir no Mercado Livre', href: editUrl }] : []),
             ],
         });
     }
@@ -1476,9 +1480,27 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
             </div>`;
     }
 
+    // Situação do anúncio no Mercado Livre. Sem isso, dava para analisar um
+    // anúncio pausado (a conta de teste tem 100 deles) sem nada na tela dizer
+    // que ele está fora do ar — e a nota, as visitas e o Ads passam a ser lidos
+    // como se o anúncio estivesse vendendo.
+    const _sub = Array.isArray(detail?.sub_status) ? detail.sub_status : [];
+    const situacaoHtml = (() => {
+        if (!detail?.status) return '';
+        if (detail.status === 'active') return '<span class="status-badge success">Ativo</span>';
+        if (detail.status === 'paused') {
+            return _sub.includes('out_of_stock')
+                ? '<span class="status-badge neutral" title="O Mercado Livre pausou o anúncio porque o estoque acabou.">Pausado — sem estoque</span>'
+                : '<span class="status-badge neutral" title="Este anúncio não está aparecendo para os compradores.">Pausado</span>';
+        }
+        const outros = { closed: 'Encerrado', under_review: 'Em revisão', inactive: 'Inativo', payment_required: 'Aguardando pagamento' };
+        return `<span class="status-badge muted">${outros[detail.status] || 'Situação incomum'}</span>`;
+    })();
+
     // Identificação do que está sendo analisado (anúncio, e o produto quando é família)
-    const idsHtml = (detail?.id || detail?.user_product_id) ? `
-        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">
+    const idsHtml = (detail?.id || detail?.user_product_id || situacaoHtml) ? `
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center;">
+            ${situacaoHtml}
             ${detail?.id ? chipId('Anúncio', detail.id, 'ID do anúncio no Mercado Livre') : ''}
             ${detail?.user_product_id ? chipId('Produto (MLBU)', detail.user_product_id, 'ID do produto que agrupa as variações') : ''}
         </div>` : '';
@@ -4092,9 +4114,21 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const periods = [7, 15, 30, 60, 90];
     const periodBtns = periods.map(d => `<button onclick="window.reloadAdsMetrics(${d})" style="padding:4px 12px; border-radius:4px; border:1px solid ${d === activeDays ? 'var(--blue)' : 'var(--border)'}; background:${d === activeDays ? 'var(--blue)' : 'var(--bg-card)'}; color:${d === activeDays ? '#fff' : 'var(--text-secondary)'}; font-size:0.75rem; font-weight:600; cursor:pointer; font-family:inherit; text-transform:none; letter-spacing:0;">${d}d</button>`).join('');
 
-    const statusBadge = adInfo.status === 'active'
-        ? '<span class="status-badge success">Ativo</span>'
-        : `<span class="status-badge muted">${adInfo.status || 'Desconhecido'}</span>`;
+    // Status do anúncio DENTRO da publicidade, em português. Os nomes e o que
+    // cada um quer dizer estão na doc de Product Ads da ML (filtro `statuses`);
+    // antes o valor saía cru e virava um selo "HOLD" que não diz nada ao vendedor.
+    const MF_ADS_STATUS = {
+        active: { texto: 'Ativo', classe: 'success', ajuda: 'Este anúncio está rodando na campanha.' },
+        paused: { texto: 'Pausado na campanha', classe: 'muted', ajuda: 'O anúncio está na campanha, mas com a publicidade pausada.' },
+        hold: { texto: 'Fora do ar', classe: 'muted', ajuda: 'O Mercado Livre desabilitou a publicidade porque o anúncio está pausado ou sem estoque.' },
+        idle: { texto: 'Sem campanha', classe: 'muted', ajuda: 'O anúncio pode ser anunciado, mas não está em nenhuma campanha.' },
+        delegated: { texto: 'Delegado a outra conta', classe: 'muted', ajuda: 'A publicidade deste anúncio está sob controle de outro anunciante.' },
+        revoked: { texto: 'Devolvido para você', classe: 'muted', ajuda: 'O outro anunciante devolveu este anúncio, que voltou para o seu controle.' },
+    };
+    const _st = MF_ADS_STATUS[adInfo.status];
+    const statusBadge = _st
+        ? `<span class="status-badge ${_st.classe}" title="${escapeHtml(_st.ajuda)}">${_st.texto}</span>`
+        : '<span class="status-badge muted">Sem informação</span>';
 
     // --- 4. Metrics grid (5 columns) ---
     const metricCard = (label, value, trend, valueColor) => `
@@ -4111,10 +4145,19 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const campaignRoasTarget = campaign.roas_target || null;
     const campaignBudget = campaign.budget || null;
     const campaignName = campaign.name || '—';
-    const adLevel = adInfo.current_level || null;
+    // `current_level` é a REPUTAÇÃO do anúncio (doc de Product Ads), não o
+    // estado da publicidade — o selo antigo dizia "Nível: newbie" e sugeria
+    // uma escala que não existe. Sem tradução conhecida, não vai pra tela.
+    const MF_ADS_REPUTACAO = {
+        newbie: { texto: 'Ainda sem histórico', cor: 'yellow' },
+        green: { texto: 'Boa reputação', cor: 'green' },
+        yellow: { texto: 'Reputação mediana', cor: 'yellow' },
+        red: { texto: 'Reputação baixa', cor: 'red' },
+    };
+    const adLevel = MF_ADS_REPUTACAO[adInfo.current_level] || null;
 
     const metricsGridHtml = `
-        <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; margin-bottom:16px;">
+        <div class="ana-metrics-grid">
             ${metricCard('Impressões', fmt(totalImpressions), trendBadge(impTrend))}
             ${metricCard('Cliques', fmt(totalClicks), trendBadge(clicksTrend))}
             ${metricCard('CTR', ctr + '%', trendBadge(ctrTrend), parseFloat(ctr) >= 1 ? 'var(--green-dark)' : 'var(--red)')}
@@ -4157,22 +4200,22 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             <div style="margin-bottom:16px;">
                 <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${activeDays} dias)</div>
                 <div style="border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
-                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:6px 10px; background:var(--row-alt); font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.04em;">
+                    <div class="ana-channel-row" style="padding:6px 10px; background:var(--row-alt); font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.04em;">
                         <span>Canal</span><span style="text-align:right;">Visitas</span><span style="text-align:right;">Vendas</span><span style="text-align:right;">Conversão</span>
                     </div>
-                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
+                    <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--blue); margin-right:6px;"></span>Ads</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsSales)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${adsCvr.toFixed(2)}%</span>
                     </div>
-                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
+                    <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px;"></span>Orgânico</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicSales)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${orgCvr.toFixed(2)}%</span>
                     </div>
-                    <div style="display:grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border); background:var(--bg-subtle, var(--row-alt));">
+                    <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border); background:var(--bg-subtle, var(--row-alt));">
                         <span style="font-weight:700;">Total</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalSales)}</span>
@@ -4189,7 +4232,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             ${campaignAcosTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--blue-light);border-radius:4px;"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ACOS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${parseFloat(acos) <= campaignAcosTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignAcosTarget}%</span></div>` : ''}
             ${campaignRoasTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ROAS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${roas >= campaignRoasTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignRoasTarget.toFixed(1)}x</span></div>` : ''}
             ${campaignBudget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Orçamento:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;">${fmtMoney(campaignBudget)}</span></div>` : ''}
-            ${adLevel ? `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:${adLevel === 'green' ? 'var(--green-light)' : (adLevel === 'yellow' ? 'var(--yellow-light)' : 'var(--red-light)')};border-radius:4px;"><span style="width:6px;height:6px;border-radius:50%;background:${adLevel === 'green' ? 'var(--green)' : (adLevel === 'yellow' ? 'var(--yellow)' : 'var(--red)')};"></span><span style="font-size:0.72rem;font-weight:600;">Nível: ${adLevel}</span></div>` : ''}
+            ${adLevel ? `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--${adLevel.cor}-light);border-radius:4px;" title="Reputação que o Mercado Livre dá a este anúncio dentro da publicidade."><span style="width:6px;height:6px;border-radius:50%;background:var(--${adLevel.cor});"></span><span style="font-size:0.72rem;font-weight:600;">${adLevel.texto}</span></div>` : ''}
         </div>` : ''}`;
 
     // --- 5. Navy ticker bar ---
@@ -4915,8 +4958,11 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         let parsed = null;
 
         if (itemIdToAnalyze) {
-            // Called programmatically with an MLB ID (from MLBU item click)
-            parsed = { id: itemIdToAnalyze, type: 'mlb' };
+            // Chamada programática (clique num item da lista do MLBU/catálogo,
+            // deep-link ?item=). Passa pelo MESMO parse do input: fixar
+            // type:'mlb' aqui fazia ?item=MLBU… buscar como anúncio comum e
+            // morrer em "não foi possível obter os dados do anúncio".
+            parsed = normalizeMlbId(String(itemIdToAnalyze)) || { id: itemIdToAnalyze, type: 'mlb' };
         } else {
             const inputEl = document.getElementById('input-url');
             if (inputEl) {
@@ -5002,6 +5048,17 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
                         const itemsData = await fetchApiData(`${API_USER_PRODUCTS_ENDPOINT}/${itemId}/items?seller_id=${detail.seller_id}`, accessToken);
                         if (itemsData?.results?.length > 0) {
+                            // Um anúncio só: a tela "Selecione um anúncio abaixo" com um
+                            // item apenas é um clique a troco de nada — vai direto pra
+                            // análise dele. Com dois ou mais, a escolha continua.
+                            if (itemsData.results.length === 1) {
+                                const unico = itemsData.results[0];
+                                const unicoId = typeof unico === 'string' ? unico : (unico?.id || unico?.item_id);
+                                if (unicoId) {
+                                    console.log(`Produto com um anúncio só (${unicoId}) — abrindo a análise dele direto.`);
+                                    return await analisarAnuncio(unicoId, append);
+                                }
+                            }
                             setLoading('Buscando detalhes dos anúncios...', 70);
                             await displayMlbuResults(detail, itemsData.results, accessToken);
                             return; // Retorna para o finally esconder o loader
@@ -5045,7 +5102,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                     } else if (itemData?.code === 403) {
                         throw new Error(`O Mercado Livre bloqueia o acesso aos dados completos de anúncios de outros vendedores. Se este anúncio é seu, verifique se ele pertence à conta do Mercado Livre conectada ao app.`);
                     } else {
-                        throw new Error(`Não foi possível obter os dados do anúncio (código ${itemData?.code || 'desconhecido'}).`);
+                        if (itemData?.code === 404) {
+                            throw new Error(`Não encontramos esse anúncio no Mercado Livre. Confira se o link ou o código está certo — e lembre que a análise só funciona com anúncios da conta conectada ao app.`);
+                        }
+                        throw new Error(`Não conseguimos trazer os dados desse anúncio agora. Tente de novo em alguns segundos; se continuar, confira se ele pertence à conta conectada.`);
                     }
                 }
             } catch (e) { console.warn(`Erro na API principal: ${e.message}`); fetchError = e; }
@@ -5231,12 +5291,11 @@ async function displayMlbuResults(mlbuDetail, mlbItems, accessToken) {
 
     // Header Card (Product Info + Tags)
     const headerEl = document.getElementById("mlbuHeader");
-    let tagsHtml = '';
-    if (mlbuDetail.tags && mlbuDetail.tags.length > 0) {
-        tagsHtml = '<div style="margin-top:10px; display:flex; gap:5px; flex-wrap:wrap;">';
-        mlbuDetail.tags.forEach(t => tagsHtml += `<span class="status-badge muted">${t}</span>`);
-        tagsHtml += '</div>';
-    }
+    // As tags do produto saíam cruas da ML e viravam selos tipo "PRIMARY", com
+    // cara de status importante. A doc de User Products não define o que elas
+    // significam e o vendedor não pode agir sobre nenhuma — então não vão pra
+    // tela (decisão do Lucas, 08/08). O dado continua vindo da API.
+    const tagsHtml = '';
 
     const imgUrl = mlbuDetail.pictures && mlbuDetail.pictures.length > 0 ? mlbuDetail.pictures[0].secure_url : '';
 
