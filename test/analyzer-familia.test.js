@@ -254,6 +254,27 @@ saveAttr('COLOR');   // o fetch é chamado antes do primeiro await, como no caso
 check('renomear dispara a requisição (o campo é editável mesmo)', houveFetch === 1, `fetch ${houveFetch}x`);
 check('e o corpo declara confirm_rename_variation',
   corpoEnviado && corpoEnviado.confirm_rename_variation === true, JSON.stringify(corpoEnviado));
+console.log('       corpo enviado -> ' + JSON.stringify(corpoEnviado));
+check('o corpo leva o valor NOVO da cor (é isso que renomeia)',
+  corpoEnviado && corpoEnviado.attributes && corpoEnviado.attributes[0]
+  && corpoEnviado.attributes[0].id === 'COLOR'
+  && corpoEnviado.attributes[0].value_name === 'Marrom 2',
+  JSON.stringify(corpoEnviado && corpoEnviado.attributes));
+
+// ── 3d. recusa do proxy chega legível (o code era ignorado) ─────────────
+const traduz = get('MF_translateMlError');
+const recusa = {
+  error: 'COLOR dá nome a esta variação, e renomear faz o anúncio perder a exposição que já tinha.',
+  code: 'child_pk_value_change_resets_item'
+};
+check('recusa do proxy mostra o texto pronto, não "(código: <parágrafo>)"',
+  traduz(recusa, A.childPk) === recusa.error, traduz(recusa, A.childPk));
+check('vale para as outras guardas de família também',
+  traduz({ error: 'Não consegui confirmar os dados deste anúncio.', code: 'category_unavailable_in_family' }, A.childPk)
+    === 'Não consegui confirmar os dados deste anúncio.');
+check('erro da própria ML continua no caminho antigo (tradução ES→PT)',
+  /não é válido/.test(traduz({ cause: [{ code: 'invalid_value', message: 'El valor no es valido' }] }, A.childPk)),
+  traduz({ cause: [{ code: 'invalid_value', message: 'El valor no es valido' }] }, A.childPk));
 
 // ── 4. visão de família: selo e nota ─────────────────────────────────────
 looseQS = true;

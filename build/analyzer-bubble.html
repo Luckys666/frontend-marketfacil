@@ -3796,6 +3796,17 @@ function MF_translateMlError(errData, catAttr) {
     if (!errData) return 'Erro desconhecido.';
 
     const cause = Array.isArray(errData.cause) ? errData.cause[0] : null;
+
+    // Recusa do NOSSO proxy: vem como { error: "<texto pronto>", code: "<slug>" }. Antes o
+    // `code` do proxy era ignorado e `errData.error` entrava no lugar do código — a mensagem
+    // saía como "Não foi possível validar Cor. (código: <parágrafo inteiro>)". Valia para
+    // TODAS as guardas de família, não só a de renomear.
+    const codigoProxy = String(errData.code || '');
+    if (/^(child_pk_|attr_|category_unavailable_in_family|item_unavailable|title_not_editable)/.test(codigoProxy)) {
+        const pronta = String(errData.error || '').trim();
+        if (pronta) return pronta;
+    }
+
     const code = String(cause?.code || errData.ml_error || errData.error || '');
     const rawMsg = String(cause?.message || errData.message || '');
 
