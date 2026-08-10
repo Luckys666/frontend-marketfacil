@@ -346,6 +346,58 @@
   gap: 6px;
   width: 100%;
 }
+/* Renomear variação: ação sem desfazer. O alerta ocupa a linha inteira acima do campo,
+   e o botão que confirma é o discreto — o destaque fica em "Manter como está". */
+.ana-wrapper .attr-edit-box.mf-attr-perigo { flex-direction: column; align-items: stretch; }
+.ana-wrapper .mf-alerta-renomear {
+  background: var(--red-light, #fee2e2);
+  border: 1px solid var(--red, #ff3b5c);
+  border-radius: 6px;
+  padding: 10px 12px;
+  width: 100%;
+}
+.ana-wrapper .mf-alerta-titulo {
+  font-size: 0.86rem; font-weight: 700;
+  color: var(--red-dark, #b91c1c);
+  margin-bottom: 4px;
+}
+.ana-wrapper .mf-alerta-texto {
+  font-size: 0.78rem; line-height: 1.45;
+  color: var(--text, #0f172a);
+}
+.ana-wrapper .mf-alerta-acoes {
+  display: flex; flex-wrap: wrap; gap: 8px; width: 100%;
+}
+.ana-wrapper .mf-btn-manter {
+  flex: 1 1 auto;
+  padding: 8px 14px;
+  background: var(--blue, #0066ff); color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  width: auto; height: auto;
+}
+.ana-wrapper .mf-btn-renomear {
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--red-dark, #b91c1c);
+  border: 1px solid var(--red, #ff3b5c); border-radius: 6px;
+  font-size: 0.78rem; font-weight: 500; cursor: pointer;
+  width: auto; height: auto;
+}
+.ana-wrapper .mf-alerta-inline {
+  grid-column: 1 / -1;
+  font-size: 0.74rem; line-height: 1.4;
+  color: var(--red-dark, #b91c1c);
+  background: var(--red-light, #fee2e2);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+.ana-wrapper .mfd-fb-edit-field.mf-var-perigo { border-color: var(--red, #ff3b5c); }
+@media (max-width: 600px) {
+  .ana-wrapper .mf-alerta-acoes { flex-direction: column; }
+  .ana-wrapper .mf-btn-manter, .ana-wrapper .mf-btn-renomear { width: 100%; }
+}
+
 .ana-wrapper .attr-edit-input {
   flex: 1 1 140px;
   min-width: 0;
@@ -3417,14 +3469,14 @@ function ehAtributoDeSistema(attrId) {
 // Tipos que o vendedor consegue preencher (o resto nem tem campo de edição)
 const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
 
-// Hierarquias EDITÁVEIS por variação (per-UP). PARENT_PK fica fora — é ele que agrupa —
-// e CHILD_PK saiu em 09/08/2026: o valor dele é o NOME da variação, entra no título e
-// portanto no permalink. Trocar "Marrom" por "Marrom 2" muda o link e o anúncio perde o
-// histórico que tinha (visto na conta do Lucas). A auditoria de 07/08 tinha liberado a
-// troca de valor porque só media se o anúncio saía da família — saía não, mas resetava.
+// Hierarquias EDITÁVEIS por variação (per-UP). Só PARENT_PK fica fora — é ele que agrupa.
+// CHILD_PK saiu em 09/08 e VOLTOU em 10/08: renomear a variação muda o título, o permalink
+// e o anúncio perde a exposição — mas travar não protegia ninguém, porque o vendedor faz o
+// mesmo pelo Mercado Livre e aí nem lê o aviso. Agora edita com double check
+// (mfRenomeiaVariacao + alerta vermelho + confirm_rename_variation no proxy).
 // as variações. `FAMILY` entrou em 05/08/2026: o PUT no item grava e o family_id não muda
 // (medido em conta real), e o valor vale para a variação editada.
-const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
+const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
 
 // Atributos que entram no cálculo do family_id sem que a `hierarchy` denuncie.
 // `ITEM_CONDITION` vem da ML como `hierarchy: ITEM` — cara de campo comum —, mas a doc
@@ -3471,14 +3523,27 @@ function mfMotivoNaoEditavel(catAttr, detail) {
     if (temVariacoes && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase())) return 'variacao';
     if (detail?.user_product_id && MF_ATTRS_DA_ASSINATURA.has(catAttr.id)) return 'familia';
     if (detail?.user_product_id && catAttr.hierarchy === 'PARENT_PK') return 'familia';
-    // CHILD_PK em anúncio de família: os dois lados são bloqueio, por motivos diferentes.
-    // Vazio → ganhar o atributo muda a assinatura e o UP migra de família (irreversível).
-    // Preenchido → o valor é o nome da variação: trocar muda título, permalink e zera a
-    // inteligência do anúncio. Textos diferentes porque o vendedor precisa entender o custo.
-    if (detail?.user_product_id && catAttr.hierarchy === 'CHILD_PK') {
-        return mfAtributoPreenchido(detail, catAttr.id) ? 'nomevariacao' : 'familia';
-    }
+    // CHILD_PK VAZIO em família continua bloqueado: ganhar o atributo muda a assinatura, o
+    // UP migra de família sozinho e nem o editor conserta (family_id.collision). Não tem
+    // volta, então confirmação não resolve.
+    // CHILD_PK PREENCHIDO é editável com double check — ver mfRenomeiaVariacao. O dano lá
+    // (perder exposição) é grave mas conhecido, e o vendedor faria no ML de qualquer jeito.
+    if (detail?.user_product_id && catAttr.hierarchy === 'CHILD_PK' && !mfAtributoPreenchido(detail, catAttr.id)) return 'familia';
     return null;
+}
+/**
+ * Mexer NESTE campo renomeia a variação — e renomear muda o título, muda o permalink e o
+ * anúncio perde a exposição que tinha. Não é bloqueio: é o que exige o alerta vermelho e a
+ * confirmação explícita antes de salvar (decisão do Lucas, 10/08/2026).
+ *
+ * O mesmo acontece se o vendedor renomear pelo Mercado Livre — por isso avisar vale mais
+ * que travar: travar só empurra a mesma perda para fora do app, sem ele ler o aviso.
+ */
+function mfRenomeiaVariacao(catAttr, detail) {
+    if (!catAttr || catAttr.hierarchy !== 'CHILD_PK') return false;
+    const temVariacoes = Array.isArray(detail?.variations) && detail.variations.length > 0;
+    if (!detail?.user_product_id && !temVariacoes) return false;   // item solto: título é do vendedor
+    return mfAtributoPreenchido(detail, catAttr.id);
 }
 // O item já tem valor gravado nesse atributo?
 function mfAtributoPreenchido(detail, attrId) {
@@ -3488,18 +3553,16 @@ function mfAtributoPreenchido(detail, attrId) {
     return Array.isArray(a.values) && a.values.some((v) => v && (v.name || v.id));
 }
 function mfCampoEditavel(catAttr, detail) { return mfMotivoNaoEditavel(catAttr, detail) === null; }
-// Campo que só o Mercado Livre resolve: mexer por aqui quebraria o grupo de variações ou
-// resetaria o anúncio. Os dois viram o mesmo selo "só no ML" e escondem o lápis.
+// Campo que só o Mercado Livre resolve: mexer por aqui quebraria o grupo de variações.
+// Esconde o lápis e ganha o selo "só no ML".
 function mfSoNoML(catAttr, detail) {
-    const motivo = mfMotivoNaoEditavel(catAttr, detail);
-    return motivo === 'familia' || motivo === 'nomevariacao';
+    return mfMotivoNaoEditavel(catAttr, detail) === 'familia';
 }
 // Explicação curta de por que o campo não pode ser mexido por aqui. Usada só quando algum
 // caminho conseguiu chegar no salvar — a tela normal nem oferece esses campos.
 function MF_textoCampoBloqueado(catAttr, motivo) {
     const nome = catAttr?.name || 'Este campo';
     if (motivo === 'familia') return `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo — edite no Mercado Livre.`;
-    if (motivo === 'nomevariacao') return `${nome} dá nome a esta variação. Mudar o valor troca o link do anúncio e o histórico dele recomeça do zero.`;
     if (motivo === 'variacao') return `${nome} é definido em cada variação — edite pela tela de variações.`;
     if (motivo === 'sistema') return `${nome} é preenchido pelo próprio Mercado Livre.`;
     return `${nome} não pode ser editado por aqui.`;
@@ -4562,7 +4625,24 @@ window.openAttrEditor = function (attrId) {
         else if (String(attrId).toUpperCase() === 'SELLER_SKU') hintExtra = ` · seu código interno (qualquer texto, até ${maxLen} caracteres)`;
     }
 
-    wrapper.innerHTML = `
+    // Renomear variação é caro e não tem desfazer: o alerta vem ANTES do campo, e quem
+    // confirma tem que passar por cima do botão de cancelar, que é o destaque.
+    const renomeia = mfRenomeiaVariacao(catAttr, state.detail);
+    wrapper.innerHTML = renomeia ? `
+        <div class="attr-edit-box mf-attr-perigo">
+            <div class="mf-alerta-renomear">
+                <div class="mf-alerta-titulo">⚠️ Isto renomeia a variação — o anúncio perde a exposição</div>
+                <div class="mf-alerta-texto">O link do anúncio muda e ele recomeça do zero, como se fosse novo. Acontece igual se você renomear pelo Mercado Livre. Só vale a pena se o nome estiver realmente errado.</div>
+            </div>
+            ${inputHtml}
+            <div class="mf-alerta-acoes">
+                <button type="button" onclick="window.cancelAttrEditor('${attrId}')" class="attr-edit-cancel mf-btn-manter">Manter como está</button>
+                <button type="button" onclick="window.saveAttr('${attrId}')" class="attr-edit-save mf-btn-renomear">Renomear mesmo assim</button>
+            </div>
+            <div id="attr-edit-error-${attrId}" class="attr-edit-error" style="display:none;"></div>
+            <div class="attr-edit-hint">${catAttr.name}${maxLen && maxLen < 255 ? ` — até ${maxLen} caracteres` : ''}${hintExtra}</div>
+        </div>
+    ` : `
         <div class="attr-edit-box">
             ${inputHtml}
             <button type="button" onclick="window.saveAttr('${attrId}')" class="attr-edit-save" title="Salvar">✓</button>
@@ -4599,9 +4679,12 @@ window.saveAttr = async function (attrId) {
 
     const saveBtn = document.querySelector(`#attr-edit-wrapper-${attrId} .attr-edit-save`);
     const cancelBtn = document.querySelector(`#attr-edit-wrapper-${attrId} .attr-edit-cancel`);
+    // O botão do fluxo de renomear é textual ("Renomear mesmo assim"), não um ✓ — restaurar
+    // o rótulo original em vez de chumbar o símbolo, senão o aviso vira um tico verde.
+    const rotuloSalvar = saveBtn ? saveBtn.textContent : '✓';
     const showError = (msg) => {
         if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✓'; }
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = rotuloSalvar; }
         if (cancelBtn) cancelBtn.disabled = false;
         if (input) input.disabled = false;
     };
@@ -4651,7 +4734,12 @@ window.saveAttr = async function (attrId) {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ attributes: [attrPayload] })
+            // O proxy recusa renomear variação sem esta confirmação explícita: a rede de
+            // segurança continua de pé contra chamada acidental, e só sai do caminho de
+            // quem passou pelo alerta vermelho.
+            body: JSON.stringify(mfRenomeiaVariacao(catAttr, state.detail)
+                ? { attributes: [attrPayload], confirm_rename_variation: true }
+                : { attributes: [attrPayload] })
         });
         if (!res.ok) {
             let msg = `Erro ${res.status}`;
@@ -5947,11 +6035,19 @@ function MF_renderVariationField(catAttr, currentAttr, itemId) {
         inputHtml = `<input type="text" id="${inputId}" class="mfd-fb-input" value="${escapeHtml(currentValueName)}" placeholder="${escapeHtml(ph)}" />`;
     }
 
+    // Mesmo double check da ficha: aqui o campo é inline, então o alerta é uma linha
+    // vermelha acima do input e o ✓ vira texto — ninguém renomeia no automático.
+    const renomeia = mfRenomeiaVariacao(catAttr, {
+        user_product_id: 'familia',
+        attributes: currentAttr ? [currentAttr] : []
+    });
+    const salvar = `window.MF_saveVariationAttr('${escapeHtml(itemId)}', '${escapeHtml(id)}', '${inputId}', '${errorId}')`;
     return `
-        <div class="mfd-fb-edit-field">
+        <div class="mfd-fb-edit-field${renomeia ? ' mf-var-perigo' : ''}">
             <label for="${inputId}" class="mfd-fb-edit-label">${escapeHtml(name)}</label>
+            ${renomeia ? '<div class="mf-alerta-inline">⚠️ Renomear troca o link do anúncio e ele perde a exposição — aqui ou no Mercado Livre.</div>' : ''}
             ${inputHtml}
-            <button onclick="window.MF_saveVariationAttr('${escapeHtml(itemId)}', '${escapeHtml(id)}', '${inputId}', '${errorId}')" class="mfd-fb-save-btn" title="Salvar">✓</button>
+            <button onclick="${salvar}" class="mfd-fb-save-btn${renomeia ? ' mf-btn-renomear' : ''}" title="${renomeia ? 'Renomear mesmo assim' : 'Salvar'}">${renomeia ? 'Renomear mesmo assim' : '✓'}</button>
             <div id="${errorId}" class="mfd-fb-edit-error" style="display:none;"></div>
         </div>`;
 }
@@ -5999,7 +6095,12 @@ window.MF_saveVariationAttr = async function (itemId, attrId, inputId, errorId) 
         const res = await fetch(`${BASE_URL_PROXY}/api/fetch-item-update?item_id=${encodeURIComponent(itemId)}`, {
             method: 'PUT',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attributes: [attrPayload] }),
+            body: JSON.stringify(mfRenomeiaVariacao(catAttr, {
+                user_product_id: variacaoAtual?.up_id || 'familia',
+                attributes: variacaoAtual?.item_attributes || []
+            })
+                ? { attributes: [attrPayload], confirm_rename_variation: true }
+                : { attributes: [attrPayload] }),
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -6062,7 +6163,6 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const missingAttrs = [];
         const filledAttrs = [];
-        const nomeVariacaoAttrs = [];
         const isInFamily = !!detail?.user_product_id;
         stringAttributes.forEach(catAttr => {
             const adValue = adAttributesMap.get(catAttr.id);
@@ -6071,12 +6171,6 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
             const motivo = mfMotivoNaoEditavel(catAttr, detail);
             if (motivo === 'variacao') {
                 variationAttrs.push({ catAttr, adValue });
-            } else if (motivo === 'nomevariacao') {
-                // Fica na tela de propósito, em faixa própria. Travar só resolve metade: o
-                // vendedor pode renomear pelo ML e perder a exposição do mesmo jeito, e aí
-                // some da nossa tela sem ele nunca ter visto o preço. Fora das etapas para
-                // não entrar em placar nenhum — a contagem do cabeçalho é mfCampoEditavel.
-                nomeVariacaoAttrs.push({ catAttr, adValue });
             } else if (motivo) {
                 // sistema/família: sai da conta; aparece na nota de rodapé com o motivo
                 return;
@@ -6157,24 +6251,6 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
         // "Ficha Técnica (visão do Mercado Livre)".
         const notaForaDaConta = '';
 
-        // O que dá nome à variação: mostrado, nunca editável, com o preço escrito.
-        // O aviso vale igual para quem for mexer no Mercado Livre — é a única coisa que a
-        // gente consegue fazer por esse caso, já que fora do app não dá pra impedir.
-        let avisoNomeVariacao = '';
-        if (nomeVariacaoAttrs.length > 0) {
-            const itens = nomeVariacaoAttrs
-                .map(({ catAttr, adValue }) => `<strong>${escapeHtml(catAttr.name)}:</strong> ${escapeHtml(adValue)}`)
-                .join(' &nbsp;·&nbsp; ');
-            avisoNomeVariacao = `
-                <div style="background:var(--bg-subtle,#f1f5f9); border:1px solid var(--border,#e2e8f0); padding:10px 12px; border-radius:6px; margin-top:4px; display:flex; gap:10px; align-items:flex-start;">
-                    <span style="font-size:1rem; line-height:1.3;">🔒</span>
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-size:0.82rem; color:var(--text); word-break:break-word;">${itens}</div>
-                        <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">Dá nome a esta variação. Renomear — aqui ou no Mercado Livre — muda o link do anúncio, e ele perde a exposição que já tinha.</div>
-                    </div>
-                </div>`;
-        }
-
         // Banner informativo pros atributos gerenciados por variação
         let variationBanner = '';
         if (variationAttrs.length > 0) {
@@ -6195,7 +6271,6 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
         contentHtml = `
             ${variationBanner}
             ${etapasHtml}
-            ${avisoNomeVariacao}
             ${notaForaDaConta}`;
     }
 

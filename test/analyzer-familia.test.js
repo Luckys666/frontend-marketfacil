@@ -92,6 +92,7 @@ const get = (nome) => sandbox[nome] || vm.runInContext(`typeof ${nome} !== 'unde
 const mfMotivoNaoEditavel = get('mfMotivoNaoEditavel');
 const mfCampoEditavel = get('mfCampoEditavel');
 const mfSoNoML = get('mfSoNoML');
+const mfRenomeiaVariacao = get('mfRenomeiaVariacao');
 const MF_textoCampoBloqueado = get('MF_textoCampoBloqueado');
 const HIER_VARIACAO = get('MF_VARIATION_EDITABLE_HIERARCHIES');
 const exibirAtributosCategoria = get('exibirAtributosCategoria');
@@ -145,19 +146,23 @@ check('mfCampoEditavel concorda com mfMotivoNaoEditavel',
 const fabric = { id: 'FABRIC_DESIGN', name: 'Desenho do tecido', value_type: 'string', hierarchy: 'CHILD_PK', tags: {} };
 check('CHILD_PK VAZIO em família fica bloqueado (preencher tiraria do grupo)',
   mfMotivoNaoEditavel(fabric, itemEmFamilia) === 'familia', String(mfMotivoNaoEditavel(fabric, itemEmFamilia)));
-check('CHILD_PK PREENCHIDO é bloqueado: renomear a variação muda o link do anúncio',
-  mfMotivoNaoEditavel(A.childPk, itemEmFamilia) === 'nomevariacao', String(mfMotivoNaoEditavel(A.childPk, itemEmFamilia)));
-check('renomear variação tem texto próprio (fala de link e histórico, não de grupo)',
-  /link do anúncio/i.test(MF_textoCampoBloqueado(A.childPk, 'nomevariacao'))
-  && !/grupo/i.test(MF_textoCampoBloqueado(A.childPk, 'nomevariacao')),
-  MF_textoCampoBloqueado(A.childPk, 'nomevariacao'));
-check('os dois motivos contam como "só no ML" (escondem o lápis)',
-  mfSoNoML(A.childPk, itemEmFamilia) === true && mfSoNoML(A.parentPk, itemEmFamilia) === true
+// Preenchido é EDITÁVEL com double check (10/08): travar não protegia, porque o vendedor
+// renomeia pelo ML e lá não lê aviso nenhum. Bloqueio ficou só pro que não tem volta.
+check('CHILD_PK PREENCHIDO é editável (o freio agora é a confirmação, não o bloqueio)',
+  mfMotivoNaoEditavel(A.childPk, itemEmFamilia) === null, String(mfMotivoNaoEditavel(A.childPk, itemEmFamilia)));
+check('mas está marcado como "renomeia variação"',
+  mfRenomeiaVariacao(A.childPk, itemEmFamilia) === true);
+check('CHILD_PK vazio NÃO é renomeação (é o caso que tira da família, e segue travado)',
+  mfRenomeiaVariacao(fabric, itemEmFamilia) === false
+  && mfMotivoNaoEditavel(fabric, itemEmFamilia) === 'familia');
+check('"só no ML" voltou a ser só o agrupador (PARENT_PK)',
+  mfSoNoML(A.parentPk, itemEmFamilia) === true
+  && mfSoNoML(A.childPk, itemEmFamilia) === false
   && mfSoNoML(A.familyAttr, itemEmFamilia) === false);
 check('CHILD_PK vazio em anúncio SOLTO continua editável (não há família)',
   mfMotivoNaoEditavel(fabric, itemSolto) === null);
-check('CHILD_PK preenchido em anúncio SOLTO continua editável (não nomeia variação)',
-  mfMotivoNaoEditavel(A.childPk, itemSolto) === null, String(mfMotivoNaoEditavel(A.childPk, itemSolto)));
+check('em anúncio SOLTO não há renomeação de variação (título é escrito pelo vendedor)',
+  mfRenomeiaVariacao(A.childPk, itemSolto) === false);
 
 // ── 1c. ITEM_CONDITION: a hierarchy mente (vem como ITEM) ───────────────
 // A ML devolve hierarchy: ITEM, mas a doc lista ITEM_CONDITION entre os campos que
@@ -171,8 +176,8 @@ check('ITEM_CONDITION em anúncio solto continua editável (não há grupo pra q
 // ── 2. hierarquias do editor por variação ────────────────────────────────
 check('painel de variação passa a oferecer FAMILY', HIER_VARIACAO && HIER_VARIACAO.has('FAMILY'));
 check('painel de variação NÃO oferece PARENT_PK', HIER_VARIACAO && !HIER_VARIACAO.has('PARENT_PK'));
-check('painel de variação NÃO oferece CHILD_PK (é o nome da variação)',
-  HIER_VARIACAO && !HIER_VARIACAO.has('CHILD_PK'));
+check('painel de variação volta a oferecer CHILD_PK (com alerta, não com bloqueio)',
+  HIER_VARIACAO && HIER_VARIACAO.has('CHILD_PK'));
 check('painel de variação mantém CHILD_DEPENDENT/ITEM/PRODUCT_IDENTIFIER',
   ['CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER'].every((h) => HIER_VARIACAO.has(h)));
 
@@ -193,22 +198,11 @@ check('campo PARENT_PK some da lista de tarefas (sai da conta)', !html.includes(
 check('campo FAMILY entra na lista como campo a preencher', html.includes('Voltagem da bateria'));
 check('CHILD_PK vazio NÃO aparece com lápis', !html.includes("openAttrEditor('FABRIC_DESIGN')"));
 check('CHILD_PK vazio some da lista de tarefas', !html.includes('Desenho do tecido'));
-check('CHILD_PK preenchido NÃO tem mais lápis (renomear muda o link)', !html.includes("openAttrEditor('COLOR')"));
-// Sai da lista inteira, como Marca/Modelo em família: campo que o vendedor não mexe não
-// vira tarefa. A nota explicativa foi zerada em 05/08 (Lucas: menos avisos na tela) — a
-// cor continua visível no painel de variações e no próprio título do anúncio.
-check('CHILD_PK preenchido sai da lista de campos (não vira tarefa impossível)',
-  !html.includes("attr-edit-wrapper-COLOR"), html.slice(0, 200));
-// Sai das etapas, mas NÃO some da tela: travar só resolve o lado do app — quem renomear
-// pelo ML perde a exposição igual, e precisa ter lido o preço em algum lugar.
-check('nome da variação aparece em faixa própria, com o valor atual',
-  html.includes('Cor:') && html.includes('Preto'), html.slice(-600));
-check('a faixa avisa que vale também para o Mercado Livre',
-  /aqui ou no Mercado Livre/.test(html));
-check('a faixa fala em perder exposição, não em jargão de familia/permalink',
-  /perde a exposi/.test(html) && !/permalink/i.test(html));
-check('a faixa nao oferece edicao (nem lapis, nem editor)',
-  !html.includes("openAttrEditor('COLOR')"));
+// Volta pra lista normalmente: como voltou a ser editável, entra em filledAttrs E conta em
+// mfCampoEditavel — os dois contadores concordam sozinhos, sem precisar de exceção.
+check('CHILD_PK preenchido volta pra lista com lápis', html.includes("openAttrEditor('COLOR')"));
+check('CHILD_PK preenchido é renderizado como campo normal',
+  html.includes('attr-edit-wrapper-COLOR'), html.slice(0, 200));
 check('Condição do item não tem lápis em anúncio de família', !html.includes("openAttrEditor('ITEM_CONDITION')"));
 
 // ── 3b. nem abrir editor, nem enviar: campo bloqueado não vira requisição ──
@@ -234,6 +228,32 @@ saveAttr('ITEM_CONDITION');   // a guarda roda antes de qualquer await, então n
 check('salvar campo bloqueado não dispara requisição', houveFetch === 0, `fetch chamado ${houveFetch}x`);
 const erroCond = documentStub.getElementById('attr-edit-error-ITEM_CONDITION');
 check('salvar campo bloqueado explica o motivo na tela', /grupo de varia/.test(erroCond.textContent || ''), erroCond.textContent);
+
+// ── 3c. renomear variação: abre, mas com alerta e confirmação ────────────
+const wrapperCor = documentStub.getElementById('attr-edit-wrapper-COLOR');
+openAttrEditor('COLOR');
+const htmlCor = wrapperCor.innerHTML;
+check('editor de renomeação ABRE o campo (não é bloqueio)', htmlCor.includes('attr-input-COLOR'), htmlCor.slice(0, 160));
+check('com alerta vermelho falando em perder exposição', /perde a exposi/.test(htmlCor));
+check('o alerta avisa que no Mercado Livre é igual', /Mercado Livre/.test(htmlCor));
+check('o botão de confirmar diz o que faz, não é um ✓', /Renomear mesmo assim/.test(htmlCor));
+check('e "Manter como está" é a saída oferecida', /Manter como está/.test(htmlCor));
+
+// o salvar leva a confirmação explícita — sem ela o proxy recusa (v459)
+let corpoEnviado = null;
+sandbox.fetch = async (_url, opts) => {
+  houveFetch++;
+  corpoEnviado = JSON.parse(opts.body);
+  return { ok: true, status: 200, json: async () => ({}) };
+};
+sandbox.window.fetch = sandbox.fetch;
+const inputCor = documentStub.getElementById('attr-input-COLOR');
+inputCor.value = 'Marrom 2';
+inputCor.tagName = 'INPUT';
+saveAttr('COLOR');   // o fetch é chamado antes do primeiro await, como no caso bloqueado acima
+check('renomear dispara a requisição (o campo é editável mesmo)', houveFetch === 1, `fetch ${houveFetch}x`);
+check('e o corpo declara confirm_rename_variation',
+  corpoEnviado && corpoEnviado.confirm_rename_variation === true, JSON.stringify(corpoEnviado));
 
 // ── 4. visão de família: selo e nota ─────────────────────────────────────
 looseQS = true;

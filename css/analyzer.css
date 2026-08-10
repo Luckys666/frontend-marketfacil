@@ -341,6 +341,58 @@
   gap: 6px;
   width: 100%;
 }
+/* Renomear variação: ação sem desfazer. O alerta ocupa a linha inteira acima do campo,
+   e o botão que confirma é o discreto — o destaque fica em "Manter como está". */
+.ana-wrapper .attr-edit-box.mf-attr-perigo { flex-direction: column; align-items: stretch; }
+.ana-wrapper .mf-alerta-renomear {
+  background: var(--red-light, #fee2e2);
+  border: 1px solid var(--red, #ff3b5c);
+  border-radius: 6px;
+  padding: 10px 12px;
+  width: 100%;
+}
+.ana-wrapper .mf-alerta-titulo {
+  font-size: 0.86rem; font-weight: 700;
+  color: var(--red-dark, #b91c1c);
+  margin-bottom: 4px;
+}
+.ana-wrapper .mf-alerta-texto {
+  font-size: 0.78rem; line-height: 1.45;
+  color: var(--text, #0f172a);
+}
+.ana-wrapper .mf-alerta-acoes {
+  display: flex; flex-wrap: wrap; gap: 8px; width: 100%;
+}
+.ana-wrapper .mf-btn-manter {
+  flex: 1 1 auto;
+  padding: 8px 14px;
+  background: var(--blue, #0066ff); color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  width: auto; height: auto;
+}
+.ana-wrapper .mf-btn-renomear {
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--red-dark, #b91c1c);
+  border: 1px solid var(--red, #ff3b5c); border-radius: 6px;
+  font-size: 0.78rem; font-weight: 500; cursor: pointer;
+  width: auto; height: auto;
+}
+.ana-wrapper .mf-alerta-inline {
+  grid-column: 1 / -1;
+  font-size: 0.74rem; line-height: 1.4;
+  color: var(--red-dark, #b91c1c);
+  background: var(--red-light, #fee2e2);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+.ana-wrapper .mfd-fb-edit-field.mf-var-perigo { border-color: var(--red, #ff3b5c); }
+@media (max-width: 600px) {
+  .ana-wrapper .mf-alerta-acoes { flex-direction: column; }
+  .ana-wrapper .mf-btn-manter, .ana-wrapper .mf-btn-renomear { width: 100%; }
+}
+
 .ana-wrapper .attr-edit-input {
   flex: 1 1 140px;
   min-width: 0;
