@@ -199,6 +199,16 @@ check('CHILD_PK preenchido NÃO tem mais lápis (renomear muda o link)', !html.i
 // cor continua visível no painel de variações e no próprio título do anúncio.
 check('CHILD_PK preenchido sai da lista de campos (não vira tarefa impossível)',
   !html.includes("attr-edit-wrapper-COLOR"), html.slice(0, 200));
+// Sai das etapas, mas NÃO some da tela: travar só resolve o lado do app — quem renomear
+// pelo ML perde a exposição igual, e precisa ter lido o preço em algum lugar.
+check('nome da variação aparece em faixa própria, com o valor atual',
+  html.includes('Cor:') && html.includes('Preto'), html.slice(-600));
+check('a faixa avisa que vale também para o Mercado Livre',
+  /aqui ou no Mercado Livre/.test(html));
+check('a faixa fala em perder exposição, não em jargão de familia/permalink',
+  /perde a exposi/.test(html) && !/permalink/i.test(html));
+check('a faixa nao oferece edicao (nem lapis, nem editor)',
+  !html.includes("openAttrEditor('COLOR')"));
 check('Condição do item não tem lápis em anúncio de família', !html.includes("openAttrEditor('ITEM_CONDITION')"));
 
 // ── 3b. nem abrir editor, nem enviar: campo bloqueado não vira requisição ──
