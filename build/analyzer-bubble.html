@@ -347,14 +347,33 @@
   width: 100%;
 }
 /* Renomear variação: ação sem desfazer. O alerta ocupa a linha inteira acima do campo,
-   e o botão que confirma é o discreto — o destaque fica em "Manter como está". */
-.ana-wrapper .attr-edit-box.mf-attr-perigo { flex-direction: column; align-items: stretch; }
+   e o botão que confirma é o discreto — o destaque fica em "Manter como está".
+   ⚠️ Especificidade alta DE PROPÓSITO. O .attr-edit-box normal é `row`, e os filhos foram
+   escritos pra isso: o input é `flex: 1 1 140px` e o hint é `flex-basis: 100%` — em coluna
+   esses valores viram ALTURA e incham a caixa. E .attr-edit-save/.cancel são quadrados de
+   28px com padding 0, que cortam um botão de texto. Com só duas classes daria empate de
+   especificidade e valeria a ordem do arquivo; aqui não depende disso. */
+.ana-wrapper .attr-edit-box.mf-attr-perigo {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.ana-wrapper .attr-edit-box.mf-attr-perigo .attr-edit-input,
+.ana-wrapper .attr-edit-box.mf-attr-perigo .attr-edit-hint,
+.ana-wrapper .attr-edit-box.mf-attr-perigo .attr-edit-error {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+}
 .ana-wrapper .mf-alerta-renomear {
   background: var(--red-light, #fee2e2);
   border: 1px solid var(--red, #ff3b5c);
   border-radius: 6px;
   padding: 10px 12px;
   width: 100%;
+  /* sem isto, width:100% + 24px de padding + 2px de borda estouram 26px e o
+     overflow:hidden do wrapper corta a borda direita */
+  box-sizing: border-box;
 }
 .ana-wrapper .mf-alerta-titulo {
   font-size: 0.86rem; font-weight: 700;
@@ -365,24 +384,33 @@
   font-size: 0.78rem; line-height: 1.45;
   color: var(--text, #0f172a);
 }
-.ana-wrapper .mf-alerta-acoes {
-  display: flex; flex-wrap: wrap; gap: 8px; width: 100%;
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-alerta-acoes {
+  display: flex; flex-wrap: wrap; gap: 8px; width: 100%; flex: 0 0 auto;
 }
-.ana-wrapper .mf-btn-manter {
-  flex: 1 1 auto;
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-manter,
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-renomear {
+  width: auto; height: auto; min-height: 36px;
   padding: 8px 14px;
-  background: var(--blue, #0066ff); color: #fff;
-  border: none; border-radius: 6px;
-  font-size: 0.82rem; font-weight: 600; cursor: pointer;
-  width: auto; height: auto;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: normal;      /* pode quebrar em duas linhas no celular */
+  line-height: 1.25;
 }
-.ana-wrapper .mf-btn-renomear {
-  padding: 8px 12px;
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-manter {
+  flex: 1 1 auto;
+  background: var(--blue, #0066ff); color: #fff;
+  border: 1px solid var(--blue, #0066ff);
+  font-size: 0.82rem; font-weight: 600;
+}
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-renomear {
+  flex: 0 1 auto;
   background: transparent;
   color: var(--red-dark, #b91c1c);
-  border: 1px solid var(--red, #ff3b5c); border-radius: 6px;
-  font-size: 0.78rem; font-weight: 500; cursor: pointer;
-  width: auto; height: auto;
+  border: 1px solid var(--red, #ff3b5c);
+  font-size: 0.78rem; font-weight: 500;
+}
+.ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-renomear:hover:not(:disabled) {
+  background: var(--red-light, #fee2e2);
 }
 .ana-wrapper .mf-alerta-inline {
   grid-column: 1 / -1;
@@ -391,11 +419,27 @@
   background: var(--red-light, #fee2e2);
   border-radius: 4px;
   padding: 5px 8px;
+  box-sizing: border-box;
 }
+/* No painel de variações o campo é um grid 130px/1fr/auto — um botão com texto longo
+   espremeria a coluna do input. Aqui ele ocupa a linha inteira. */
 .ana-wrapper .mfd-fb-edit-field.mf-var-perigo { border-color: var(--red, #ff3b5c); }
+.ana-wrapper .mfd-fb-edit-field.mf-var-perigo .mfd-fb-save-btn {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  background: transparent;
+  color: var(--red-dark, #b91c1c);
+  border: 1px solid var(--red, #ff3b5c);
+  font-weight: 600;
+  white-space: normal;
+}
+.ana-wrapper .mfd-fb-edit-field.mf-var-perigo .mfd-fb-save-btn:hover:not(:disabled) {
+  background: var(--red-light, #fee2e2);
+}
 @media (max-width: 600px) {
-  .ana-wrapper .mf-alerta-acoes { flex-direction: column; }
-  .ana-wrapper .mf-btn-manter, .ana-wrapper .mf-btn-renomear { width: 100%; }
+  .ana-wrapper .attr-edit-box.mf-attr-perigo .mf-alerta-acoes { flex-direction: column; }
+  .ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-manter,
+  .ana-wrapper .attr-edit-box.mf-attr-perigo .mf-btn-renomear { width: 100%; }
 }
 
 .ana-wrapper .attr-edit-input {
