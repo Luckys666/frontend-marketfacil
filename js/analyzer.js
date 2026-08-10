@@ -81,10 +81,14 @@ function ehAtributoDeSistema(attrId) {
 // Tipos que o vendedor consegue preencher (o resto nem tem campo de edição)
 const MF_TIPOS_EDITAVEIS = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
 
-// Hierarquias EDITÁVEIS por variação (per-UP). Só PARENT_PK fica fora — é ele que agrupa
+// Hierarquias EDITÁVEIS por variação (per-UP). PARENT_PK fica fora — é ele que agrupa —
+// e CHILD_PK saiu em 09/08/2026: o valor dele é o NOME da variação, entra no título e
+// portanto no permalink. Trocar "Marrom" por "Marrom 2" muda o link e o anúncio perde o
+// histórico que tinha (visto na conta do Lucas). A auditoria de 07/08 tinha liberado a
+// troca de valor porque só media se o anúncio saía da família — saía não, mas resetava.
 // as variações. `FAMILY` entrou em 05/08/2026: o PUT no item grava e o family_id não muda
 // (medido em conta real), e o valor vale para a variação editada.
-const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
+const MF_VARIATION_EDITABLE_HIERARCHIES = new Set(['CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER', 'FAMILY']);
 
 // Atributos que entram no cálculo do family_id sem que a `hierarchy` denuncie.
 // `ITEM_CONDITION` vem da ML como `hierarchy: ITEM` — cara de campo comum —, mas a doc
@@ -131,7 +135,13 @@ function mfMotivoNaoEditavel(catAttr, detail) {
     if (temVariacoes && (typeof MF_VARIATION_ATTR_IDS !== 'undefined') && MF_VARIATION_ATTR_IDS.has(String(catAttr.id).toUpperCase())) return 'variacao';
     if (detail?.user_product_id && MF_ATTRS_DA_ASSINATURA.has(catAttr.id)) return 'familia';
     if (detail?.user_product_id && catAttr.hierarchy === 'PARENT_PK') return 'familia';
-    if (detail?.user_product_id && catAttr.hierarchy === 'CHILD_PK' && !mfAtributoPreenchido(detail, catAttr.id)) return 'familia';
+    // CHILD_PK em anúncio de família: os dois lados são bloqueio, por motivos diferentes.
+    // Vazio → ganhar o atributo muda a assinatura e o UP migra de família (irreversível).
+    // Preenchido → o valor é o nome da variação: trocar muda título, permalink e zera a
+    // inteligência do anúncio. Textos diferentes porque o vendedor precisa entender o custo.
+    if (detail?.user_product_id && catAttr.hierarchy === 'CHILD_PK') {
+        return mfAtributoPreenchido(detail, catAttr.id) ? 'nomevariacao' : 'familia';
+    }
     return null;
 }
 // O item já tem valor gravado nesse atributo?
@@ -142,11 +152,18 @@ function mfAtributoPreenchido(detail, attrId) {
     return Array.isArray(a.values) && a.values.some((v) => v && (v.name || v.id));
 }
 function mfCampoEditavel(catAttr, detail) { return mfMotivoNaoEditavel(catAttr, detail) === null; }
+// Campo que só o Mercado Livre resolve: mexer por aqui quebraria o grupo de variações ou
+// resetaria o anúncio. Os dois viram o mesmo selo "só no ML" e escondem o lápis.
+function mfSoNoML(catAttr, detail) {
+    const motivo = mfMotivoNaoEditavel(catAttr, detail);
+    return motivo === 'familia' || motivo === 'nomevariacao';
+}
 // Explicação curta de por que o campo não pode ser mexido por aqui. Usada só quando algum
 // caminho conseguiu chegar no salvar — a tela normal nem oferece esses campos.
 function MF_textoCampoBloqueado(catAttr, motivo) {
     const nome = catAttr?.name || 'Este campo';
     if (motivo === 'familia') return `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo — edite no Mercado Livre.`;
+    if (motivo === 'nomevariacao') return `${nome} dá nome a esta variação. Mudar o valor troca o link do anúncio e o histórico dele recomeça do zero.`;
     if (motivo === 'variacao') return `${nome} é definido em cada variação — edite pela tela de variações.`;
     if (motivo === 'sistema') return `${nome} é preenchido pelo próprio Mercado Livre.`;
     return `${nome} não pode ser editado por aqui.`;
@@ -2389,29 +2406,22 @@ window.MF_expandVariation = function (upId) {
 };
 
 // Essa variação já tem valor gravado no atributo? (versão por-variação do mfAtributoPreenchido)
-function MF_variacaoTemValor(itemAttrMap, attrId) {
-    const a = itemAttrMap.get(attrId);
-    if (!a) return false;
-    if (a.value_name && String(a.value_name).trim() !== '') return true;
-    return Array.isArray(a.values) && a.values.some((v) => v && (v.name || v.id));
-}
-
 function MF_renderVariationEditPanel(variation) {
     const cats = window.currentAnalysisState?.categoryAttributes || [];
     const itemAttrs = Array.isArray(variation.item_attributes) ? variation.item_attributes : [];
     const itemAttrMap = new Map(itemAttrs.map(a => [a.id, a]));
     const allVariations = window.__mfFamilyOverview?.variations || [];
 
-    // Filtra atributos da categoria que são editáveis por variação. CHILD_PK ainda vazio
-    // fica de fora: ganhar um atributo desses muda a assinatura e tira a variação da
-    // família (mesma régua do mfMotivoNaoEditavel).
+    // Filtra atributos da categoria que são editáveis por variação. CHILD_PK ficou fora da
+    // lista de hierarquias em 09/08/2026: é o valor dele que dá nome à variação, então
+    // mexer aqui muda o título, muda o permalink e o anúncio recomeça o histórico do zero
+    // (mesma régua do mfMotivoNaoEditavel — motivo 'nomevariacao').
     const EDITABLE_TYPES = new Set(['string', 'list', 'boolean', 'number', 'number_unit']);
     const editable = cats.filter(c =>
         EDITABLE_TYPES.has(c.value_type)
         && !c.tags?.read_only
         && MF_VARIATION_EDITABLE_HIERARCHIES.has(c.hierarchy)
         && !MF_ATTRS_DA_ASSINATURA.has(c.id)
-        && !(c.hierarchy === 'CHILD_PK' && !MF_variacaoTemValor(itemAttrMap, c.id))
     );
 
     // Diagnóstico — usa o mesmo analisador do cartão
@@ -2736,12 +2746,12 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
 
         const renderCatItem = (catAttr, adValue, isFilled) => {
             const isIgnored = window.ignoredAdAttributes.has(catAttr.id);
-            // PARENT_PK (Marca, Modelo) de item em família define o agrupamento das variações:
-            // mudar por aqui tira o anúncio do grupo. Em vez de mostrar o lápis e estragar a
-            // família, omitimos a edição — o atributo continua visível como informação.
+            // Rede de segurança: campo "só no ML" (PARENT_PK, ou CHILD_PK que dá nome à
+            // variação) já sai no filtro acima e não chega aqui. Se um dia chegar por outro
+            // caminho, renderiza sem lápis em vez de oferecer uma edição que estraga o anúncio.
             // Atributo `hierarchy: FAMILY` NÃO entra aqui: grava pelo item sem mexer no
             // family_id (medido em conta real) — mesma régua do mfMotivoNaoEditavel.
-            const isFamilyControlled = mfMotivoNaoEditavel(catAttr, detail) === 'familia';
+            const isFamilyControlled = mfSoNoML(catAttr, detail);
             const canEdit = !isIgnored && !catAttr.tags?.read_only && !isFamilyControlled;
             const pencilSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>`;
             return `
@@ -3261,7 +3271,7 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
     const soNoML = (codigo) => {
         const def = defPorId[codigo];
         if (!def) return false;
-        return mfMotivoNaoEditavel(def, detalheAtual) === 'familia';
+        return mfSoNoML(def, detalheAtual);
     };
     const marcados = faltando.filter(soNoML).length;
 

@@ -91,6 +91,8 @@ vm.runInContext(src, sandbox, { filename: 'analyzer.js' });
 const get = (nome) => sandbox[nome] || vm.runInContext(`typeof ${nome} !== 'undefined' ? ${nome} : undefined`, sandbox);
 const mfMotivoNaoEditavel = get('mfMotivoNaoEditavel');
 const mfCampoEditavel = get('mfCampoEditavel');
+const mfSoNoML = get('mfSoNoML');
+const MF_textoCampoBloqueado = get('MF_textoCampoBloqueado');
 const HIER_VARIACAO = get('MF_VARIATION_EDITABLE_HIERARCHIES');
 const exibirAtributosCategoria = get('exibirAtributosCategoria');
 const MF_renderFamilyOverview = get('MF_renderFamilyOverview');
@@ -137,14 +139,25 @@ check('atributo de variação em anúncio COM variations continua na tela de var
 check('mfCampoEditavel concorda com mfMotivoNaoEditavel',
   mfCampoEditavel(A.familyAttr, itemEmFamilia) === true && mfCampoEditavel(A.parentPk, itemEmFamilia) === false);
 
-// ── 1b. CHILD_PK: vazio quebra a família, preenchido é seguro ────────────
+// ── 1b. CHILD_PK: os dois lados bloqueiam, por motivos diferentes ─────────
+// Vazio → ganhar o atributo tira o anúncio do grupo de variações.
+// Preenchido → o valor é o NOME da variação: muda título, permalink e zera o histórico.
 const fabric = { id: 'FABRIC_DESIGN', name: 'Desenho do tecido', value_type: 'string', hierarchy: 'CHILD_PK', tags: {} };
 check('CHILD_PK VAZIO em família fica bloqueado (preencher tiraria do grupo)',
   mfMotivoNaoEditavel(fabric, itemEmFamilia) === 'familia', String(mfMotivoNaoEditavel(fabric, itemEmFamilia)));
-check('CHILD_PK JÁ PREENCHIDO segue editável (trocar valor não muda a assinatura)',
-  mfMotivoNaoEditavel(A.childPk, itemEmFamilia) === null, String(mfMotivoNaoEditavel(A.childPk, itemEmFamilia)));
+check('CHILD_PK PREENCHIDO é bloqueado: renomear a variação muda o link do anúncio',
+  mfMotivoNaoEditavel(A.childPk, itemEmFamilia) === 'nomevariacao', String(mfMotivoNaoEditavel(A.childPk, itemEmFamilia)));
+check('renomear variação tem texto próprio (fala de link e histórico, não de grupo)',
+  /link do anúncio/i.test(MF_textoCampoBloqueado(A.childPk, 'nomevariacao'))
+  && !/grupo/i.test(MF_textoCampoBloqueado(A.childPk, 'nomevariacao')),
+  MF_textoCampoBloqueado(A.childPk, 'nomevariacao'));
+check('os dois motivos contam como "só no ML" (escondem o lápis)',
+  mfSoNoML(A.childPk, itemEmFamilia) === true && mfSoNoML(A.parentPk, itemEmFamilia) === true
+  && mfSoNoML(A.familyAttr, itemEmFamilia) === false);
 check('CHILD_PK vazio em anúncio SOLTO continua editável (não há família)',
   mfMotivoNaoEditavel(fabric, itemSolto) === null);
+check('CHILD_PK preenchido em anúncio SOLTO continua editável (não nomeia variação)',
+  mfMotivoNaoEditavel(A.childPk, itemSolto) === null, String(mfMotivoNaoEditavel(A.childPk, itemSolto)));
 
 // ── 1c. ITEM_CONDITION: a hierarchy mente (vem como ITEM) ───────────────
 // A ML devolve hierarchy: ITEM, mas a doc lista ITEM_CONDITION entre os campos que
@@ -158,8 +171,10 @@ check('ITEM_CONDITION em anúncio solto continua editável (não há grupo pra q
 // ── 2. hierarquias do editor por variação ────────────────────────────────
 check('painel de variação passa a oferecer FAMILY', HIER_VARIACAO && HIER_VARIACAO.has('FAMILY'));
 check('painel de variação NÃO oferece PARENT_PK', HIER_VARIACAO && !HIER_VARIACAO.has('PARENT_PK'));
-check('painel de variação mantém CHILD_PK/ITEM/PRODUCT_IDENTIFIER',
-  ['CHILD_PK', 'CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER'].every((h) => HIER_VARIACAO.has(h)));
+check('painel de variação NÃO oferece CHILD_PK (é o nome da variação)',
+  HIER_VARIACAO && !HIER_VARIACAO.has('CHILD_PK'));
+check('painel de variação mantém CHILD_DEPENDENT/ITEM/PRODUCT_IDENTIFIER',
+  ['CHILD_DEPENDENT', 'ITEM', 'PRODUCT_IDENTIFIER'].every((h) => HIER_VARIACAO.has(h)));
 
 // ── 3. o que a tela renderiza ────────────────────────────────────────────
 const CATS_TELA = [A.familyAttr, A.parentPk, A.itemAttr, fabric, A.childPk, condicao];
@@ -178,7 +193,12 @@ check('campo PARENT_PK some da lista de tarefas (sai da conta)', !html.includes(
 check('campo FAMILY entra na lista como campo a preencher', html.includes('Voltagem da bateria'));
 check('CHILD_PK vazio NÃO aparece com lápis', !html.includes("openAttrEditor('FABRIC_DESIGN')"));
 check('CHILD_PK vazio some da lista de tarefas', !html.includes('Desenho do tecido'));
-check('CHILD_PK preenchido segue com lápis', html.includes("openAttrEditor('COLOR')"));
+check('CHILD_PK preenchido NÃO tem mais lápis (renomear muda o link)', !html.includes("openAttrEditor('COLOR')"));
+// Sai da lista inteira, como Marca/Modelo em família: campo que o vendedor não mexe não
+// vira tarefa. A nota explicativa foi zerada em 05/08 (Lucas: menos avisos na tela) — a
+// cor continua visível no painel de variações e no próprio título do anúncio.
+check('CHILD_PK preenchido sai da lista de campos (não vira tarefa impossível)',
+  !html.includes("attr-edit-wrapper-COLOR"), html.slice(0, 200));
 check('Condição do item não tem lápis em anúncio de família', !html.includes("openAttrEditor('ITEM_CONDITION')"));
 
 // ── 3b. nem abrir editor, nem enviar: campo bloqueado não vira requisição ──
