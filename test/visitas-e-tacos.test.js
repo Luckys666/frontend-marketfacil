@@ -50,10 +50,11 @@ console.log('\n== card de visitas mostra vendas e conversão ==');
   };
   exibirTendenciaVisitas(visitas, 'visitsTrend', ads);
   const html = reg['visitsTrend'].innerHTML;
-  check('mostra o rótulo Vendas (30 dias)', html.includes('Vendas (30 dias)'), html.slice(-400));
+  // O resumo virou tabela por período (11/08): a coluna de Vendas substitui o rodapé.
+  check('a tabela tem a coluna Vendas', html.includes('>Vendas<'), html.slice(-400));
   check('mostra 20 vendas (10 dias × 2)', html.includes('>20<'), (html.match(/>\d+</g) || []).join(' '));
   check('mostra o rótulo Conversão', html.includes('Conversão'));
-  check('conversão = 20/100 = 20.00%', html.includes('20.00%'), (html.match(/[\d.]+%/g) || []).join(' '));
+  check('conversão = 20/100 = 20,00%', html.includes('20,00%'), (html.match(/[\d,.]+%/g) || []).join(' '));
 }
 
 // ── a janela tem que ser a mesma dos dois lados ─────────────────────────
@@ -71,7 +72,7 @@ console.log('\n== vendas fora da janela de 30 dias não entram ==');
   exibirTendenciaVisitas(visitas, 'visitsTrend90', ads90);
   const html = reg['visitsTrend90'].innerHTML;
   check('conta só os 30 dias (20 vendas, não 220)', html.includes('>20<'), (html.match(/>\d+</g) || []).join(' '));
-  check('conversão continua 20.00%', html.includes('20.00%'), (html.match(/[\d.]+%/g) || []).join(' '));
+  check('conversão continua 20,00%', html.includes('20,00%'), (html.match(/[\d,.]+%/g) || []).join(' '));
 }
 
 // ── sem Ads não inventa número ──────────────────────────────────────────
@@ -79,13 +80,13 @@ console.log('\n== sem Ads: nada de "0 vendas" ==');
 {
   exibirTendenciaVisitas(visitas, 'visitsTrendSemAds', null);
   const html = reg['visitsTrendSemAds'].innerHTML;
-  check('não afirma "0" vendas', !html.includes('Vendas (30 dias)'), html.slice(-300));
+  check('não afirma "0" vendas', !html.includes('>Vendas<'), html.slice(-300));
   check('explica por que não tem', html.includes('publicidade'), html.slice(-300));
 
   // has_ads false com daily presente também não vale
   exibirTendenciaVisitas(visitas, 'visitsTrendAdsOff', { has_ads: false, daily: [{ date: diasAtras(1), units_quantity: 3 }] });
   const html2 = reg['visitsTrendAdsOff'].innerHTML;
-  check('has_ads=false não mostra vendas', !html2.includes('Vendas (30 dias)'));
+  check('has_ads=false não mostra vendas', !html2.includes('>Vendas<'));
 }
 
 // ── conversão sem visita não é 0% ───────────────────────────────────────

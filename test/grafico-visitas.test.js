@@ -125,5 +125,50 @@ console.log('\n== sem visita nenhuma, sem gráfico ==');
   check('mas o card continua de pé', html.includes('Visitas'));
 }
 
+// ── resumo por período segue as métricas ativas ─────────────────────────
+console.log('\n== o resumo 7/15/30 acompanha as métricas ==');
+{
+  // Lucas, 11/08: "conseguir trocar os dados de 7, 15 e 30d" → os blocos deixam de ser só
+  // visitas e passam a ter uma coluna por métrica ativa. Um controle só manda no card
+  // inteiro: desligar Vendas tira a coluna daqui também, senão o gráfico e o resumo
+  // discordariam sobre o que está ligado.
+  const visitas = { results: Array.from({ length: 20 }, (_, i) => ({ date: dia(i + 1), total: 10 })) };
+  const ads = { has_ads: true, daily: Array.from({ length: 20 }, (_, i) => ({ date: dia(i + 1), units_quantity: 2, organic_units_quantity: 0 })) };
+  exibirTendenciaVisitas(visitas, 'resumo', ads);
+  const html = reg['resumo'].innerHTML;
+  const txt = reg['resumo'].textContent;
+
+  check('o card se chama "Desempenho do Anúncio"', txt.includes('Desempenho do Anúncio'), txt.slice(0, 60));
+  check('não se chama mais "Visitas Recentes"', !txt.includes('Visitas Recentes'));
+  check('tem as três janelas', ['7 dias','15 dias','30 dias'].every(j => txt.includes(j)), txt.slice(0, 200));
+  check('uma coluna por métrica', html.includes('>Visitas<') && html.includes('>Vendas<') && html.includes('>Conversão<'));
+  // 7 dias: 7 pontos × 10 visitas e × 2 vendas → 20%
+  check('conversão da janela = vendas ÷ visitas da janela', txt.includes('20,00%'),
+    (txt.match(/[\d,]+%/g)||[]).join(' '));
+}
+
+console.log('\n== a conversão da janela não é média das diárias ==');
+{
+  // Um dia de 2 visitas com 1 venda (50%) e um de 200 visitas com 1 venda (0,5%): a média
+  // simples daria ~25%, a conta certa dá 2/202 = 0,99%. Média trataria os dois dias como
+  // se pesassem igual.
+  const visitas = { results: [ { date: dia(1), total: 2 }, { date: dia(2), total: 200 } ] };
+  const ads = { has_ads: true, daily: [ { date: dia(1), units_quantity: 1, organic_units_quantity: 0 }, { date: dia(2), units_quantity: 1, organic_units_quantity: 0 } ] };
+  exibirTendenciaVisitas(visitas, 'resumoPeso', ads);
+  const txt = reg['resumoPeso'].textContent;
+  check('usa o total da janela (0,99%), não a média (25%)', txt.includes('0,99%'),
+    (txt.match(/[\d,]+%/g)||[]).join(' '));
+}
+
+console.log('\n== sem Ads o resumo tem só visitas ==');
+{
+  const visitas = { results: Array.from({ length: 10 }, (_, i) => ({ date: dia(i + 1), total: 5 })) };
+  exibirTendenciaVisitas(visitas, 'resumoSemAds', null);
+  const html = reg['resumoSemAds'].innerHTML;
+  check('coluna Visitas existe', html.includes('>Visitas<'));
+  check('coluna Vendas não', !html.includes('>Vendas<'));
+  check('e o card explica por quê', reg['resumoSemAds'].textContent.includes('publicidade'));
+}
+
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);

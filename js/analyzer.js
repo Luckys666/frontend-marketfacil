@@ -5185,76 +5185,74 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
 
     const lowDataWarning = total30 < 10 ? '<div style="margin-top:8px;"><span class="status-badge muted" style="font-size:0.7rem;">⚠️ Poucos dados</span></div>' : '';
 
-    // Vendas e conversão (pedido do Lucas, 10/08/2026). Visita sem venda ao lado não diz
-    // nada: 900 visitas é ótimo ou péssimo dependendo de quantas viraram pedido.
-    //
-    // A fonte de vendas por dia é o daily do Ads (units_quantity + organic_units_quantity)
-    // — a mesma que MF_buildOpportunities usa, pra não criar uma segunda contagem que
-    // discorde da primeira (o bug das três contagens de campos, 05/08).
-    //
-    // ⚠️ O daily cobre o período escolhido lá no card de Ads (7/15/30/60/90). Somar ele
-    // inteiro contra visitas de 30 dias daria conversão errada assim que o vendedor
-    // trocasse pra 90d — então filtra pela MESMA janela de 30 dias, por data.
-    let vendasHtml = '';
-    const _daily = Array.isArray(adsData?.daily) ? adsData.daily : null;
-    if (_daily && adsData?.has_ads) {
-        const noPeriodo = _daily.filter((d) => inWindow(d, 0, 30));
-        const vendas30 = noPeriodo.reduce((s, d) => s + (d.units_quantity || 0) + (d.organic_units_quantity || 0), 0);
-        // Sem visita não existe taxa de conversão — e "0%" aqui seria inventar um número.
-        const conversao = total30 > 0 ? (vendas30 / total30) * 100 : null;
-        // Réguas relativas, nunca faixa fixa: o que é boa conversão muda por categoria e
-        // preço (feedback_reguas_relativas_tacos). Cor só separa "vendeu" de "não vendeu".
-        const corConv = vendas30 === 0 ? 'var(--red-dark)' : 'var(--text)';
-        vendasHtml = `
-            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb); display:flex; gap:10px;">
-                <div style="flex:1; text-align:center;">
-                    <div class="text-small" style="color:var(--text-muted);">Vendas (30 dias)</div>
-                    <div style="font-family:'DM Mono',monospace; font-weight:700; font-size:1.1rem; color:${corConv};">${vendas30}</div>
-                </div>
-                <div style="flex:1; text-align:center;">
-                    <div class="text-small" style="color:var(--text-muted);">Conversão</div>
-                    <div style="font-family:'DM Mono',monospace; font-weight:700; font-size:1.1rem; color:${corConv};" title="Vendas dividido por visitas nos últimos 30 dias.">${
-                        conversao === null ? '—' : conversao.toFixed(2) + '%'}</div>
-                </div>
-            </div>`;
-    } else {
-        // Anúncio sem Ads não tem série de vendas por dia — só o total de sempre, que não
-        // serve para 30 dias. Dizer "0 vendas" seria falso; o traço é honesto.
-        vendasHtml = `
-            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
-                <span class="text-small" style="color:var(--text-muted);">Vendas e conversão dos últimos 30 dias aparecem quando o anúncio tem publicidade — é de lá que vem a venda dia a dia.</span>
-            </div>`;
-    }
+    // Sem Ads não há série de vendas por dia — a tabela mostra só visitas, e o card diz
+    // por quê em vez de deixar o vendedor procurando as colunas que não vieram.
+    const semAdsHtml = (adsData && adsData.has_ads) ? '' : `
+        <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
+            <span class="text-small" style="color:var(--text-muted);">Vendas e conversão aparecem quando o anúncio tem publicidade — é de lá que vem a venda dia a dia.</span>
+        </div>`;
+
+    // Resumo por período seguindo as MÉTRICAS ATIVAS (Lucas, 11/08): desligar Vendas tira
+    // a coluna de vendas daqui também. Um controle só manda no card inteiro — dois lugares
+    // com regras diferentes de "o que está ligado" seria a mesma armadilha das contagens
+    // divergentes de campos (05/08).
+    const janelas = [
+        { rotulo: '7 dias', ini: 0, fim: 7, iniAnt: 7, fimAnt: 14 },
+        { rotulo: '15 dias', ini: 0, fim: 15, iniAnt: 15, fimAnt: 30 },
+        { rotulo: '30 dias', ini: 0, fim: 30, iniAnt: 30, fimAnt: 60 },
+    ];
+    // Soma por janela a partir dos MESMOS pontos do gráfico — resumo e gráfico não podem
+    // sair de contas diferentes.
+    const somaJanela = (ini, fim) => {
+        const dentro = pontos.filter((p) => {
+            const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
+            return idade >= ini && idade < fim;
+        });
+        const v = dentro.reduce((s, p) => s + (typeof p.visitas === 'number' ? p.visitas : 0), 0);
+        const ven = dentro.reduce((s, p) => s + (typeof p.vendas === 'number' ? p.vendas : 0), 0);
+        const temVenda = dentro.some((p) => typeof p.vendas === 'number');
+        return {
+            visitas: v,
+            vendas: temVenda ? ven : null,
+            // Conversão da JANELA = vendas da janela ÷ visitas da janela. Média das
+            // conversões diárias daria peso igual a um dia de 2 visitas e a um de 200.
+            conversao: (temVenda && v > 0) ? (ven / v) * 100 : null,
+        };
+    };
+    const fmtMetrica = (chave, v) => {
+        if (typeof v !== 'number') return '—';
+        return chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
+    };
+    const variacaoHtml = (atual, anterior) => {
+        if (typeof atual !== 'number' || typeof anterior !== 'number' || anterior === 0) return '';
+        const pct = ((atual - anterior) / anterior) * 100;
+        if (Math.abs(pct) < 1) return '';
+        const cor = pct > 0 ? 'var(--green-dark)' : 'var(--red-dark)';
+        const bg = pct > 0 ? 'var(--green-light)' : 'var(--red-light)';
+        return `<span style="font-size:0.62rem; font-weight:700; padding:1px 4px; border-radius:4px; margin-left:4px; color:${cor}; background:${bg};">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
+    };
+    const resumoHtml = `
+        <div style="display:grid; grid-template-columns: auto ${seriesAtivas.map(() => '1fr').join(' ')}; gap:6px 10px; align-items:center; margin-bottom:12px;">
+            <span></span>
+            ${seriesAtivas.map((s) => `<span class="text-small" style="color:${s.cor}; font-weight:700; text-align:right;">${s.rotulo}</span>`).join('')}
+            ${janelas.map((j) => {
+                const at = somaJanela(j.ini, j.fim);
+                const ant = somaJanela(j.iniAnt, j.fimAnt);
+                return `<span class="text-small" style="color:var(--text-muted); white-space:nowrap;">${j.rotulo}</span>`
+                    + seriesAtivas.map((s) => `
+                        <span class="text-value" style="font-weight:600; text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
+            }).join('')}
+        </div>`;
 
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">📊</span>
-                <span class="ana-card-title">Visitas Recentes</span>
+                <span class="ana-card-title">Desempenho do Anúncio</span>
             </div>
-            <div style="display: flex; gap: 15px; align-items: stretch; justify-content: space-between;">
-                <div class="trend-indicator" style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-width:80px; text-align:center;">
-                    <span class="trend-icon" style="font-size:1.8rem; line-height:1; margin-bottom:4px;">${icon}</span>
-                    <span class="trend-text ${colorClass}" style="font-weight:bold; font-size:1.6rem; line-height:1;">${total30}</span>
-                    <span class="text-small" style="text-align:center; color:var(--text-muted); display:block; margin-top:2px;">30 dias</span>
-                </div>
-                <div class="trend-stats" style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; gap:6px;">
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Últimos 7 dias</span>
-                        <span class="text-value" style="font-weight:600;">${total7}${percentChange7 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange7 > 0 ? 'var(--green-dark)' : (percentChange7 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange7 > 0 ? 'var(--green-light)' : (percentChange7 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange7 > 0 ? '+' : ''}${percentChange7.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Últimos 15 dias</span>
-                        <span class="text-value" style="font-weight:600;">${total15}${percentChange15 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange15 > 0 ? 'var(--green-dark)' : (percentChange15 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange15 > 0 ? 'var(--green-light)' : (percentChange15 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange15 > 0 ? '+' : ''}${percentChange15.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Mês (30 dias)</span>
-                        <span class="text-value" style="font-weight:600;">${total30}${percentChange30 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange30 > 0 ? 'var(--green-dark)' : (percentChange30 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange30 > 0 ? 'var(--green-light)' : (percentChange30 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange30 > 0 ? '+' : ''}${percentChange30.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                </div>
-            </div>
+            ${resumoHtml}
             ${svgChart}
-            ${vendasHtml}
+            ${semAdsHtml}
             ${lowDataWarning}
         </div>
     `;
