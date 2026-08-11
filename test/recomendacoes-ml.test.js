@@ -165,5 +165,97 @@ console.log('\n== a contagem do cabeçalho bate com as linhas ==');
     `esperado ${esperado} | html tem: ${(html.match(/\d+\/\d+/g) || []).join(',')}`);
 }
 
+// ── card "Qualidade do Anúncio (Mercado Livre)" ─────────────────────────
+console.log('\n== a ML repete o texto na variable e na rule ==');
+{
+  // Medido na conta em 11/08/2026 (reclamação de usuários): em 11 anúncios ativos,
+  // 18 de 36 linhas de regra tinham texto IDÊNTICO ao título da variável logo acima —
+  // metade do card era a mesma frase duas vezes:
+  //     ○ Participe de uma promoção para receber mais visitas
+  //        💡 Participe de uma promoção para receber mais visitas
+  const exibirPerformance = get('exibirPerformance');
+  const perf = {
+    score: 60, level: 'STANDARD',
+    buckets: [{
+      title: 'Exposição', key: 'EXPOSURE', score: 40,
+      variables: [
+        {
+          key: 'PROMO', title: 'Participe de uma promoção para receber mais visitas',
+          status: 'PENDING', score: 0,
+          rules: [{ key: 'R1', status: 'PENDING', mode: 'OPPORTUNITY',
+            wordings: { title: 'Participe de uma promoção para receber mais visitas', label: 'Criar promoção', link: 'https://ml/promo' } }]
+        },
+        {
+          key: 'FRETE', title: 'Frete grátis', status: 'PENDING', score: 20,
+          rules: [{ key: 'R2', status: 'PENDING', mode: 'WARNING',
+            wordings: { title: 'Ofereça frete grátis para ficar mais competitivo', label: 'Ativar', link: 'https://ml/frete' } }]
+        }
+      ]
+    }]
+  };
+  exibirPerformance(perf, 'performanceTexto');
+  const html = reg['performanceTexto'].innerHTML;
+  const txt = reg['performanceTexto'].textContent;
+
+  const frase = 'Participe de uma promoção para receber mais visitas';
+  const vezes = txt.split(frase).length - 1;
+  check('a frase repetida aparece UMA vez só', vezes === 1, `apareceu ${vezes}x`);
+
+  // O que a regra agrega além do texto é a AÇÃO — isso não pode sumir junto.
+  check('o link da regra continua na tela', html.includes('https://ml/promo'), '');
+  check('e o rótulo da ação também', txt.includes('Criar promoção'), '');
+
+  // Regra com texto DIFERENTE continua aparecendo: ali ela acrescenta informação.
+  check('regra com texto próprio continua sendo mostrada',
+    txt.includes('Ofereça frete grátis para ficar mais competitivo'), '');
+  check('e o título da variável dela também', txt.includes('Frete grátis'), '');
+  check('link da outra regra preservado', html.includes('https://ml/frete'), '');
+}
+
+console.log('\n== variação de caixa/acento não escapa da dedup ==');
+{
+  const exibirPerformance = get('exibirPerformance');
+  const perf = {
+    score: 50, level: 'BASIC',
+    buckets: [{
+      title: 'B', key: 'B', score: 10,
+      variables: [{
+        key: 'V', title: 'Adicione ficha técnica', status: 'PENDING',
+        rules: [{ key: 'R', status: 'PENDING', mode: 'OPPORTUNITY',
+          wordings: { title: 'ADICIONE FICHA TÉCNICA', label: 'Ir', link: 'https://ml/ft' } }]
+      }]
+    }]
+  };
+  exibirPerformance(perf, 'performanceTexto2');
+  const txt = reg['performanceTexto2'].textContent;
+  const n = (txt.match(/dicione ficha/gi) || []).length;
+  check('mesma frase em caixa diferente conta como repetida', n === 1, `apareceu ${n}x`);
+}
+
+console.log('\n== o que não é repetição continua intacto ==');
+{
+  const exibirPerformance = get('exibirPerformance');
+  const perf = {
+    score: 90, level: 'PREMIUM',
+    buckets: [{
+      title: 'Ficha', key: 'F', score: 90,
+      variables: [
+        { key: 'OK', title: 'Descrição completa', status: 'COMPLETED', score: 100, rules: [] },
+        { key: 'V2', title: 'Fotos', status: 'PENDING', score: 50, rules: [
+          { key: 'A', status: 'PENDING', mode: 'OPPORTUNITY', wordings: { title: 'Suba fotos de 1200x1200' } },
+          { key: 'B', status: 'PENDING', mode: 'WARNING', wordings: { title: 'Remova texto sobreposto' } }
+        ] }
+      ]
+    }]
+  };
+  exibirPerformance(perf, 'performanceTexto3');
+  const txt = reg['performanceTexto3'].textContent;
+  check('variável concluída continua listada', txt.includes('Descrição completa'));
+  check('as duas regras distintas aparecem',
+    txt.includes('Suba fotos de 1200x1200') && txt.includes('Remova texto sobreposto'));
+  check('o título da variável aparece', txt.includes('Fotos'));
+  check('o score do bucket aparece', txt.includes('90%'));
+}
+
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);

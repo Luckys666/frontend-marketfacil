@@ -1818,6 +1818,22 @@ function exibirDescricaoIndicator(descriptionData, containerId = "descricaoIndic
     `;
 }
 
+/**
+ * Este atributo sobrou de uma categoria ANTERIOR do anúncio?
+ *
+ * Quando o vendedor muda a categoria, a ML **não apaga** os atributos da categoria antiga —
+ * eles seguem gravados no item. A Ficha Técnica lista o que está no item, então esses
+ * órfãos entravam como se fossem da ficha atual: um "Kit Válvula de Segurança" aparecia
+ * com "Tipo de manômetro" e "Tipo de preenchimento líquido" (caso real, MLB3084958679).
+ *
+ * Sem a lista da categoria (rede falhou, MLBU, catálogo) devolve false: marcar tudo como
+ * "de outra categoria" seria acusar sem saber — chamada que falhou não vira veredito.
+ */
+function mfDeOutraCategoria(attrId) {
+    const cats = window.currentAnalysisState && window.currentAnalysisState.categoryAttributes;
+    if (!Array.isArray(cats) || !cats.length) return false;
+    return !cats.some((c) => c && c.id === attrId);
+}
 function processarAtributos(fichaTecnica, titulo, usedFallback = false, containerId = "fichaTecnicaTexto") {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -1889,9 +1905,9 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
         }
 
         if (issues.length > 0) {
-            problemAttrs.push({ id: attr.id, name: nome, value: valor, issues });
+            problemAttrs.push({ id: attr.id, name: nome, value: valor, issues, deOutraCategoria: mfDeOutraCategoria(attr.id) });
         } else {
-            okAttrs.push({ id: attr.id, name: nome, value: valor });
+            okAttrs.push({ id: attr.id, name: nome, value: valor, deOutraCategoria: mfDeOutraCategoria(attr.id) });
         }
     });
 
@@ -1904,7 +1920,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
             <div class="attribute-item ${isProblem ? 'problem' : ''}" style="min-width:0; ${ignored ? 'opacity:0.5; filter:grayscale(1);' : ''}">
                 <div style="flex-grow:1; min-width:0; overflow:hidden;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-label" style="margin-bottom:2px;">${escapeHtml(item.name)}</span>
+                        <span class="text-label" style="margin-bottom:2px;">${escapeHtml(item.name)}${item.deOutraCategoria ? '<span style="margin-left:6px; font-size:0.65rem; font-weight:600; padding:1px 6px; border-radius:999px; background:var(--bg-subtle,#f1f5f9); color:var(--text-muted); white-space:nowrap;" title="Este campo ficou de uma categoria anterior deste anúncio. Ele não faz parte da ficha da categoria atual e o Mercado Livre não o considera mais — some quando você salvar o anúncio de novo.">de outra categoria</span>' : ''}</span>
                         <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                             ${!isProblem && !ignored ? '<span style="color:var(--green); font-weight:bold;">✔</span>' : ''}
                             ${ignored ? '<span style="color:gray; font-size:0.75rem;">Ignorado</span>' : ''}
@@ -3332,14 +3348,37 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
             const icon = isCompleted ? '✓' : '○';
             const vScore = v.score !== undefined ? Math.round(v.score) : null;
             let rulesHtml = '';
+            let acaoNaLinha = '';
             if (!isCompleted && Array.isArray(v.rules)) {
-                v.rules.filter(r => r.status !== 'COMPLETED').forEach(r => { rulesHtml += renderRule(r, vColor); });
+                const pendentes = v.rules.filter(r => r.status !== 'COMPLETED');
+                // A ML manda MUITAS regras com o texto idêntico ao título da variável logo
+                // acima — medido em 11/08/2026: 18 de 36 linhas em 11 anúncios, metade do
+                // card. Desenhar as duas fazia a mesma frase sair duas vezes seguidas, que
+                // é a "informação repetida" que os vendedores reclamaram.
+                //
+                // A regra ainda agrega uma coisa que a variável não tem: o LINK da ação.
+                // Então some o texto duplicado, não a regra: o link sobe pra linha da
+                // variável e a frase aparece uma vez só.
+                const tituloVar = MF_chaveTexto(v.title || v.key || '');
+                pendentes.forEach((r) => {
+                    const tituloRegra = MF_chaveTexto((r.wordings && r.wordings.title) || r.key || '');
+                    if (tituloRegra && tituloRegra === tituloVar) {
+                        const link = r.wordings && r.wordings.link;
+                        if (link && !acaoNaLinha) {
+                            const rotulo = (r.wordings && r.wordings.label) || 'Resolver';
+                            acaoNaLinha = `<a href="${escapeHtml(link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.75rem; white-space:nowrap;">${escapeHtml(rotulo)} →</a>`;
+                        }
+                        return;   // texto já está no título da variável
+                    }
+                    rulesHtml += renderRule(r, vColor);
+                });
             }
             varsHtml += `
                 <div style="padding:10px 0; border-bottom:1px solid var(--border,#e5e7eb);">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="color:${vColor}; font-weight:700; font-size:0.95rem;">${icon}</span>
                         <span style="flex:1; font-size:0.85rem; font-weight:600; color:var(--text);">${escapeHtml(v.title || v.key || '')}</span>
+                        ${acaoNaLinha}
                         ${vScore !== null ? `<span style="font-family:var(--font-mono, 'DM Mono',monospace); font-size:0.75rem; color:${vColor}; font-weight:700;">${vScore}%</span>` : ''}
                     </div>
                     ${rulesHtml}

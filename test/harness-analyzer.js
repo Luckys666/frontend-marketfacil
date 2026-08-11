@@ -34,6 +34,18 @@ function mkEl(id, opts = {}) {
     get() { return el._html; },
     set(v) { el._html = String(v); el.children = []; }
   });
+  // textContent/innerText DERIVAM do innerHTML. Com eles fixos em '', qualquer
+  // `check(!texto.includes('x'))` passava sem olhar nada — falso positivo silencioso, que
+  // é justamente o tipo de teste que deixa bug passar (11/08/2026).
+  const semTags = () => String(el._html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  Object.defineProperty(el, 'textContent', { get: semTags, set(v) { el._html = String(v); }, configurable: true });
+  Object.defineProperty(el, 'innerText', { get: semTags, configurable: true });
   return el;
 }
 
