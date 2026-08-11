@@ -4171,7 +4171,12 @@ async function fetchQualidadeFicha(itemId, accessToken) {
         preenchidos: Array.isArray(ft.attributes) ? ft.attributes : [],
         fichaCompleta: ft.complete === true,
         semIdentificador: pi.complete === false,
-        identificadoresFaltando: Array.isArray(pi.missing_attributes) ? pi.missing_attributes : []
+        identificadoresFaltando: Array.isArray(pi.missing_attributes) ? pi.missing_attributes : [],
+        // O bloco cru vai junto: `required` é a régua de obrigatoriedade da ML pra ESTE
+        // anúncio (mfObrigatoriosDoML). Extrair só `ft` e `pi` fazia a etapa "Obrigatórios"
+        // cair no fallback das tags da categoria em 100% dos casos, sem nunca dizer que
+        // estava fazendo isso — a feature parecia ligada e nunca rodava.
+        adoption_status: raw.adoption_status || null
     };
 }
 

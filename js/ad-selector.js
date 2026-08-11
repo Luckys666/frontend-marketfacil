@@ -2366,11 +2366,23 @@ function readStateFromUrl() {
       // A escada é ordenada (q → seller_sku → sku), então estar num degrau significa que
       // os anteriores já foram tentados. Sem marcar isso, ela tentaria de novo o que já
       // falhou e voltaria a gastar as chamadas que a restauração veio economizar.
+      const degrauDeSku = degrau === CONFIG.SKU_PARAM || degrau === CONFIG.SKU_PARAM_ALT;
       if (degrau === CONFIG.SKU_PARAM) {
         state.qAllTried = true;
       } else if (degrau === CONFIG.SKU_PARAM_ALT) {
         state.qAllTried = true;
         state.skuTried = true;
+      }
+      // Todo degrau de SKU chega alargando o status (avancarDegrau), porque SKU casa exato
+      // e o anúncio procurado costuma estar pausado. Restaurar o degrau sem restaurar o
+      // alargamento fazia o F5 esconder o anúncio que a busca tinha acabado de achar.
+      //
+      // Escolha manual continua intocável: `statusManual` não sobrevive ao reload, mas o
+      // sintoma dela sim — writeStateToUrl só põe `status` na URL quando é o do VENDEDOR.
+      // Então status na URL = ele escolheu; sem status = está no padrão e pode alargar.
+      if (degrauDeSku && !p.get('status')) {
+        state.statusRestore = state.status;
+        state.status = 'all';
       }
     } else {
       state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;

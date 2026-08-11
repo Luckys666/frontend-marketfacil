@@ -98,6 +98,32 @@ console.log('\n== o degrau da escada sobrevive ao F5 ==');
     I.state.searchParam === 'q' && I.state.qAllTried === false && I.state.skuTried === false);
 }
 
+// ── o alargamento de status volta junto com o degrau ────────────────────
+console.log('\n== degrau de SKU restaura o "Todos" que a escada tinha ligado ==');
+{
+  // Achado testando na tela (11/08): o degrau voltava, mas com status=active. Como a
+  // escada só chega no degrau de SKU alargando pra "Todos" (SKU casa exato e o anúncio
+  // costuma estar pausado), o F5 escondia justamente o anúncio recém-encontrado.
+  const I = carregar('?busca=ABC-123&buscapor=sku');
+  I.readStateFromUrl();
+  check('status vira "all"', I.state.status === 'all', I.state.status);
+  check('guarda o status do vendedor pra devolver depois', I.state.statusRestore === 'active', String(I.state.statusRestore));
+
+  const I2 = carregar('?busca=ABC-123&buscapor=seller_sku');
+  I2.readStateFromUrl();
+  check('vale pro degrau seller_sku também', I2.state.status === 'all', I2.state.status);
+
+  // Escolha manual manda: writeStateToUrl só põe `status` na URL quando é o do VENDEDOR,
+  // então status na URL significa que ele escolheu — e aí não se alarga nada.
+  const I3 = carregar('?busca=ABC-123&buscapor=sku&status=paused');
+  I3.readStateFromUrl();
+  check('status explícito na URL é respeitado (não alarga)', I3.state.status === 'paused', I3.state.status);
+
+  const I4 = carregar('?busca=sapatilha&buscapor=q');
+  I4.readStateFromUrl();
+  check('degrau q NÃO alarga sozinho', I4.state.status !== 'all', I4.state.status);
+}
+
 // ── valor de fora não é confiável ───────────────────────────────────────
 console.log('\n== buscapor vem da URL, então é validado ==');
 {

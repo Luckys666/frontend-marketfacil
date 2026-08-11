@@ -57,6 +57,37 @@ console.log('\n== mfObrigatoriosDoML lê required, não ft nem all ==');
   check('NÃO pega de ft (NAME só existe lá)', !set.has('NAME'), [...set].join(','));
 }
 
+// ── o shape que o front REALMENTE recebe ────────────────────────────────
+console.log('\n== o que fetchQualidadeFicha entrega, não o cru da ML ==');
+{
+  // Achado ao testar na tela em 11/08: fetchQualidadeFicha não repassa a resposta da ML —
+  // ela extrai `ft` e `pi` e monta um objeto próprio. Enquanto `required` ficou de fora,
+  // mfObrigatoriosDoML recebia um objeto sem adoption_status, devolvia null e a etapa caía
+  // no fallback das tags SEMPRE, parecendo ligada. Os testes acima passavam porque eu
+  // mockei o formato cru — que não é o que chega aqui.
+  const doFetch = {
+    faltando: ['IS_KIT', 'ACTIVE_INGREDIENTS'],
+    preenchidos: ['NAME', 'BRAND'],
+    fichaCompleta: false,
+    semIdentificador: false,
+    identificadoresFaltando: [],
+    adoption_status: {
+      ft: { complete: false, attributes: ['NAME', 'BRAND'], missing_attributes: ['IS_KIT', 'ACTIVE_INGREDIENTS'] },
+      required: { complete: false, attributes: ['BRAND'], missing_attributes: ['IS_KIT'] }
+    }
+  };
+  const set = mfObrigatoriosDoML(doFetch);
+  check('lê o required do objeto que o fetch monta', set instanceof Set, String(set));
+  check('pega BRAND e IS_KIT', set && set.has('BRAND') && set.has('IS_KIT'), set ? [...set].join(',') : '');
+  check('não confunde com o ft (ACTIVE_INGREDIENTS só está lá)',
+    set && !set.has('ACTIVE_INGREDIENTS'), set ? [...set].join(',') : '');
+
+  // O shape antigo (sem adoption_status) tem que cair no fallback, não quebrar.
+  const semBloco = { faltando: ['IS_KIT'], preenchidos: [], fichaCompleta: false };
+  check('objeto sem adoption_status → null (fallback nas tags)', mfObrigatoriosDoML(semBloco) === null);
+  check('adoption_status null → null', mfObrigatoriosDoML({ adoption_status: null }) === null);
+}
+
 // ── quando a ML não diz ─────────────────────────────────────────────────
 console.log('\n== ausência vira null, nunca Set vazio ==');
 {
