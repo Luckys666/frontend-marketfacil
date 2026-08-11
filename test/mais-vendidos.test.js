@@ -1,18 +1,15 @@
 'use strict';
 /*
- * Ordem "Mais vendidos (30 dias)" — o PADRÃO de exibição do Seletor (Lucas, 11/08/2026).
+ * Ordem "Mais vendidos" — o PADRÃO de exibição do Seletor (Lucas, 11/08/2026), pelo TOTAL
+ * de vendas do anúncio.
  *
  * A ML não ordena por vendas: o `available_orders` de /users/{id}/items/search só tem
- * tempo, estoque e preço (doc oficial, conferida em 11/08). Então o ranking vem pronto do
- * proxy (/api/sales-ranking), montado a partir dos PEDIDOS — que só trazem quem vendeu, o
- * que faz o custo ser proporcional às vendas e não ao tamanho da conta.
+ * tempo, estoque e preço (doc oficial, conferida em 11/08). O ranking vem pronto do proxy,
+ * que varre com `search_type=scan` e por isso passa do teto de 1.000 do offset — teto em
+ * que a varredura do front para, e que esconderia os campeões numa conta de 5.000 anúncios.
  *
- * O front NÃO calcula ordem aqui: ele pede, pagina e desenha (regra de 11/08 — a
- * inteligência fica no servidor). Estes testes protegem justamente as bordas:
- *  - o padrão novo não pode poluir a URL nem contar como "filtro ativo"
- *  - rota ausente (front injetado antes do deploy do proxy) NÃO pode virar tela vazia
- *    nem silêncio: cai pra ordem da ML avisando (a lição invertida de 10/08)
- *  - contagem incompleta não vira badge de venda
+ * Boa parte destes testes nasceu da revisão de código de 11/08, que achou 10 defeitos nesta
+ * feature. Cada bloco marcado com "achado" protege um deles.
  *
  * Rodar: node test/mais-vendidos.test.js
  */
@@ -37,14 +34,26 @@ function mkSandbox(search, fetchImpl) {
     querySelectorAll() { return []; }, setAttribute() {}, getAttribute() { return null; },
     closest() { return null; }, focus() {}, click() {}, remove() {}
   });
-  const store = {};
+  // Storage com as chaves como propriedades PRÓPRIAS: refreshCounts varre com
+  // Object.keys(sessionStorage) pra apagar as `mf_sel_*`, e um stub que guarda tudo num
+  // objeto interno faria esse varrimento não achar nada — o teste passaria sem exercitar
+  // a limpeza de verdade.
+  const mkStorage = () => {
+    const s = {};
+    Object.defineProperties(s, {
+      getItem: { value(k) { return Object.prototype.hasOwnProperty.call(this, k) ? this[k] : null; }, enumerable: false },
+      setItem: { value(k, v) { this[k] = String(v); }, enumerable: false },
+      removeItem: { value(k) { delete this[k]; }, enumerable: false },
+    });
+    return s;
+  };
   const sandbox = {
     console, JSON, Object, Array, Math, RegExp, Set, Map, Date, Number, String, Boolean,
     parseInt, parseFloat, isFinite, isNaN, Promise, Error, encodeURIComponent, decodeURIComponent,
     URLSearchParams, setTimeout: (fn) => { try { fn(); } catch (_) {} return 0; }, clearTimeout() {},
     setInterval() { return 0; }, clearInterval() {},
-    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
-    sessionStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+    localStorage: mkStorage(),
+    sessionStorage: mkStorage(),
     fetch: fetchImpl || (async () => ({ ok: true, status: 200, json: async () => ({}) })),
     document: { readyState: 'complete', getElementById: () => mkEl(), createElement: () => mkEl(), body: mkEl(), head: mkEl(), addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] },
     navigator: { clipboard: { writeText: async () => {} }, userAgent: 'node' },
@@ -63,7 +72,8 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'ad-selector.js'), 
 function carregar(search = '', fetchImpl) {
   const patched = src.replace(/\nboot\(\);\n/, `
 window.__internos = { state, CONFIG, writeStateToUrl, readStateFromUrl, isDefaultState,
-  computeBadges, loadSalesRanking, sales30Of, ORDER_MAIS_VENDIDOS, ORDER_FALLBACK };
+  loadSalesRanking, ORDER_MAIS_VENDIDOS, ORDER_FALLBACK,
+  buildListUrl, ordenarPorVendas, filtroForaDoRanking, refreshCounts };
 `);
   const box = mkSandbox(search, fetchImpl);
   vm.createContext(box);
@@ -71,23 +81,27 @@ window.__internos = { state, CONFIG, writeStateToUrl, readStateFromUrl, isDefaul
   return box.__internos;
 }
 
-// IIFE async: o arquivo é CommonJS (require) e há await nos blocos de ranking.
+const tokenOk = { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
+const mockRanking = (corpo) => async (url) => {
+  if (String(url).includes('getAccessToken2')) return tokenOk;
+  return { ok: true, status: 200, json: async () => corpo };
+};
+
 (async () => {
 
 const I0 = carregar();
 check('internos expostos', !!(I0 && I0.state && I0.loadSalesRanking));
 
-// ── o padrão mudou ──────────────────────────────────────────────────────
+// ── o padrão ────────────────────────────────────────────────────────────
 console.log('\n== mais vendidos é o padrão ==');
 {
   const I = carregar();
-  check('state.order abre em sales30_desc', I.state.order === 'sales30_desc', I.state.order);
-  check('a constante bate', I.ORDER_MAIS_VENDIDOS === 'sales30_desc');
+  check('state.order abre em sold_desc', I.state.order === 'sold_desc', I.state.order);
   check('o fallback é a ordem antiga da ML', I.ORDER_FALLBACK === 'last_updated_desc');
   check('tela limpa conta como estado padrão', I.isDefaultState() === true);
 }
 
-// ── a URL só guarda o que fugiu do padrão ───────────────────────────────
+// ── URL ─────────────────────────────────────────────────────────────────
 console.log('\n== a URL não carrega o padrão ==');
 {
   const I = carregar();
@@ -100,143 +114,171 @@ console.log('\n== a URL não carrega o padrão ==');
   I.writeStateToUrl();
   check('ordem escolhida vai pra URL', /order=price_asc/.test(urlEscrita), urlEscrita);
 
-  // F5 com a ordem antiga na URL tem que continuar valendo — link velho não pode quebrar
   const I2 = carregar('?order=last_updated_desc');
   I2.readStateFromUrl();
-  check('URL antiga com last_updated_desc é respeitada', I2.state.order === 'last_updated_desc', I2.state.order);
-
-  const I3 = carregar('?order=sales30_desc');
-  I3.readStateFromUrl();
-  check('URL com a ordem nova também', I3.state.order === 'sales30_desc', I3.state.order);
+  check('link antigo continua valendo', I2.state.order === 'last_updated_desc', I2.state.order);
 }
 
-// ── o ranking vem do servidor, o front não ordena ───────────────────────
+// ── achado: a pseudo-ordem ia pra ML e quebrava toda busca ──────────────
+console.log('\n== a pseudo-ordem nunca vai pra ML ==');
+{
+  // `sold_desc` é ordem NOSSA. Mandar em `orders=` fazia o proxy responder 400 (o
+  // isValidOrder nem aceita o formato) e QUALQUER busca por texto derrubava a tela — no
+  // estado padrão recém-instalado, porque a busca não passa pelo ramo do ranking.
+  const I = carregar();
+  I.state.sellerId = '1';
+  const url = I.buildListUrl(0);
+  check('não manda sold_desc pra ML', !/orders=sold_desc/.test(url), url);
+  check('manda a ordem que a ML entende', /orders=last_updated_desc/.test(url), url);
+
+  I.state.order = 'price_asc';
+  check('ordem de verdade continua indo', /orders=price_asc/.test(I.buildListUrl(0)));
+}
+
+// ── o ranking vem do servidor ───────────────────────────────────────────
 console.log('\n== o front pede o ranking, não calcula ==');
 {
   let urlPedida = null;
-  const fetchMock = async (url) => {
-    if (String(url).includes('getAccessToken2')) {
-      return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
-    }
+  const I = carregar('', async (url) => {
+    if (String(url).includes('getAccessToken2')) return tokenOk;
     urlPedida = String(url);
     return { ok: true, status: 200, json: async () => ({
-      window_days: 30, complete: true, orders_scanned: 12, orders_total: 12, items_with_sales: 3,
-      // de propósito FORA de ordem: se o front reordenasse, o teste não pegaria a diferença
-      ranking: [{ item_id: 'MLB_A', units: 9 }, { item_id: 'MLB_B', units: 4 }, { item_id: 'MLB_C', units: 1 }],
+      complete: true, items_scanned: 3, items_total: 3,
+      // fora de ordem de propósito: se o front reordenasse, o teste não veria diferença
+      ranking: [{ item_id: 'MLB_A', sold: 90 }, { item_id: 'MLB_B', sold: 4 }, { item_id: 'MLB_C', sold: 0 }],
     }) };
-  };
-  const I = carregar('', fetchMock);
+  });
   I.state.sellerId = '649733403';
   const ranking = await I.loadSalesRanking();
   check('chamou /api/sales-ranking', /\/api\/sales-ranking/.test(urlPedida || ''), String(urlPedida));
-  check('mandou o seller e a janela', /seller_id=649733403/.test(urlPedida) && /days=30/.test(urlPedida), String(urlPedida));
-  check('devolve a lista do servidor, na ordem dele',
-    ranking.map(r => r.item_id).join(',') === 'MLB_A,MLB_B,MLB_C', JSON.stringify(ranking.map(r => r.item_id)));
+  check('mandou seller e status', /seller_id=649733403/.test(urlPedida) && /status=/.test(urlPedida), String(urlPedida));
+  check('devolve a lista NA ORDEM DO SERVIDOR',
+    ranking.map((r) => r.item_id).join(',') === 'MLB_A,MLB_B,MLB_C', JSON.stringify(ranking));
   check('guarda o que a tela precisa pra ser honesta',
-    I.state.rankingInfo.complete === true && I.state.rankingInfo.orders_total === 12,
+    I.state.rankingInfo.complete === true && I.state.rankingInfo.items_total === 3,
     JSON.stringify(I.state.rankingInfo));
-  // A mesma fonte alimenta o badge da linha: duas contagens de "vendas" na mesma tela
-  // seria o bug das três contagens de campos outra vez.
-  check('alimenta o badge pela MESMA fonte da ordem', I.sales30Of('MLB_A') === 9, String(I.sales30Of('MLB_A')));
 }
 
-// ── varredura incompleta não vira badge ─────────────────────────────────
-console.log('\n== contagem parcial não vira número na linha ==');
+// ── achado: cache não escopado por conta ────────────────────────────────
+console.log('\n== cache do ranking é por conta ==');
 {
-  const fetchMock = async (url) => {
-    if (String(url).includes('getAccessToken2')) return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
-    return { ok: true, status: 200, json: async () => ({
-      complete: false, orders_scanned: 2000, orders_total: 9000, items_with_sales: 1,
-      ranking: [{ item_id: 'MLB_A', units: 9 }],
-    }) };
-  };
-  const I = carregar('', fetchMock);
-  I.state.sellerId = '1';
+  const I = carregar('', mockRanking({ complete: true, ranking: [{ item_id: 'MLB_CONTA_A', sold: 5 }] }));
+  I.state.sellerId = 'AAA';
   await I.loadSalesRanking();
-  check('marca incompleto', I.state.sales30Incomplete === true);
-  // O ranking ainda serve pra ORDENAR (é o melhor que temos), mas o número por linha não
-  // pode ser afirmado — a tela avisa de quantos pedidos a ordem saiu.
-  check('sales30Of devolve null quando incompleto', I.sales30Of('MLB_A') === null, String(I.sales30Of('MLB_A')));
-  const badges = I.computeBadges({ id: 'MLB_A', tags: [], sold_quantity: 5 });
-  check('nenhum badge de venda com contagem parcial',
-    !badges.some(b => /venda/i.test(b.text) && /\dd$/.test(b.text)), JSON.stringify(badges.map(b => b.text)));
-}
+  check('conta A carrega o ranking dela', I.state.ranking[0].item_id === 'MLB_CONTA_A');
+  const chaveA = I.state.rankingChave;
+  check('a chave leva o vendedor', /AAA/.test(String(chaveA)), String(chaveA));
 
-// ── badge de vendas quando a contagem é confiável ───────────────────────
-console.log('\n== badge explica por que a linha está no topo ==');
-{
-  const fetchMock = async (url) => {
-    if (String(url).includes('getAccessToken2')) return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
-    return { ok: true, status: 200, json: async () => ({ complete: true, ranking: [{ item_id: 'MLB_A', units: 9 }, { item_id: 'MLB_U', units: 1 }] }) };
-  };
-  const I = carregar('', fetchMock);
-  I.state.sellerId = '1';
+  // Troca de conta na MESMA aba: sessionStorage sobrevive ao reload do Bubble. Antes, o
+  // cache devolvia o ranking da conta anterior sem passar pelo proxy — o ownershipGate
+  // nunca rodava e a lista da conta B saía com anúncios da conta A (o multiget da ML
+  // aceita id de qualquer vendedor).
+  I.state.sellerId = 'BBB';
   await I.loadSalesRanking();
-  // Item sem nenhum problema real (tem garantia): é aqui que dá pra ver se o badge de
-  // venda apaga o "Sem problemas" — foi o erro que cometi na primeira versão, colocando
-  // o badge no array de `problems`.
-  const limpo = { id: 'MLB_A', tags: [], sold_quantity: 20, warranty: 'Garantia do vendedor: 90 dias' };
-  const badges = I.computeBadges(limpo);
-  const venda = badges.find(b => /9 vendas/.test(b.text));
-  check('mostra "9 vendas em 30d"', !!venda, JSON.stringify(badges.map(b => b.text)));
-  check('é badge verde (não é problema)', venda && venda.cls === 'green', venda && venda.cls);
-  check('não apaga o "Sem problemas" da linha',
-    badges.some(b => b.text === 'Sem problemas'), JSON.stringify(badges.map(b => b.text)));
-
-  const um = I.computeBadges({ id: 'MLB_U', tags: [], sold_quantity: 3 });
-  check('singular em 1 venda', um.some(b => b.text === '1 venda em 30d'), JSON.stringify(um.map(b => b.text)));
-
-  const zero = I.computeBadges({ id: 'MLB_ZERO', tags: [], sold_quantity: 0 });
-  check('quem não vendeu no período não ganha badge de venda',
-    !zero.some(b => /em 30d/.test(b.text)), JSON.stringify(zero.map(b => b.text)));
+  check('trocar de conta refaz o ranking', I.state.rankingChave !== chaveA, String(I.state.rankingChave));
+  check('e a chave nova é da conta B', /BBB/.test(String(I.state.rankingChave)), String(I.state.rankingChave));
 }
 
-// ── rota ausente: o erro precisa chegar identificável ───────────────────
-console.log('\n== front novo com proxy antigo ==');
+// ── achado: fallback prendia o vendedor na ordem antiga ─────────────────
+console.log('\n== fallback não prende na ordem antiga ==');
 {
-  // Cenário real: o bundle vai pra version-test antes do deploy do proxy. Em 10/08 o
-  // inverso (servidor novo, cliente antigo) deixou o Lucas clicando em loop. O erro tem
-  // que chegar com o status pra loadPage escolher a mensagem certa e cair na ordem da ML.
-  const fetch404 = async (url) => {
-    if (String(url).includes('getAccessToken2')) return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
-    return { ok: false, status: 404, json: async () => ({ error: 'not found' }) };
-  };
-  const I = carregar('', fetch404);
+  const I = carregar('', async (url) => {
+    if (String(url).includes('getAccessToken2')) return tokenOk;
+    return { ok: false, status: 404, json: async () => ({}) };
+  });
   I.state.sellerId = '1';
   let erro = null;
   try { await I.loadSalesRanking(); } catch (e) { erro = e; }
   check('propaga erro com status 404', erro && erro.status === 404, String(erro && erro.status));
-  check('não deixa ranking pela metade no estado', !I.state.ranking, JSON.stringify(I.state.ranking));
-  // E o mais importante: não pode ter "inventado" um mapa de vendas vazio, senão a tela
-  // passaria a dizer "0 vendas" pra conta inteira.
-  check('não inventa mapa de vendas vazio', I.state.sales30Map === null, JSON.stringify(I.state.sales30Map));
+  // O ponto: state.order NÃO pode virar last_updated_desc. Se virasse, writeStateToUrl
+  // gravaria `order=` na URL e todo F5 seguinte prenderia o vendedor nela — mesmo depois
+  // de o proxy voltar. É a mesma armadilha que o statusRestore evita para o status.
+  check('a ordem escolhida continua sendo a padrão', I.state.order === 'sold_desc', I.state.order);
+  urlEscrita = '';
+  I.writeStateToUrl();
+  check('e a URL não ganha ordem que ele não escolheu', !/order=/.test(urlEscrita), urlEscrita);
 
-  const fetch500 = async (url) => {
-    if (String(url).includes('getAccessToken2')) return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
+  const I2 = carregar('', async (url) => {
+    if (String(url).includes('getAccessToken2')) return tokenOk;
     return { ok: false, status: 500, json: async () => ({}) };
-  };
-  const I2 = carregar('', fetch500);
+  });
   I2.state.sellerId = '1';
-  let erro2 = null;
-  try { await I2.loadSalesRanking(); } catch (e) { erro2 = e; }
-  check('500 também é erro identificável (mensagem diferente do 404)',
-    erro2 && erro2.status === 500, String(erro2 && erro2.status));
+  let e2 = null;
+  try { await I2.loadSalesRanking(); } catch (e) { e2 = e; }
+  check('500 é erro identificável (mensagem diferente do 404)', e2 && e2.status === 500, String(e2 && e2.status));
 }
 
-// ── cache de sessão ─────────────────────────────────────────────────────
-console.log('\n== não repete a varredura na mesma sessão ==');
+// ── achado: "Atualizar" nunca refazia o ranking ─────────────────────────
+console.log('\n== Atualizar refaz o ranking ==');
 {
   let chamadas = 0;
-  const fetchMock = async (url) => {
-    if (String(url).includes('getAccessToken2')) return { ok: true, status: 200, json: async () => ({ response: { access_token: 'T' } }) };
-    chamadas++;
-    return { ok: true, status: 200, json: async () => ({ complete: true, ranking: [{ item_id: 'MLB_A', units: 2 }] }) };
-  };
-  const I = carregar('', fetchMock);
+  const I = carregar('', async (url) => {
+    if (String(url).includes('getAccessToken2')) return tokenOk;
+    // refreshCounts dispara outras chamadas (contagens, sinais): contar só o ranking
+    if (String(url).includes('/api/sales-ranking')) chamadas++;
+    return { ok: true, status: 200, json: async () => ({ complete: true, ranking: [{ item_id: 'MLB1', sold: 2 }] }) };
+  });
   I.state.sellerId = '1';
   await I.loadSalesRanking();
+  check('carregou', chamadas === 1, String(chamadas));
   await I.loadSalesRanking();
-  check('segunda chamada não vai à rede', chamadas === 1, String(chamadas));
+  check('não repete sem motivo', chamadas === 1, String(chamadas));
+
+  // refreshCounts limpava o sessionStorage mas não state.ranking, e loadSalesRanking
+  // devolve o que está em memória ANTES de olhar o cache: o botão nunca refazia a ordem.
+  I.refreshCounts();
+  check('refreshCounts zera o ranking em memória', I.state.ranking === null, JSON.stringify(I.state.ranking));
+  await I.loadSalesRanking();
+  check('e a próxima carga vai à rede de novo', chamadas === 2, String(chamadas));
+}
+
+// ── ordenação local (quando a lista vem da varredura) ───────────────────
+console.log('\n== ordenar por vendas na varredura local ==');
+{
+  const I = carregar();
+  const itens = [
+    { id: 'MLB_B', sold_quantity: 3 },
+    { id: 'MLB_A', sold_quantity: 30 },
+    { id: 'MLB_C', sold_quantity: 3 },
+    { id: 'MLB_D' },   // sem o campo: não pode virar NaN e embaralhar a lista
+  ];
+  const ord = I.ordenarPorVendas(itens).map((x) => x.id);
+  check('maior total primeiro', ord[0] === 'MLB_A', JSON.stringify(ord));
+  check('empate desempata por id (não dança no F5)', ord[1] === 'MLB_B' && ord[2] === 'MLB_C', JSON.stringify(ord));
+  check('item sem sold_quantity vai pro fim, não quebra', ord[3] === 'MLB_D', JSON.stringify(ord));
+  check('não altera o array original', itens[0].id === 'MLB_B');
+}
+
+// ── achado: filtros viravam no-op na visão padrão ───────────────────────
+console.log('\n== filtros que o ranking não conhece ==');
+{
+  // O ranking do servidor só conhece o status. Com chip, tipo ou logística ligados, a
+  // ordem tem que sair da varredura local — que aplica esses filtros. Sem isso, o
+  // vendedor clicava em "Pausados" ou num chip e a lista não mudava.
+  const I = carregar();
+  check('sem filtro → usa o ranking do servidor', I.filtroForaDoRanking() === false);
+  I.state.activeChip = 'sem_frete';
+  check('chip tira do ranking', I.filtroForaDoRanking() === true);
+  I.state.activeChip = null; I.state.listingType = 'gold_pro';
+  check('tipo de anúncio idem', I.filtroForaDoRanking() === true);
+  I.state.listingType = null; I.state.logisticType = 'fulfillment';
+  check('logística idem', I.filtroForaDoRanking() === true);
+  I.state.logisticType = null;
+  check('e volta ao ranking quando limpa', I.filtroForaDoRanking() === false);
+}
+
+// ── status entra na chave (o ranking do servidor filtra por ele) ────────
+console.log('\n== status faz parte da identidade do ranking ==');
+{
+  const I = carregar('', mockRanking({ complete: true, ranking: [{ item_id: 'MLB1', sold: 1 }] }));
+  I.state.sellerId = '1';
+  I.state.status = 'active';
+  await I.loadSalesRanking();
+  const chaveAtivos = I.state.rankingChave;
+  I.state.status = 'paused';
+  await I.loadSalesRanking();
+  check('trocar de status refaz o ranking', I.state.rankingChave !== chaveAtivos,
+    `${chaveAtivos} vs ${I.state.rankingChave}`);
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);

@@ -99,7 +99,7 @@ const selectorHtml = `
       <button type="button" class="btn-filters-toggle" id="filtersToggle" aria-expanded="false">Filtrar e ordenar ▾</button>
       <div class="filters-more">
       <select class="sel" id="orderSelect">
-        <option value="sales30_desc">Ordenar: mais vendidos (30 dias)</option>
+        <option value="sold_desc">Ordenar: mais vendidos</option>
         <option value="last_updated_desc">Ordenar: atualizados recentemente</option>
         <option value="price_asc">Ordenar: preço menor</option>
         <option value="price_desc">Ordenar: preço maior</option>

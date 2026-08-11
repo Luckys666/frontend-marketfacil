@@ -163,10 +163,11 @@ const MOCK = false;
 const state = {
   sellerId: null,
   status: 'active',              // active | paused | all
-  // Padrão pedido pelo Lucas em 11/08/2026: a lista abre pelos mais vendidos. A ML NÃO
-  // ordena por vendas (o available_orders dela só tem tempo, estoque e preço), então a
-  // ordem vem pronta do proxy — ver ORDER_MAIS_VENDIDOS e loadSalesRanking.
-  order: 'sales30_desc',
+  // Padrão pedido pelo Lucas em 11/08/2026: a lista abre pelos mais vendidos (total do
+  // anúncio). A ML NÃO ordena por vendas (o available_orders dela só tem tempo, estoque e
+  // preço), então a ordem vem pronta do proxy — ver ORDER_MAIS_VENDIDOS e loadSalesRanking.
+  // Literal e não a constante porque ela é declarada mais abaixo (TDZ).
+  order: 'sold_desc',   // = ORDER_MAIS_VENDIDOS
   search: '',
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   statusRestore: null,           // status a devolver quando o degrau que força "Todos" sair
@@ -195,9 +196,11 @@ const state = {
   visitsMap: {},         // itemId -> nº de visitas 30d (undefined=carregando, null=falhou)  (camada C)
   visitsSeries: {},      // itemId -> [visitas por dia, 30 posições] (mesma chamada do total — custo zero extra)
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
-  ranking: null,         // [{item_id, units, orders}] já ordenado pelo servidor (ordem "mais vendidos")
-  rankingInfo: null,     // { complete, orders_scanned, orders_total, items_with_sales } — pra tela poder ser honesta
-  rankingIndisponivel: false, // true quando a rota não existe/falhou: a ordem cai pra ML e a tela AVISA
+  ranking: null,         // [{item_id, sold}] já ordenado pelo servidor (ordem "mais vendidos")
+  rankingInfo: null,     // { complete, items_scanned, items_total } — pra tela poder ser honesta
+  rankingChave: null,    // conta+status de que o ranking em memória saiu (troca de conta invalida)
+  ordemDegradada: null,  // msg quando a ordem pedida não pôde ser usada. NÃO mexe em state.order:
+                         // mudar a ordem gravaria `order=` na URL e prenderia o vendedor nela.
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
   moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
   promoMap: {},          // itemId -> { price, original_price, discount_percent, promotion_name }
@@ -570,35 +573,58 @@ async function loadSales30(sellerId) {
    Aqui o front NÃO calcula nada: pede, pagina e desenha (regra de 11/08 — a inteligência
    fica no servidor).
    ========================================================================= */
-const ORDER_MAIS_VENDIDOS = 'sales30_desc';
+const ORDER_MAIS_VENDIDOS = 'sold_desc';
 const ORDER_FALLBACK = 'last_updated_desc';
 
+// Aplica o ranking ao estado. Um caminho só para rede e cache: quando isso estava
+// duplicado, o cache-hit devolvia cedo e nunca preenchia o mapa — os números sumiam da
+// tela no F5 enquanto a lista seguia ordenada por eles, fazendo a ordem parecer aleatória.
+function aplicarRanking(ranking, info) {
+  state.ranking = ranking;
+  state.rankingInfo = info;
+  return ranking;
+}
+
+/**
+ * Ranking de mais vendidos (total do anúncio), pronto do servidor.
+ *
+ * A chave de cache leva o VENDEDOR: sem isso, quem tem mais de uma conta trocava de conta,
+ * a página recarregava na mesma aba (sessionStorage sobrevive ao reload) e o cache devolvia
+ * o ranking da conta anterior — sem passar pelo proxy, então sem ownershipGate. A lista
+ * saía com anúncios de outra conta, porque o multiget da ML aceita id de qualquer vendedor.
+ */
 async function loadSalesRanking() {
-  if (state.ranking) return state.ranking;           // já carregado nesta sessão de tela
-  const cached = getCachedJson('mf_sel_ranking30');
+  const chave = `mf_sel_ranking_${state.sellerId}_${state.status}`;
+  if (state.ranking && state.rankingChave === chave) return state.ranking;
+  const cached = getCachedJson(chave);
   if (cached && Array.isArray(cached.ranking)) {
-    state.ranking = cached.ranking;
-    state.rankingInfo = cached.info;
-    return state.ranking;
+    state.rankingChave = chave;
+    return aplicarRanking(cached.ranking, cached.info);
   }
-  const resp = await proxyGet(`/api/sales-ranking?seller_id=${state.sellerId}&days=${CONFIG.SALES_WINDOW_DAYS}`);
+  const resp = await proxyGet(`/api/sales-ranking?seller_id=${state.sellerId}&status=${encodeURIComponent(state.status)}`);
   const ranking = Array.isArray(resp && resp.ranking) ? resp.ranking : [];
   const info = {
     complete: !!(resp && resp.complete),
-    orders_scanned: resp && resp.orders_scanned,
-    orders_total: resp && resp.orders_total,
-    items_with_sales: resp && resp.items_with_sales,
+    items_scanned: resp && resp.items_scanned,
+    items_total: resp && resp.items_total,
   };
-  state.ranking = ranking;
-  state.rankingInfo = info;
-  setCachedJson('mf_sel_ranking30', { ranking, info });
-  // Alimenta o badge de vendas da linha com a mesma fonte da ordenação — duas contagens
-  // diferentes de "vendas" na mesma tela seria o bug das três contagens de novo.
-  const mapa = {};
-  for (const r of ranking) mapa[r.item_id] = r.units;
-  state.sales30Map = mapa;
-  state.sales30Incomplete = !info.complete;
-  return ranking;
+  setCachedJson(chave, { ranking, info });
+  state.rankingChave = chave;
+  return aplicarRanking(ranking, info);
+}
+
+// Ordena itens já hidratados pelo total de vendas. Usado quando há filtro que o ranking do
+// servidor não conhece (chip, tipo, logística) e a lista vem da varredura local.
+function ordenarPorVendas(itens) {
+  return [...itens].sort((a, b) =>
+    (b.sold_quantity || 0) - (a.sold_quantity || 0)
+    || String(a.id).localeCompare(String(b.id))   // desempate: sem ele a lista dança no F5
+  );
+}
+// Filtros que o /api/sales-ranking não aplica (ele só conhece o status). Com qualquer um
+// deles ligado, a ordem sai da varredura local — que já os aplica — em vez do ranking.
+function filtroForaDoRanking() {
+  return !!(state.activeChip || state.listingType || state.logisticType);
 }
 
 // Unidades vendidas nos últimos 30d de um item (null = camada indisponível/incompleta)
@@ -882,7 +908,12 @@ function buildListUrl(offsetOverride) {
   else if (state.status === 'paused') p.set('status', 'paused');
   // 'all' -> não manda status
 
-  p.set('orders', state.order);
+  // `sold_desc` é ordem NOSSA, não da ML: ela não ordena por vendas. Mandar isso em
+  // `orders=` faz o proxy responder 400 (`isValidOrder` nem aceita o formato) e a tela
+  // inteira cai no erro genérico — o que acontecia em TODA busca por texto, já que a
+  // busca não passa pelo ramo do ranking. Quando a ordem é a nossa, a ML ordena do jeito
+  // padrão dela e quem reordena somos nós.
+  p.set('orders', state.order === ORDER_MAIS_VENDIDOS ? ORDER_FALLBACK : state.order);
   p.set('limit', String(CONFIG.PAGE_SIZE));
   p.set('offset', String(offsetOverride != null ? offsetOverride : state.offset));
 
@@ -1210,19 +1241,9 @@ function computeBadges(item) {
   if (item.shipping && item.shipping.free_shipping === false && Number(item.price) >= PROBLEM_RULES.freeShippingFloor) {
     out.push({ text: 'Sem frete grátis', cls: 'gray' });
   }
-  // Quanto vendeu no período. Na ordem "mais vendidos" é a explicação de por que a linha
-  // está onde está — sem isso a ordem parece arbitrária. Entra em `out` e não em
-  // `problems`: vender não é problema e não pode apagar o "Sem problemas" da linha.
-  // Só aparece quando a contagem é confiável — sales30Of devolve null se a varredura de
-  // pedidos ficou incompleta, e número de venda errado é pior que número nenhum.
-  const vendas30 = sales30Of(id);
-  if (vendas30 != null && vendas30 > 0) {
-    out.push({
-      text: `${vendas30} ${vendas30 === 1 ? 'venda' : 'vendas'} em ${CONFIG.SALES_WINDOW_DAYS}d`,
-      cls: 'green',
-      hint: `Unidades vendidas nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias, somadas dos seus pedidos pagos.`,
-    });
-  }
+  // Sem badge de vendas aqui: a ordem "mais vendidos" é pelo TOTAL do anúncio, e a tabela
+  // já tem uma coluna VENDAS com exatamente esse número. Repetir seria uma segunda
+  // contagem da mesma coisa na mesma linha — o bug das três contagens de campos de novo.
   // "Ainda sem vendas" (não "Sem vendas"): não contradiz o "Sem problemas" na mesma linha
   if (item.sold_quantity === 0) out.push({ text: 'Ainda sem vendas', cls: 'gray' });
   return out;
@@ -2023,9 +2044,12 @@ async function loadPage() {
       const scan = await scanAccount(() => !desatualizada());
       if (desatualizada()) return;
       state.scanAtivo = true;
-      state.total = scan.itens.length;
+      // A varredura já vem na ordem da ML; se o vendedor pediu "mais vendidos", reordena
+      // aqui — os itens estão hidratados, então `sold_quantity` já está na mão.
+      const scanItens = state.order === ORDER_MAIS_VENDIDOS ? ordenarPorVendas(scan.itens) : scan.itens;
+      state.total = scanItens.length;
       if (state.offset >= state.total) state.offset = 0;
-      const pageItems = scan.itens.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
+      const pageItems = scanItens.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
       state.lastItems = pageItems;
       state.loading = false;
       renderRows(pageItems);
@@ -2040,10 +2064,12 @@ async function loadPage() {
       loadVisitsForPage(pageItems.map((i) => i.id));
       return;
     }
-    // Ordem "mais vendidos" (padrão): o ranking vem pronto do proxy e a lista é paginada
-    // sobre ele. É um recorte de quem VENDEU no período — por isso não se mistura com a
-    // busca por texto, que tem escada própria.
-    if (state.order === ORDER_MAIS_VENDIDOS && !state.search) {
+    // Ordem "mais vendidos" (padrão): a ML não ordena por vendas, então o ranking vem
+    // pronto do proxy (que varre com scan e passa do teto de 1.000 do offset) e a lista é
+    // paginada sobre ele. Chip, tipo e logística o ranking não conhece — com qualquer um
+    // deles ligado a ordem sai da varredura local, que já aplica os filtros. Sem isso, os
+    // filtros viravam no-ops silenciosos justamente na visão padrão.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()) {
       let ranking;
       try {
         ranking = await loadSalesRanking();
@@ -2052,21 +2078,22 @@ async function loadPage() {
         // A rota pode não existir ainda no proxy (o front sobe antes do servidor) ou ter
         // falhado. Cai pra ordem da ML, mas DIZENDO — em 10/08 um servidor à frente do
         // cliente deixou o vendedor clicando em loop sem entender o que estava errado.
-        state.rankingIndisponivel = true;
-        state.order = ORDER_FALLBACK;
-        const sel = $('#orderSelect'); if (sel) sel.value = state.order;
-        state.pendingBanner = { kind: 'warn', msg: err && err.status === 404
+        //
+        // `ordemDegradada` em vez de mexer em state.order: mudar a ordem faria
+        // writeStateToUrl gravar `order=` na URL, e aí o vendedor ficaria preso à ordem
+        // antiga em todo F5 e em todo link salvo, mesmo depois de o proxy voltar — a
+        // mesma armadilha que o statusRestore já evita para o status.
+        state.ordemDegradada = err && err.status === 404
           ? 'A ordenação por mais vendidos ainda está sendo liberada. Mostrando por atualização recente.'
-          : 'Não consegui montar a lista de mais vendidos agora. Mostrando por atualização recente — tente de novo em alguns minutos.' };
+          : 'Não consegui montar a lista de mais vendidos agora. Mostrando por atualização recente — tente de novo em alguns minutos.';
         return loadPage();
       }
       if (desatualizada()) return;
+      state.ordemDegradada = null;
 
-      // Ninguém vendeu no período: lista vazia aqui seria uma tela morta e sem explicação.
+      // Conta sem nenhuma venda: lista vazia seria uma tela morta e sem explicação.
       if (!ranking.length) {
-        state.order = ORDER_FALLBACK;
-        const sel = $('#orderSelect'); if (sel) sel.value = state.order;
-        state.pendingBanner = { kind: 'info', msg: `Nenhum anúncio vendeu nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias. Mostrando por atualização recente.` };
+        state.ordemDegradada = 'Nenhum anúncio seu tem venda registrada. Mostrando por atualização recente.';
         return loadPage();
       }
 
@@ -2084,14 +2111,42 @@ async function loadPage() {
 
       const info = state.rankingInfo || {};
       if (info.complete === false) {
-        // Ordem parcial engana igual a número parcial: dizer de quantos pedidos ela saiu.
-        setBanner('warn', `Esta ordem saiu dos ${info.orders_scanned} pedidos mais recentes, de ${info.orders_total} no período — anúncios que venderam só no começo do mês podem estar faltando.`);
-      } else {
-        setBanner('info', `${ranking.length} ${ranking.length === 1 ? 'anúncio vendeu' : 'anúncios venderam'} nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias, do que mais vendeu para o que menos vendeu. Troque a ordenação para ver a conta inteira.`);
+        // Ordem parcial engana igual a número parcial: dizer de quantos anúncios ela saiu.
+        setBanner('warn', `Esta ordem saiu de ${info.items_scanned} anúncios, de ${info.items_total} na conta — parte da sua conta não respondeu agora. Use "Atualizar" em alguns segundos para refazer.`);
       }
       return;
     }
+    // Ordem por vendas COM filtro que o ranking não conhece (chip, tipo, logística):
+    // varre a conta com os filtros aplicados (buildListUrl já os manda) e ordena aqui.
+    // O teto de 1.000 do offset vale neste caminho — o scan avisa quando trunca.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && filtroForaDoRanking()) {
+      const scan = await scanAccount(() => !desatualizada());
+      if (desatualizada()) return;
+      state.scanAtivo = true;
+      const ordenados = ordenarPorVendas(scan.itens);
+      state.total = ordenados.length;
+      if (state.offset >= state.total) state.offset = 0;
+      const pageItems = ordenados.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
+      state.lastItems = pageItems;
+      state.loading = false;
+      renderRows(pageItems);
+      if (scan.parcial) {
+        setBanner('warn', `Parte dos seus anúncios não respondeu agora — esta ordem saiu de ${scan.varridos} anúncios, não da conta inteira. Clique em "Atualizar" em alguns segundos.`);
+      } else if (scan.truncado) {
+        setBanner('info', `Ordenamos os primeiros ${CONFIG.OFFSET_CAP} anúncios (o Mercado Livre limita a navegação a esse número neste tipo de filtro).`);
+      }
+      loadAttrNames();
+      loadVisitsForPage(pageItems.map((i) => i.id));
+      return;
+    }
     state.scanAtivo = false;
+
+    // Caiu aqui com a ordem padrão pedida e sem conseguir usá-la: a tela precisa dizer por
+    // que não está como o vendedor espera — silêncio aqui é ele achando que a ordenação
+    // não funciona e clicando de novo.
+    if (state.order === ORDER_MAIS_VENDIDOS && state.ordemDegradada) {
+      setBanner('warn', state.ordemDegradada);
+    }
 
     const searchResp = await mlGet(buildListUrl());
     if (desatualizada()) return;
@@ -2544,6 +2599,10 @@ function refreshCounts() {
   try { Object.keys(sessionStorage).forEach((k) => { if (/^mf_sel_/.test(k)) sessionStorage.removeItem(k); }); } catch (e) {}
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
+  // O ranking em memória também: limpar só o sessionStorage não adiantava, porque
+  // loadSalesRanking devolve state.ranking antes de olhar o cache — o "Atualizar" nunca
+  // conseguia refazer a ordenação e a lista ficava presa no ranking da primeira carga.
+  state.ranking = null; state.rankingInfo = null; state.rankingChave = null;
   state.moderationMap = {}; state.fichaMap = {}; state.promoMap = {};
   invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);
