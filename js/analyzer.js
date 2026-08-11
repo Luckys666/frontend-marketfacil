@@ -5054,164 +5054,6 @@ window.iniciarAnaliseIA = async function (itemId, variationId) {
     }
 }
 
-/* =========================================================================
-   Gráfico do card de visitas — visitas, vendas e conversão dia a dia.
-   Pedido do Lucas (11/08/2026): linha em vez de barra, os dados do dia ao passar o
-   mouse, e poder desligar uma métrica.
-
-   TRÊS PAINÉIS empilhados, não um gráfico com dois eixos: visitas ficam na casa das
-   centenas, vendas na das unidades e conversão em %. Sobrepor isso exigiria dois eixos Y,
-   que é o erro clássico de gráfico — a inclinação de uma série passa a depender da escala
-   escolhida pra outra, e a comparação vira ilusão de ótica. Empilhado, o eixo X é
-   compartilhado e a leitura "as visitas subiram e as vendas não" continua direta.
-
-   Cores validadas contra fundo claro (CVD ΔE 8.9, acima do piso): cada painel tem título
-   próprio, então a cor é reforço e não a única identificação.
-   ========================================================================= */
-const MF_SERIES_VISITAS = [
-    { chave: 'visitas',   rotulo: 'Visitas',    cor: '#0066ff', sufixo: '' },
-    { chave: 'vendas',    rotulo: 'Vendas',     cor: '#00875a', sufixo: '' },
-    { chave: 'conversao', rotulo: 'Conversão',  cor: '#c2410c', sufixo: '%' },
-];
-
-/**
- * Monta as séries diárias a partir das visitas e do daily de Ads.
- * Dia sem fonte de vendas devolve `null` (buraco na linha), nunca 0 — não vendeu e
- * não deu pra saber são coisas diferentes, e a segunda não pode virar número.
- */
-function MF_seriesDiarias(results, adsDaily) {
-    const porDia = new Map();
-    for (const v of (results || [])) {
-        const d = (v.date || '').slice(0, 10);
-        if (d) porDia.set(d, { dia: d, visitas: Number(v.total) || 0, vendas: null, conversao: null });
-    }
-    const temAds = Array.isArray(adsDaily) && adsDaily.length > 0;
-    if (temAds) {
-        for (const a of adsDaily) {
-            const d = (a.date || '').slice(0, 10);
-            if (!d) continue;
-            const vendas = (Number(a.units_quantity) || 0) + (Number(a.organic_units_quantity) || 0);
-            const linha = porDia.get(d) || { dia: d, visitas: null, vendas: null, conversao: null };
-            linha.vendas = vendas;
-            // Conversão só existe com visita no dia: dividir por zero viraria 0% ou ∞.
-            linha.conversao = (linha.visitas > 0) ? (vendas / linha.visitas) * 100 : null;
-            porDia.set(d, linha);
-        }
-    }
-    return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
-}
-
-/**
- * Liga o crosshair, o tooltip e os botões de ligar/desligar série.
- *
- * Pendurado por JS depois do innerHTML: `<script>` dentro de innerHTML não executa, e no
- * Bubble isso já mordeu antes ([[feedback_bubble_innerhtml_script]]).
- */
-function MF_ativarGraficoVisitas(raiz) {
-    const box = raiz && raiz.querySelector('.mf-vis-chart');
-    if (!box) return;
-    let pontos = [];
-    try { pontos = JSON.parse(box.getAttribute('data-pontos') || '[]'); } catch (e) { return; }
-    if (!pontos.length) return;
-
-    const svg = box.querySelector('svg');
-    const cross = box.querySelector('.mf-vis-cross');
-    const tip = box.querySelector('.mf-vis-tip');
-    const vb = (svg.getAttribute('viewBox') || '0 0 300 100').split(/\s+/).map(Number);
-    const W = vb[2] || 300, PAD_E = 4, PAD_D = 4;
-    const larg = W - PAD_E - PAD_D;
-    const escondidas = new Set();
-
-    const fmtDia = (iso) => {
-        const p = String(iso).split('-');
-        return p.length === 3 ? `${p[2]}/${p[1]}` : iso;
-    };
-    const valorTexto = (s, v) => {
-        if (typeof v !== 'number') return '—';
-        return s.chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
-    };
-
-    // O ponteiro mira a data, não a linha: acha o X mais próximo.
-    const mover = (ev) => {
-        const r = svg.getBoundingClientRect();
-        const xRel = ((ev.clientX - r.left) / r.width) * W;
-        const t = Math.min(1, Math.max(0, (xRel - PAD_E) / larg));
-        const i = Math.round(t * (pontos.length - 1));
-        const p = pontos[i];
-        if (!p) return;
-        const px = PAD_E + (pontos.length <= 1 ? larg / 2 : (i / (pontos.length - 1)) * larg);
-        cross.setAttribute('x1', px); cross.setAttribute('x2', px);
-        cross.style.display = '';
-        // Um tooltip só, com TODAS as séries daquele dia — o leitor não precisa acertar a linha.
-        // Valor em destaque, nome da série secundário; textContent porque o dado é de fora.
-        tip.innerHTML = '';
-        const cab = document.createElement('div');
-        cab.style.cssText = 'font-weight:700; margin-bottom:3px;';
-        cab.textContent = fmtDia(p.dia);
-        tip.appendChild(cab);
-        for (const s of MF_SERIES_VISITAS) {
-            if (escondidas.has(s.chave)) continue;
-            if (!(s.chave in p)) continue;
-            const linha = document.createElement('div');
-            linha.style.cssText = 'display:flex; align-items:center; gap:6px;';
-            const traco = document.createElement('span');
-            traco.style.cssText = `width:10px; height:2px; border-radius:2px; flex-shrink:0; background:${s.cor};`;
-            const val = document.createElement('b');
-            val.textContent = valorTexto(s, p[s.chave]);
-            const nome = document.createElement('span');
-            nome.style.cssText = 'opacity:.75;';
-            nome.textContent = s.rotulo;
-            linha.appendChild(traco); linha.appendChild(val); linha.appendChild(nome);
-            tip.appendChild(linha);
-        }
-        tip.style.display = 'block';
-        const largTip = tip.offsetWidth || 120;
-        const xPx = (px / W) * r.width;
-        tip.style.left = Math.max(0, Math.min(r.width - largTip, xPx - largTip / 2)) + 'px';
-        tip.style.top = '0px';
-    };
-    const sair = () => { cross.style.display = 'none'; tip.style.display = 'none'; };
-
-    const hit = box.querySelector('.mf-vis-hit');
-    hit.addEventListener('pointermove', mover);
-    hit.addEventListener('pointerleave', sair);
-    // Mesmo detalhe no teclado que no mouse.
-    hit.addEventListener('focus', () => { if (pontos.length) mover({ clientX: svg.getBoundingClientRect().right }); });
-    hit.addEventListener('blur', sair);
-
-    raiz.querySelectorAll('.mf-vis-toggle').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const chave = btn.getAttribute('data-serie');
-            const painel = box.querySelector(`g[data-serie="${chave}"]`);
-            const off = escondidas.has(chave);
-            if (off) { escondidas.delete(chave); } else { escondidas.add(chave); }
-            if (painel) painel.style.display = off ? '' : 'none';
-            btn.setAttribute('aria-pressed', off ? 'true' : 'false');
-            btn.style.opacity = off ? '1' : '0.4';
-            sair();
-        });
-    });
-}
-
-/** Caminho SVG de uma série, quebrando a linha onde o dado não existe. */
-function MF_caminhoSerie(pontos, chave, x0, larg, y0, alt) {
-    const vals = pontos.map((p) => p[chave]).filter((v) => typeof v === 'number');
-    if (!vals.length) return '';
-    const max = Math.max(...vals, chave === 'conversao' ? 1 : 1);
-    const n = pontos.length;
-    const px = (i) => x0 + (n <= 1 ? larg / 2 : (i / (n - 1)) * larg);
-    const py = (v) => y0 + alt - (max > 0 ? (v / max) * alt : 0);
-    let d = '';
-    let abriu = false;
-    pontos.forEach((p, i) => {
-        const v = p[chave];
-        if (typeof v !== 'number') { abriu = false; return; }   // buraco: não liga os pontos
-        d += `${abriu ? 'L' : 'M'}${px(i).toFixed(1)} ${py(v).toFixed(1)} `;
-        abriu = true;
-    });
-    return d.trim();
-}
-
 function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -5406,6 +5248,165 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // Listeners só depois do innerHTML — `<script>` inline não roda por aqui.
     MF_ativarGraficoVisitas(el);
 }
+
+/* =========================================================================
+   Gráfico do card de visitas — visitas, vendas e conversão dia a dia.
+   Pedido do Lucas (11/08/2026): linha em vez de barra, os dados do dia ao passar o
+   mouse, e poder desligar uma métrica.
+
+   TRÊS PAINÉIS empilhados, não um gráfico com dois eixos: visitas ficam na casa das
+   centenas, vendas na das unidades e conversão em %. Sobrepor isso exigiria dois eixos Y,
+   que é o erro clássico de gráfico — a inclinação de uma série passa a depender da escala
+   escolhida pra outra, e a comparação vira ilusão de ótica. Empilhado, o eixo X é
+   compartilhado e a leitura "as visitas subiram e as vendas não" continua direta.
+
+   Cores validadas contra fundo claro (CVD ΔE 8.9, acima do piso): cada painel tem título
+   próprio, então a cor é reforço e não a única identificação.
+   ========================================================================= */
+const MF_SERIES_VISITAS = [
+    { chave: 'visitas',   rotulo: 'Visitas',    cor: '#0066ff', sufixo: '' },
+    { chave: 'vendas',    rotulo: 'Vendas',     cor: '#00875a', sufixo: '' },
+    { chave: 'conversao', rotulo: 'Conversão',  cor: '#c2410c', sufixo: '%' },
+];
+
+/**
+ * Monta as séries diárias a partir das visitas e do daily de Ads.
+ * Dia sem fonte de vendas devolve `null` (buraco na linha), nunca 0 — não vendeu e
+ * não deu pra saber são coisas diferentes, e a segunda não pode virar número.
+ */
+function MF_seriesDiarias(results, adsDaily) {
+    const porDia = new Map();
+    for (const v of (results || [])) {
+        const d = (v.date || '').slice(0, 10);
+        if (d) porDia.set(d, { dia: d, visitas: Number(v.total) || 0, vendas: null, conversao: null });
+    }
+    const temAds = Array.isArray(adsDaily) && adsDaily.length > 0;
+    if (temAds) {
+        for (const a of adsDaily) {
+            const d = (a.date || '').slice(0, 10);
+            if (!d) continue;
+            const vendas = (Number(a.units_quantity) || 0) + (Number(a.organic_units_quantity) || 0);
+            const linha = porDia.get(d) || { dia: d, visitas: null, vendas: null, conversao: null };
+            linha.vendas = vendas;
+            // Conversão só existe com visita no dia: dividir por zero viraria 0% ou ∞.
+            linha.conversao = (linha.visitas > 0) ? (vendas / linha.visitas) * 100 : null;
+            porDia.set(d, linha);
+        }
+    }
+    return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
+/**
+ * Liga o crosshair, o tooltip e os botões de ligar/desligar série.
+ *
+ * Pendurado por JS depois do innerHTML: `<script>` dentro de innerHTML não executa, e no
+ * Bubble isso já mordeu antes ([[feedback_bubble_innerhtml_script]]).
+ */
+function MF_ativarGraficoVisitas(raiz) {
+    const box = raiz && raiz.querySelector('.mf-vis-chart');
+    if (!box) return;
+    let pontos = [];
+    try { pontos = JSON.parse(box.getAttribute('data-pontos') || '[]'); } catch (e) { return; }
+    if (!pontos.length) return;
+
+    const svg = box.querySelector('svg');
+    const cross = box.querySelector('.mf-vis-cross');
+    const tip = box.querySelector('.mf-vis-tip');
+    const vb = (svg.getAttribute('viewBox') || '0 0 300 100').split(/\s+/).map(Number);
+    const W = vb[2] || 300, PAD_E = 4, PAD_D = 4;
+    const larg = W - PAD_E - PAD_D;
+    const escondidas = new Set();
+
+    const fmtDia = (iso) => {
+        const p = String(iso).split('-');
+        return p.length === 3 ? `${p[2]}/${p[1]}` : iso;
+    };
+    const valorTexto = (s, v) => {
+        if (typeof v !== 'number') return '—';
+        return s.chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
+    };
+
+    // O ponteiro mira a data, não a linha: acha o X mais próximo.
+    const mover = (ev) => {
+        const r = svg.getBoundingClientRect();
+        const xRel = ((ev.clientX - r.left) / r.width) * W;
+        const t = Math.min(1, Math.max(0, (xRel - PAD_E) / larg));
+        const i = Math.round(t * (pontos.length - 1));
+        const p = pontos[i];
+        if (!p) return;
+        const px = PAD_E + (pontos.length <= 1 ? larg / 2 : (i / (pontos.length - 1)) * larg);
+        cross.setAttribute('x1', px); cross.setAttribute('x2', px);
+        cross.style.display = '';
+        // Um tooltip só, com TODAS as séries daquele dia — o leitor não precisa acertar a linha.
+        // Valor em destaque, nome da série secundário; textContent porque o dado é de fora.
+        tip.innerHTML = '';
+        const cab = document.createElement('div');
+        cab.style.cssText = 'font-weight:700; margin-bottom:3px;';
+        cab.textContent = fmtDia(p.dia);
+        tip.appendChild(cab);
+        for (const s of MF_SERIES_VISITAS) {
+            if (escondidas.has(s.chave)) continue;
+            if (!(s.chave in p)) continue;
+            const linha = document.createElement('div');
+            linha.style.cssText = 'display:flex; align-items:center; gap:6px;';
+            const traco = document.createElement('span');
+            traco.style.cssText = `width:10px; height:2px; border-radius:2px; flex-shrink:0; background:${s.cor};`;
+            const val = document.createElement('b');
+            val.textContent = valorTexto(s, p[s.chave]);
+            const nome = document.createElement('span');
+            nome.style.cssText = 'opacity:.75;';
+            nome.textContent = s.rotulo;
+            linha.appendChild(traco); linha.appendChild(val); linha.appendChild(nome);
+            tip.appendChild(linha);
+        }
+        tip.style.display = 'block';
+        const largTip = tip.offsetWidth || 120;
+        const xPx = (px / W) * r.width;
+        tip.style.left = Math.max(0, Math.min(r.width - largTip, xPx - largTip / 2)) + 'px';
+        tip.style.top = '0px';
+    };
+    const sair = () => { cross.style.display = 'none'; tip.style.display = 'none'; };
+
+    const hit = box.querySelector('.mf-vis-hit');
+    hit.addEventListener('pointermove', mover);
+    hit.addEventListener('pointerleave', sair);
+    // Mesmo detalhe no teclado que no mouse.
+    hit.addEventListener('focus', () => { if (pontos.length) mover({ clientX: svg.getBoundingClientRect().right }); });
+    hit.addEventListener('blur', sair);
+
+    raiz.querySelectorAll('.mf-vis-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const chave = btn.getAttribute('data-serie');
+            const painel = box.querySelector(`g[data-serie="${chave}"]`);
+            const off = escondidas.has(chave);
+            if (off) { escondidas.delete(chave); } else { escondidas.add(chave); }
+            if (painel) painel.style.display = off ? '' : 'none';
+            btn.setAttribute('aria-pressed', off ? 'true' : 'false');
+            btn.style.opacity = off ? '1' : '0.4';
+            sair();
+        });
+    });
+}
+
+/** Caminho SVG de uma série, quebrando a linha onde o dado não existe. */
+function MF_caminhoSerie(pontos, chave, x0, larg, y0, alt) {
+    const vals = pontos.map((p) => p[chave]).filter((v) => typeof v === 'number');
+    if (!vals.length) return '';
+    const max = Math.max(...vals, chave === 'conversao' ? 1 : 1);
+    const n = pontos.length;
+    const px = (i) => x0 + (n <= 1 ? larg / 2 : (i / (n - 1)) * larg);
+    const py = (v) => y0 + alt - (max > 0 ? (v / max) * alt : 0);
+    let d = '';
+    let abriu = false;
+    pontos.forEach((p, i) => {
+        const v = p[chave];
+        if (typeof v !== 'number') { abriu = false; return; }   // buraco: não liga os pontos
+        d += `${abriu ? 'L' : 'M'}${px(i).toFixed(1)} ${py(v).toFixed(1)} `;
+        abriu = true;
+    });
+    return d.trim();
+}
+
 
 function exibirAvaliacoes(reviewsData, containerId = "reviewsContainer") {
     const el = document.getElementById(containerId);

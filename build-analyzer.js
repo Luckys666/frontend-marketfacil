@@ -32,6 +32,23 @@ const aiEndMarker = '\nfunction exibirTendenciaVisitas';
 const aiStart = js.indexOf(aiStartMarker);
 const aiEnd = js.indexOf(aiEndMarker);
 if (aiStart !== -1 && aiEnd !== -1) {
+  // Este corte é por POSIÇÃO, não por escopo: leva junto tudo que estiver entre as duas
+  // funções. Em 11/08/2026 quatro funções novas do gráfico de visitas foram escritas logo
+  // acima de exibirTendenciaVisitas e sumiram aqui — o bundle foi pro Bubble com a CHAMADA
+  // e sem a DECLARAÇÃO, e o card ficou vazio na tela sem um erro sequer no build.
+  const recortado = js.substring(aiStart, aiEnd);
+  // Só declarações de TOP-LEVEL (coluna 0) — variável dentro das funções de IA sai junto
+  // com elas, e isso é o esperado.
+  const declaracoesPerdidas = (recortado.match(/^(?:function|const|let|var)\s+([A-Za-z_$][\w$]*)/gm) || [])
+    .map((m) => m.trim().split(/\s+/)[1])
+    .filter((n) => n && !/^(renderAiImageAnalyzer|iniciarAnaliseIA)$/.test(n));
+  if (declaracoesPerdidas.length) {
+    console.error('\n❌ BUILD ABORTADO — o corte da seção de IA levaria junto:');
+    for (const n of declaracoesPerdidas) console.error(`   • ${n}`);
+    console.error('\nEsse corte vai de renderAiImageAnalyzer até exibirTendenciaVisitas e apaga');
+    console.error('TUDO que estiver no meio. Mova essas declarações para fora dessa faixa.\n');
+    process.exit(1);
+  }
   js = js.substring(0, aiStart) + '// AI image analysis section removed\n' + js.substring(aiEnd);
 }
 
