@@ -4249,13 +4249,16 @@ async function fetchVisits(itemId, accessToken) {
     if (window.MarketFacilCore && typeof window.MarketFacilCore.getVisits === 'function') {
         try {
             console.log('Utilizando MarketFacilCore.getVisits...');
-            return await window.MarketFacilCore.getVisits(itemId, '30'); // '30' dias como string para garantir compatibilidade
+            return await window.MarketFacilCore.getVisits(itemId, '60'); // 60 dias: ver comentário abaixo
         } catch (e) {
             console.warn('Falha no Core, tentando rota direta...', e);
         }
     }
-    // Busca visitas dos últimos 30 dias para cálculo de tendência via rota direta usando last=30 e unit=day (padrão do backend)
-    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=30&unit=day`, accessToken);
+    // 60 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
+    // com uma janela de 30 esse período anterior vinha vazio — ou a variação sumia, ou
+    // saía um "+5840%" que só dizia que o denominador era zero. Mesma chamada, só o
+    // parâmetro muda. O gráfico continua desenhando os últimos 30.
+    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=60&unit=day`, accessToken);
 }
 
 async function fetchReviews(itemId, accessToken) {
@@ -5129,7 +5132,13 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // assim os painéis que sobram voltam a dividir a altura, sem buraco branco.
     window.MF_redesenhaVisitas = () => exibirTendenciaVisitas(visitsData, containerId, adsData);
 
-    const pontos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
+    // A série vem com 60 dias (para o resumo comparar 30 × 30 anteriores); o gráfico
+    // desenha os últimos 30, que é o período que o card anuncia.
+    const pontosTodos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
+    const pontos = pontosTodos.filter((p) => {
+        const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
+        return idade < 30;
+    });
     const temVendas = pontos.some((p) => typeof p.vendas === 'number');
     // Disponíveis = o que a conta permite mostrar (sem Ads não há vendas nem conversão).
     // Ativas = as disponíveis que o vendedor não desligou.
@@ -5204,7 +5213,9 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // Soma por janela a partir dos MESMOS pontos do gráfico — resumo e gráfico não podem
     // sair de contas diferentes.
     const somaJanela = (ini, fim) => {
-        const dentro = pontos.filter((p) => {
+        // Usa a série COMPLETA (60d): a janela anterior de "30 dias" mora fora dos 30 do
+        // gráfico. Sem isso a comparação não existe.
+        const dentro = pontosTodos.filter((p) => {
             const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
             return idade >= ini && idade < fim;
         });
@@ -5223,24 +5234,33 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
         if (typeof v !== 'number') return '—';
         return chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
     };
+    // A variação vive em COLUNA PRÓPRIA, não colada no número. Junto no mesmo <span>, ela
+    // empurrava o valor e cada linha começava num lugar diferente — a tabela parecia solta.
+    // Com coluna separada, os números alinham à direita entre si e os selos começam todos
+    // na mesma posição, mesmo quando uma linha não tem variação.
     const variacaoHtml = (atual, anterior) => {
         if (typeof atual !== 'number' || typeof anterior !== 'number' || anterior === 0) return '';
         const pct = ((atual - anterior) / anterior) * 100;
         if (Math.abs(pct) < 1) return '';
         const cor = pct > 0 ? 'var(--green-dark)' : 'var(--red-dark)';
         const bg = pct > 0 ? 'var(--green-light)' : 'var(--red-light)';
-        return `<span style="font-size:0.62rem; font-weight:700; padding:1px 4px; border-radius:4px; margin-left:4px; color:${cor}; background:${bg};">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
+        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
     };
+    // Por métrica: uma coluna pro número (direita) e uma pro selo (largura fixa).
+    const colunas = 'minmax(48px, auto) ' + seriesAtivas.map(() => 'minmax(0, 1fr) 42px').join(' ');
     const resumoHtml = `
-        <div style="display:grid; grid-template-columns: auto ${seriesAtivas.map(() => '1fr').join(' ')}; gap:6px 10px; align-items:center; margin-bottom:12px;">
+        <div style="display:grid; grid-template-columns:${colunas}; gap:7px 8px; align-items:center; margin-bottom:14px;">
             <span></span>
-            ${seriesAtivas.map((s) => `<span class="text-small" style="color:${s.cor}; font-weight:700; text-align:right;">${s.rotulo}</span>`).join('')}
+            ${seriesAtivas.map((s) => `
+                <span class="text-small" style="color:${s.cor}; font-weight:700; text-align:right;">${s.rotulo}</span>
+                <span></span>`).join('')}
             ${janelas.map((j) => {
                 const at = somaJanela(j.ini, j.fim);
                 const ant = somaJanela(j.iniAnt, j.fimAnt);
                 return `<span class="text-small" style="color:var(--text-muted); white-space:nowrap;">${j.rotulo}</span>`
                     + seriesAtivas.map((s) => `
-                        <span class="text-value" style="font-weight:600; text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
+                        <span style="font-family:var(--font-mono,'DM Mono',monospace); font-weight:600; font-size:0.9rem; color:var(--text); text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}</span>
+                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
             }).join('')}
         </div>`;
 
