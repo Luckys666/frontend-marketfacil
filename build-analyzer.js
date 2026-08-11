@@ -205,7 +205,13 @@ ${selJs}
 </script>`;
 
 // Write output
+// Normaliza CRLF -> LF: os fontes estão em CRLF (Windows), mas ao colar no campo do Bubble
+// o browser converte tudo pra LF. Sem isso o arquivo em disco tem um tamanho e o campo
+// tem outro (5.943 chars de diferença em 11/08/2026), e a validação de tamanho do script
+// de injeção — que é o que impede salvar um paste truncado — dispara falso negativo.
+// O artefato precisa ser byte a byte o que vai pro Bubble, senão não serve de prova.
+const htmlLF = html.replace(/\r\n/g, '\n');
 const outputPath = path.join(__dirname, 'build', 'analyzer-bubble.html');
 fs.mkdirSync(path.join(__dirname, 'build'), { recursive: true });
-fs.writeFileSync(outputPath, html, 'utf8');
-console.log(`Build complete: ${outputPath} (${(html.length / 1024).toFixed(1)} KB)`);
+fs.writeFileSync(outputPath, htmlLF, 'utf8');
+console.log(`Build complete: ${outputPath} (${(htmlLF.length / 1024).toFixed(1)} KB, ${htmlLF.length} chars, LF)`);
