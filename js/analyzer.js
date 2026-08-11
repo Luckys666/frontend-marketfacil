@@ -157,6 +157,51 @@ function mfRenomeiaVariacao(catAttr, detail) {
     if (!detail?.user_product_id && !temVariacoes) return false;   // item solto: título é do vendedor
     return mfAtributoPreenchido(detail, catAttr.id);
 }
+// Comparação de texto tolerante: sem acento, sem caixa e sem separador. A ML escreve
+// "180ml" no título para um valor gravado como "180 mL" — comparando cru, o campo passaria
+// batido justamente onde ele MUDA o link.
+function MF_chaveTexto(s) {
+    return String(s || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+/**
+ * Mexer neste campo muda o LINK do anúncio?
+ *
+ * Todo CHILD_PK dá nome à variação, mas nem todo nome de variação entra no título — e é o
+ * título que gera o permalink. Medido em conta real (10/08/2026, com reversão):
+ *   - MLB6695198754, COLOR "Rosa"→"Coral": o valor aparece no título e o permalink mudou
+ *     NO MESMO INSTANTE (…-rosa-rosa-36-_JM → …-rosa-coral-36-_JM), e seguiu mudado por 30 min.
+ *   - MLB2177029901, UNITS_PER_PACKAGE "1"→"2": fora do título, permalink intacto o tempo todo.
+ * Na mesma conta, 137 CHILD_PK têm o valor no título e 467 não têm. Alertar nos 604 treinava
+ * o vendedor a ignorar aviso vermelho — que é o mesmo que não ter aviso.
+ *
+ * ⚠️ Isto governa só o ALERTA. A flag `confirm_rename_variation` continua saindo em todo
+ * CHILD_PK (mfRenomeiaVariacao): o proxy recusa sem ela, e front mais estreito que servidor
+ * é recusa permanente na mão do vendedor — foi o erro de 10/08.
+ *
+ * Na dúvida, avisa: sem título, sem valor, ou com valor curto demais pra casar com segurança,
+ * volta ao comportamento conservador.
+ */
+function mfMudaOLink(catAttr, detail) {
+    if (!mfRenomeiaVariacao(catAttr, detail)) return false;
+    const titulo = detail?.title;
+    const attr = (detail?.attributes || []).find((x) => x && x.id === catAttr.id);
+    const valor = (attr?.value_name && String(attr.value_name).trim())
+        || (Array.isArray(attr?.values) ? (attr.values.find((v) => v && v.name) || {}).name : null);
+    if (!titulo || !valor) return true;
+    const chave = MF_chaveTexto(valor);
+    if (!chave) return true;
+    // Valor de 1 caractere ("P" de tamanho, "1" de unidades) casaria como substring com
+    // quase qualquer título — inclusive o "1" que eu MEDI não mudar o link. Aí a régua é
+    // palavra inteira: "Camiseta P" casa, "Camiseta Preta" não.
+    if (chave.length < 2) {
+        return String(titulo).split(/\s+/).some((palavra) => MF_chaveTexto(palavra) === chave);
+    }
+    // 2+ caracteres: substring sem separadores, porque a ML reescreve o valor no título
+    // ("180 mL" vira "180ml") e a comparação por palavra perderia justo esses.
+    return MF_chaveTexto(titulo).includes(chave);
+}
 // O item já tem valor gravado nesse atributo?
 function mfAtributoPreenchido(detail, attrId) {
     const a = (detail?.attributes || []).find((x) => x && x.id === attrId);
@@ -180,8 +225,90 @@ function MF_textoCampoBloqueado(catAttr, motivo) {
     return `${nome} não pode ser editado por aqui.`;
 }
 // Obrigatório para o ML (o resto é extra — vale ponto, mas ninguém é reprovado por ele)
-function mfCampoObrigatorio(catAttr) {
+function mfCampoObrigatorio(catAttr, obrigatoriosML) {
+    // Quando o próprio ML diz quais são os obrigatórios deste anúncio, é ele que manda:
+    // `tags.required` é da CATEGORIA e não sabe nada do domínio nem do catálogo do item.
+    if (obrigatoriosML instanceof Set && obrigatoriosML.size > 0) {
+        return obrigatoriosML.has(catAttr && catAttr.id);
+    }
     return !!(catAttr && catAttr.tags && (catAttr.tags.required || catAttr.tags.catalog_required));
+}
+/**
+ * Os obrigatórios segundo a própria ML, de `adoption_status.required` do catalog_quality.
+ *
+ * Estrutura medida em conta real (10/08/2026): `attributes` são os que o anúncio JÁ tem e
+ * `missing_attributes` os que faltam — a lista de obrigatórios é a união dos dois.
+ *
+ * ⚠️ Nem sempre vem: em 11 anúncios ativos da conta, 9 traziam a lista e 2 vinham com os
+ * dois campos `null`. E a API só responde em anúncio ATIVO (400 em pausado e em catálogo).
+ * Por isso devolve null quando não sabe, em vez de um Set vazio — Set vazio esvaziaria a
+ * etapa "Obrigatórios" e o vendedor perderia a informação que ele já tinha pelas tags.
+ */
+/**
+ * Termos repetidos no título — o caso "Sapatilha … Melissa Rosa **Rosa** 36" (conta real)
+ * e "Kit Jogo 3 Panelas … Vaquinha **Vaquinha**".
+ *
+ * Acontece porque a ML monta o título como `family_name` + valores das variações: se o
+ * vendedor já pôs a cor no family_name, ela sai duas vezes. Come caracteres que valiam
+ * palavra-chave e fica com cara de erro.
+ *
+ * ⚠️ DIAGNÓSTICO, SEM BOTÃO. As duas correções possíveis (mexer no family_name ou no nome
+ * da variação) resetam o anúncio pelo mecanismo do permalink — medido em 10/08/2026. Este
+ * sinal aponta; quem decide corrigir é o vendedor, sabendo o preço.
+ */
+function MF_termosRepetidosNoTitulo(titulo, termosDaVariacao) {
+    if (!titulo || typeof titulo !== 'string') return [];
+    const contagem = new Map();
+    const original = new Map();
+    for (const bruto of titulo.split(/\s+/)) {
+        const chave = MF_chaveTexto(bruto);
+        // Palavra de 1-2 letras ("e", "de") repete por gramática, não por erro.
+        if (chave.length < 3) continue;
+        contagem.set(chave, (contagem.get(chave) || 0) + 1);
+        if (!original.has(chave)) original.set(chave, bruto);
+    }
+    let repetidos = [...contagem.entries()].filter(([, n]) => n > 1);
+
+    // Sem o recorte abaixo o sinal acusa repetição legítima: "Kit Máscara Cílios 4d +
+    // Máscara Cílios Incolor" é um kit de dois produtos, e o vendedor escreveu assim de
+    // propósito (caso real da conta). O que interessa é o family_name já conter a palavra
+    // que a ML vai acrescentar de novo como nome da variação — aí sim é desperdício.
+    if (Array.isArray(termosDaVariacao) && termosDaVariacao.length) {
+        const daVariacao = new Set();
+        for (const valor of termosDaVariacao) {
+            for (const palavra of String(valor || '').split(/\s+/)) {
+                const chave = MF_chaveTexto(palavra);
+                if (chave.length >= 3) daVariacao.add(chave);
+            }
+        }
+        repetidos = repetidos.filter(([chave]) => daVariacao.has(chave));
+    }
+
+    return repetidos.map(([chave, n]) => ({ termo: original.get(chave), vezes: n }));
+}
+/** Valores que dão nome à variação deste anúncio (é o que a ML cola no fim do título). */
+function MF_valoresDaVariacao(detail, categoryAttributes) {
+    const valores = [];
+    if (Array.isArray(detail?.attribute_combinations)) {
+        for (const a of detail.attribute_combinations) if (a?.value_name) valores.push(a.value_name);
+    }
+    const hier = {};
+    for (const c of (Array.isArray(categoryAttributes) ? categoryAttributes : [])) {
+        if (c && c.id) hier[c.id] = c.hierarchy;
+    }
+    for (const a of (Array.isArray(detail?.attributes) ? detail.attributes : [])) {
+        if (a && hier[a.id] === 'CHILD_PK' && a.value_name) valores.push(a.value_name);
+    }
+    return valores;
+}
+function mfObrigatoriosDoML(qualidadeFichaData) {
+    const req = qualidadeFichaData?.adoption_status?.required;
+    if (!req) return null;
+    const ids = [
+        ...(Array.isArray(req.attributes) ? req.attributes : []),
+        ...(Array.isArray(req.missing_attributes) ? req.missing_attributes : [])
+    ].filter(Boolean);
+    return ids.length ? new Set(ids) : null;
 }
 const VALORES_IGNORADOS_PENALIDADE = new Set(['isento', 'não aplicável', 'na']);
 
@@ -1250,7 +1377,10 @@ window.openAttrEditor = function (attrId) {
 
     // Renomear variação é caro e não tem desfazer: o alerta vem ANTES do campo, e quem
     // confirma tem que passar por cima do botão de cancelar, que é o destaque.
-    const renomeia = mfRenomeiaVariacao(catAttr, state.detail);
+    // Só entra quando o valor REALMENTE está no título (mfMudaOLink) — todo CHILD_PK
+    // renomeia a variação, mas só o que aparece no título muda o link. Ver a medição de
+    // 10/08 no comentário de mfMudaOLink. A flag do proxy continua saindo em todos.
+    const renomeia = mfMudaOLink(catAttr, state.detail);
     wrapper.innerHTML = renomeia ? `
         <div class="attr-edit-box mf-attr-perigo">
             <div class="mf-alerta-renomear">
@@ -1396,7 +1526,7 @@ window.saveAttr = async function (attrId) {
 
 function reRenderAnalysisView() {
     if (!window.currentAnalysisState) return;
-    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData } = window.currentAnalysisState;
+    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData, performanceData } = window.currentAnalysisState;
 
     // Update dependent components
     processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
@@ -1404,7 +1534,10 @@ function reRenderAnalysisView() {
 
     // Re-render score WITH analysisData so improvements panel persists
     const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
-    exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes), usedFallback, `scoreCircle${containerIdSuffix}`, analysisData, `scoreChecklist${containerIdSuffix}`);
+    // performanceData vai junto: sem ele o card "O que Melhorar" perdia a seção "Ações
+    // Recomendadas pelo ML" no primeiro atributo que o vendedor salvasse — as recomendações
+    // sumiam sozinhas e não voltavam sem recarregar a página (achado em 10/08/2026).
+    exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes), usedFallback, `scoreCircle${containerIdSuffix}`, analysisData, `scoreChecklist${containerIdSuffix}`, performanceData);
 }
 
 function getPalavrasUnicas(texto) {
@@ -1528,6 +1661,27 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
             <button type="button" onclick="window.MF_copiarId && window.MF_copiarId('${escapeHtml(String(valor))}', this)" title="Copiar" style="background:none; border:none; padding:0; cursor:pointer; color:var(--text-muted); display:inline-flex;">${copiaSvg}</button>
         </span>`;
 
+    // Sinal de termo repetido. Fica no card do título porque é do título que se trata, e
+    // vem SEM ação: corrigir passa por family_name ou nome de variação, e os dois resetam
+    // o anúncio (medido em 10/08). Dizer "arrume aqui" seria empurrar o vendedor pro dano.
+    const _repetidos = MF_termosRepetidosNoTitulo(
+        titulo,
+        MF_valoresDaVariacao(detail, window.currentAnalysisState?.categoryAttributes)
+    );
+    const repetidoHtml = _repetidos.length ? `
+        <div style="margin-top:10px; padding:8px 12px; background:var(--yellow-light,#fef3c7); border-radius:var(--radius-sm); border-left:3px solid var(--yellow,#f59e0b);">
+            <span class="text-small" style="color:#92400e;">
+                <b>${_repetidos.map(r => escapeHtml(r.termo)).join(', ')}</b>
+                ${_repetidos.length > 1 ? 'aparecem' : 'aparece'} duas vezes no título.
+                Costuma ser o nome da variação repetindo uma palavra que já está no nome do produto —
+                gasta caracteres que podiam ser palavra de busca.
+            </span>
+            <span class="text-small" style="display:block; margin-top:4px; color:var(--text-muted);">
+                Só um aviso: arrumar isso muda o título e o link do anúncio, e ele perde a exposição que já tem.
+                Vale mais em anúncio novo do que em anúncio que já vende.
+            </span>
+        </div>` : '';
+
     // Variation info section
     let varHtml = '';
     if (hasVariation || variacaoId) {
@@ -1606,6 +1760,7 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
 
                     ${idsHtml}
 
+                    ${repetidoHtml}
                     ${varHtml}
 
                     ${state !== 'good' && !hasVariation && (detail?.sold_quantity || 0) === 0 ? `
@@ -2660,8 +2815,13 @@ function MF_renderVariationField(catAttr, currentAttr, itemId) {
 
     // Mesmo double check da ficha: aqui o campo é inline, então o alerta é uma linha
     // vermelha acima do input e o ✓ vira texto — ninguém renomeia no automático.
-    const renomeia = mfRenomeiaVariacao(catAttr, {
+    // O título vem do overview da família: sem ele mfMudaOLink não consegue afirmar nada e
+    // cai no conservador (avisa), que é o lado certo pra errar.
+    const _tituloVariacao = (window.__mfFamilyOverview?.variations || [])
+        .find(v => v.item_id === itemId)?.summary?.title;
+    const renomeia = mfMudaOLink(catAttr, {
         user_product_id: 'familia',
+        title: _tituloVariacao,
         attributes: currentAttr ? [currentAttr] : []
     });
     const salvar = `window.MF_saveVariationAttr('${escapeHtml(itemId)}', '${escapeHtml(id)}', '${inputId}', '${errorId}')`;
@@ -2833,7 +2993,9 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
         // Duas etapas: primeiro o que o ML EXIGE, depois os extras. O vendedor resolve
         // os obrigatórios e só então investe tempo nos opcionais — e a nota só cobra
         // o que ele consegue mexer (mfCampoEditavel).
-        const obrigatorio = (x) => mfCampoObrigatorio(x.catAttr);
+        // Régua de obrigatoriedade: a da ML quando ela diz, a da categoria quando não diz.
+        const _obrigatoriosML = mfObrigatoriosDoML(window.currentAnalysisState?.qualidadeFichaData);
+        const obrigatorio = (x) => mfCampoObrigatorio(x.catAttr, _obrigatoriosML);
         const grupos = {
             obrFalta: missingAttrs.filter(obrigatorio),
             obrOk: filledAttrs.filter(obrigatorio),
@@ -2942,7 +3104,14 @@ function exibirInformacaoGarantia(detail, containerId = "warrantyInfo") {
     `;
 }
 
-function exibirChecklistRapido(detail, descriptionData, containerId = "quickChecklist", performanceData = null) {
+// performanceData saiu da assinatura em 10/08/2026: as recomendações da ML Quality API
+// ficam SÓ no card "O que Melhorar" (exibirPontuacao). Antes apareciam nos dois — aqui as
+// 3 primeiras como "Prioridades ML", lá a lista inteira —, então as 3 primeiras saíam
+// duas vezes na mesma tela, mesmo texto e ícone diferente. Só duplicava em anúncio ativo
+// com pendência, daí parecer "em algumas contas": em pausado e em catálogo a /performance
+// não responde e as duas seções somem juntas. Este card é sobre descrição, garantia e
+// imagens — recomendação do ML nunca foi dele.
+function exibirChecklistRapido(detail, descriptionData, containerId = "quickChecklist") {
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -2994,37 +3163,6 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             </div>
         </div>`;
 
-    // Seção adicional: top 3 pendências da ML Quality API (quando disponível)
-    const mlQuality = extractMLQualityItems(performanceData);
-    let mlExtraHtml = '';
-    if (mlQuality && mlQuality.pending.length > 0) {
-        const top = mlQuality.pending.slice(0, 3);
-        const moreLabel = mlQuality.pending.length > 3 ? `<div class="text-small" style="text-align:center; margin-top:4px; color:var(--text-muted); font-size:0.7rem;">+${mlQuality.pending.length - 3} em "Qualidade do Anúncio"</div>` : '';
-        const renderMLRow = (p) => {
-            const isWarn = p.mode === 'WARNING';
-            const bg = isWarn ? 'var(--red-light)' : 'var(--yellow-light,#fef3c7)';
-            const bd = isWarn ? 'var(--red)' : 'var(--yellow,#f59e0b)';
-            const icon = isWarn ? '⚠️' : '💡';
-            const linkHtml = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.68rem; white-space:nowrap; flex-shrink:0;">${escapeHtml(p.label || 'Ver')} →</a>` : '';
-            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:${bg};border-radius:var(--radius-sm);border-left:3px solid ${bd};">
-                <span style="flex-shrink:0;">${icon}</span>
-                <span class="text-small" style="color:var(--text); flex:1; line-height:1.3;">${escapeHtml(p.text)}</span>
-                ${linkHtml}
-            </div>`;
-        };
-        mlExtraHtml = `
-            <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
-                    <span style="font-size:0.85rem;">⚡</span>
-                    <span style="font-weight:700; font-size:0.75rem; color:var(--text); text-transform:uppercase; letter-spacing:0.03em;">Prioridades ML</span>
-                    <span class="text-small" style="margin-left:auto; color:var(--text-muted); font-size:0.68rem;">${mlQuality.pending.length} pendências</span>
-                </div>
-                <div style="display:flex; flex-direction:column; gap:4px;">
-                    ${top.map(renderMLRow).join('')}
-                    ${moreLabel}
-                </div>
-            </div>`;
-    }
 
     el.innerHTML = `
         <div class="ana-card">
@@ -3035,7 +3173,6 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             <div style="display:flex; flex-direction:column; gap:8px;">
                 ${items.map(renderItem).join('')}
             </div>
-            ${mlExtraHtml}
         </div>
     `;
 }
@@ -3580,9 +3717,25 @@ function extractMLQualityItems(performanceData) {
             }
         });
     });
+    // Uma `variable` com várias `rules` pendentes gera uma linha por regra, mas quando a
+    // regra não traz `wordings.title` todas caem no mesmo fallback (o título da variable)
+    // e o vendedor vê a mesma frase repetida. Some por texto, mantendo a primeira — e
+    // preferindo a que tem link, que é a única acionável.
+    const dedup = (lista) => {
+        const porTexto = new Map();
+        for (const p of lista) {
+            const chave = (p.text || '').trim().toLowerCase();
+            if (!chave) continue;
+            const jaTem = porTexto.get(chave);
+            if (!jaTem) { porTexto.set(chave, p); continue; }
+            if (!jaTem.link && p.link) porTexto.set(chave, p);
+        }
+        return [...porTexto.values()];
+    };
+
     return {
-        pending,
-        completed,
+        pending: dedup(pending),
+        completed: dedup(completed),
         score: Math.round(performanceData.score || 0),
         level: (performanceData.level || '').toLowerCase(),
         level_wording: performanceData.level_wording || null
@@ -4337,24 +4490,41 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const acosCanvasId = 'acosChart_' + Date.now();
     let _acosChartData = null;
     if (sortedDaily.length > 0) {
-        const dailyAcosValues = sortedDaily.map(d => {
-            const rev = d.total_amount || 0;
-            return rev > 0 ? parseFloat(((d.cost || 0) / rev * 100).toFixed(1)) : 0;
-        });
+        // Dia que teve custo e NÃO teve venda não é "0% de ACOS" — é o pior dia possível.
+        // A conta antiga (`rev > 0 ? ... : 0`) desenhava barra no chão justamente nos dias
+        // em que o vendedor só gastou, que é o oposto do que aconteceu. Sem receita a razão
+        // não existe: vira buraco no gráfico, e o tooltip diz o que foi gasto.
+        const razaoDiaria = (custo, receita) => {
+            if (receita > 0) return parseFloat((custo / receita * 100).toFixed(1));
+            return custo > 0 ? null : 0; // null = sem venda no dia (buraco), 0 = dia parado
+        };
+        const dailyAcosValues = sortedDaily.map(d => razaoDiaria(d.cost || 0, d.total_amount || 0));
+        // TACOS = custo sobre o faturamento TOTAL (ads + orgânico). É a métrica que manda:
+        // ACOS alto com TACOS baixo é anúncio que vende sozinho e usa Ads de empurrão.
+        const dailyTacosValues = sortedDaily.map(d =>
+            razaoDiaria(d.cost || 0, (d.total_amount || 0) + (d.organic_units_amount || 0)));
+        const dailyCosts = sortedDaily.map(d => d.cost || 0);
         const acosLabels = sortedDaily.map(d => d.date ? new Date(d.date).toLocaleDateString(_cfg ? _cfg.locale : 'pt-BR', { day: '2-digit', month: '2-digit' }) : '');
-        const acosColors = dailyAcosValues.map(v => v > 30 ? '#ff3b5c' : (v > 15 ? '#f59e0b' : '#00d68f'));
+        const acosColors = dailyAcosValues.map(v => v === null ? 'rgba(148,163,184,0.25)' : (v > 30 ? '#ff3b5c' : (v > 15 ? '#f59e0b' : '#00d68f')));
 
-        _acosChartData = { labels: acosLabels, values: dailyAcosValues, colors: acosColors, target: campaignAcosTarget };
+        _acosChartData = {
+            labels: acosLabels, values: dailyAcosValues, colors: acosColors,
+            tacos: dailyTacosValues, custos: dailyCosts, target: campaignAcosTarget
+        };
 
         acosChartHtml = `
             <div class="chart-card">
                 <div class="chart-card-header">
                     <span class="chart-card-icon">📊</span>
-                    <span class="chart-card-label">ACOS Diário</span>
+                    <span class="chart-card-label">ACOS e TACOS por dia</span>
                 </div>
                 <div class="chart-card-body" style="height:200px;position:relative;">
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
+                <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
+                    Barras: quanto do faturamento <b>vindo de Ads</b> foi para o anúncio.
+                    Linha: quanto do faturamento <b>total</b> (Ads + orgânico) foi para Ads.
+                </p>
             </div>`;
     }
 
@@ -4498,7 +4668,24 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                             borderRadius: 3,
                             borderSkipped: false,
                             barPercentage: 0.85,
-                            categoryPercentage: 0.9
+                            categoryPercentage: 0.9,
+                            order: 2
+                        }, {
+                            // TACOS por cima das barras: é a métrica que manda na leitura
+                            // (feedback_product_ads_rules), e lado a lado com o ACOS mostra
+                            // o quanto do faturamento é orgânico — a distância entre as duas
+                            // linhas É a venda que não veio de Ads.
+                            label: 'TACOS %',
+                            data: _acosChartData.tacos,
+                            type: 'line',
+                            borderColor: '#0066ff',
+                            backgroundColor: '#0066ff',
+                            borderWidth: 2,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            tension: 0.3,
+                            spanGaps: false, // dia sem venda vira buraco, não linha reta mentirosa
+                            order: 1
                         }]
                     },
                     options: {
@@ -4520,7 +4707,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                         },
                         plugins: {
                             title: { display: false },
-                            legend: { display: false },
+                            // Duas séries agora: sem legenda o vendedor não sabe qual é qual.
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                align: 'end',
+                                labels: {
+                                    boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'circle',
+                                    font: { size: 10, family: "'DM Sans', sans-serif" }, color: '#94a3b8', padding: 12
+                                }
+                            },
                             tooltip: {
                                 backgroundColor: '#0f172a',
                                 titleColor: '#fff',
@@ -4531,7 +4727,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                                 cornerRadius: 8,
                                 displayColors: true,
                                 callbacks: {
-                                    label: function(ctx) { return 'ACOS: ' + ctx.parsed.y + '%'; }
+                                    label: function(ctx) {
+                                        const nome = ctx.dataset.label === 'TACOS %' ? 'TACOS' : 'ACOS';
+                                        // null = teve custo e nenhuma venda. Dizer "0%" aqui seria
+                                        // elogiar o pior dia do período.
+                                        if (ctx.parsed.y === null || ctx.parsed.y === undefined) {
+                                            const custo = (_acosChartData.custos || [])[ctx.dataIndex] || 0;
+                                            return nome + ': sem venda no dia' + (custo > 0 ? ' (gastou ' + fmtMoney(custo) + ')' : '');
+                                        }
+                                        return nome + ': ' + ctx.parsed.y + '%';
+                                    }
                                 }
                             },
                             annotation: _acosChartData.target ? {
@@ -4805,7 +5010,7 @@ window.iniciarAnaliseIA = async function (itemId, variationId) {
     }
 }
 
-function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
+function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -4924,6 +5129,47 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
 
     const lowDataWarning = total30 < 10 ? '<div style="margin-top:8px;"><span class="status-badge muted" style="font-size:0.7rem;">⚠️ Poucos dados</span></div>' : '';
 
+    // Vendas e conversão (pedido do Lucas, 10/08/2026). Visita sem venda ao lado não diz
+    // nada: 900 visitas é ótimo ou péssimo dependendo de quantas viraram pedido.
+    //
+    // A fonte de vendas por dia é o daily do Ads (units_quantity + organic_units_quantity)
+    // — a mesma que MF_buildOpportunities usa, pra não criar uma segunda contagem que
+    // discorde da primeira (o bug das três contagens de campos, 05/08).
+    //
+    // ⚠️ O daily cobre o período escolhido lá no card de Ads (7/15/30/60/90). Somar ele
+    // inteiro contra visitas de 30 dias daria conversão errada assim que o vendedor
+    // trocasse pra 90d — então filtra pela MESMA janela de 30 dias, por data.
+    let vendasHtml = '';
+    const _daily = Array.isArray(adsData?.daily) ? adsData.daily : null;
+    if (_daily && adsData?.has_ads) {
+        const noPeriodo = _daily.filter((d) => inWindow(d, 0, 30));
+        const vendas30 = noPeriodo.reduce((s, d) => s + (d.units_quantity || 0) + (d.organic_units_quantity || 0), 0);
+        // Sem visita não existe taxa de conversão — e "0%" aqui seria inventar um número.
+        const conversao = total30 > 0 ? (vendas30 / total30) * 100 : null;
+        // Réguas relativas, nunca faixa fixa: o que é boa conversão muda por categoria e
+        // preço (feedback_reguas_relativas_tacos). Cor só separa "vendeu" de "não vendeu".
+        const corConv = vendas30 === 0 ? 'var(--red-dark)' : 'var(--text)';
+        vendasHtml = `
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb); display:flex; gap:10px;">
+                <div style="flex:1; text-align:center;">
+                    <div class="text-small" style="color:var(--text-muted);">Vendas (30 dias)</div>
+                    <div style="font-family:'DM Mono',monospace; font-weight:700; font-size:1.1rem; color:${corConv};">${vendas30}</div>
+                </div>
+                <div style="flex:1; text-align:center;">
+                    <div class="text-small" style="color:var(--text-muted);">Conversão</div>
+                    <div style="font-family:'DM Mono',monospace; font-weight:700; font-size:1.1rem; color:${corConv};" title="Vendas dividido por visitas nos últimos 30 dias.">${
+                        conversao === null ? '—' : conversao.toFixed(2) + '%'}</div>
+                </div>
+            </div>`;
+    } else {
+        // Anúncio sem Ads não tem série de vendas por dia — só o total de sempre, que não
+        // serve para 30 dias. Dizer "0 vendas" seria falso; o traço é honesto.
+        vendasHtml = `
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
+                <span class="text-small" style="color:var(--text-muted);">Vendas e conversão dos últimos 30 dias aparecem quando o anúncio tem publicidade — é de lá que vem a venda dia a dia.</span>
+            </div>`;
+    }
+
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header" style="margin-bottom:10px;">
@@ -4952,6 +5198,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
                 </div>
             </div>
             ${svgChart}
+            ${vendasHtml}
             ${lowDataWarning}
         </div>
     `;
@@ -5306,11 +5553,11 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             };
 
             exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`, detail);
-            exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`, performanceData);
+            exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`);
             processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
             exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
             verificarTags(detail.tags, usedFallback, `tagsTexto${containerIdSuffix}`);
-            exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`);
+            exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`, adsData);
             exibirAvaliacoes(reviewsData, `reviewsContainer${containerIdSuffix}`);
 
             window._adsItemId = detail.id;
