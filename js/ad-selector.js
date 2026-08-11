@@ -2337,6 +2337,11 @@ function writeStateToUrl() {
   if (statusDoVendedor !== 'active') p.set('status', statusDoVendedor);
   if (state.order !== 'last_updated_desc') p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
+  // Em que degrau da escada a busca parou. 'buscapor' estava na lista de chaves desde o
+  // port, mas nunca era escrito nem lido: o F5 jogava a busca de volta no primeiro degrau
+  // e a escada refazia TODAS as chamadas até chegar onde já estava. Numa conta grande isso
+  // é a diferença entre 1 e 4 consultas por F5.
+  if (state.search && state.searchParam) p.set('buscapor', state.searchParam);
   if (state.activeChip) p.set('chip', state.activeChip);
   if (state.listingType) p.set('tipo', state.listingType);
   if (state.logisticType) p.set('log', state.logisticType);
@@ -2352,7 +2357,24 @@ function readStateFromUrl() {
   if (p.get('order')) state.order = p.get('order');
   if (p.get('busca')) {
     state.search = p.get('busca');
-    state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+    // Volta pro degrau onde a busca tinha parado. Só aceita os três degraus conhecidos:
+    // o valor vem da URL, que é texto de fora.
+    const degrau = p.get('buscapor');
+    const DEGRAUS = ['q', CONFIG.SKU_PARAM, CONFIG.SKU_PARAM_ALT];
+    if (degrau && DEGRAUS.includes(degrau)) {
+      state.searchParam = degrau;
+      // A escada é ordenada (q → seller_sku → sku), então estar num degrau significa que
+      // os anteriores já foram tentados. Sem marcar isso, ela tentaria de novo o que já
+      // falhou e voltaria a gastar as chamadas que a restauração veio economizar.
+      if (degrau === CONFIG.SKU_PARAM) {
+        state.qAllTried = true;
+      } else if (degrau === CONFIG.SKU_PARAM_ALT) {
+        state.qAllTried = true;
+        state.skuTried = true;
+      }
+    } else {
+      state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+    }
   }
   if (p.get('chip')) state.activeChip = p.get('chip');
   if (p.get('tipo')) state.listingType = p.get('tipo');
