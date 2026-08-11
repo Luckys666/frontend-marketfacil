@@ -5125,9 +5125,16 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     if (percentChange7 > 5) { trend = 'Subindo'; icon = '📈'; colorClass = 'success'; }
     else if (percentChange7 < -5) { trend = 'Caindo'; icon = '📉'; colorClass = 'error'; }
 
+    // Redesenhar com os mesmos dados é o que o botão de ligar/desligar métrica chama —
+    // assim os painéis que sobram voltam a dividir a altura, sem buraco branco.
+    window.MF_redesenhaVisitas = () => exibirTendenciaVisitas(visitsData, containerId, adsData);
+
     const pontos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
     const temVendas = pontos.some((p) => typeof p.vendas === 'number');
-    const seriesAtivas = MF_SERIES_VISITAS.filter((s) => s.chave === 'visitas' || temVendas);
+    // Disponíveis = o que a conta permite mostrar (sem Ads não há vendas nem conversão).
+    // Ativas = as disponíveis que o vendedor não desligou.
+    const seriesDisponiveis = MF_SERIES_VISITAS.filter((s) => s.chave === 'visitas' || temVendas);
+    const seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
 
     let svgChart = '';
     if (pontos.length > 0 && total30 > 0) {
@@ -5162,11 +5169,17 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
             <div class="mf-vis-tip" style="display:none; position:absolute; z-index:5; pointer-events:none; background:var(--navy,#0f172a); color:#fff; padding:7px 9px; border-radius:6px; font-size:0.72rem; line-height:1.5; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.18);"></div>
         </div>
         <div class="mf-vis-legenda" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
-            ${seriesAtivas.map((s) => `
-                <button type="button" class="mf-vis-toggle" data-serie="${s.chave}" aria-pressed="true"
-                    style="display:inline-flex; align-items:center; gap:5px; background:none; border:none; padding:2px 4px; cursor:pointer; font-family:inherit; font-size:0.72rem; color:var(--text-secondary);">
-                    <span style="width:12px; height:2px; background:${s.cor}; border-radius:2px; flex-shrink:0;"></span>${s.rotulo}
-                </button>`).join('')}
+            ${seriesDisponiveis.map((s) => {
+                // O botão da métrica desligada CONTINUA na legenda — some o painel, não o
+                // controle, senão não há como religar.
+                const off = MF_visOcultas.has(s.chave);
+                return `
+                <button type="button" class="mf-vis-toggle" data-serie="${s.chave}" aria-pressed="${off ? 'false' : 'true'}"
+                    title="${off ? 'Mostrar' : 'Ocultar'} ${escapeHtml(s.rotulo)}"
+                    style="display:inline-flex; align-items:center; gap:5px; background:none; border:none; padding:2px 4px; cursor:pointer; font-family:inherit; font-size:0.72rem; color:var(--text-secondary); opacity:${off ? '0.4' : '1'};">
+                    <span style="width:12px; height:2px; background:${off ? 'var(--text-muted)' : s.cor}; border-radius:2px; flex-shrink:0;"></span>${s.rotulo}
+                </button>`;
+            }).join('')}
         </div>`;
     }
 
@@ -5360,10 +5373,17 @@ function MF_ativarGraficoVisitas(raiz) {
             tip.appendChild(linha);
         }
         tip.style.display = 'block';
+        // Acompanha o ponteiro e desvia da linha: fixo no topo ele tapava justamente o
+        // painel de Visitas, que é o primeiro (visto na imagem, não no HTML — o teste de
+        // markup passava porque o tooltip "existia").
         const largTip = tip.offsetWidth || 120;
+        const altTip = tip.offsetHeight || 70;
         const xPx = (px / W) * r.width;
-        tip.style.left = Math.max(0, Math.min(r.width - largTip, xPx - largTip / 2)) + 'px';
-        tip.style.top = '0px';
+        const yPx = ev.clientY - r.top;
+        tip.style.left = Math.max(0, Math.min(r.width - largTip, xPx + 12)) + 'px';
+        tip.style.top = Math.max(0, Math.min(r.height - altTip, yPx - altTip / 2)) + 'px';
+        // Perto da borda direita o tooltip vira pro outro lado do cursor.
+        if (xPx + 12 + largTip > r.width) tip.style.left = Math.max(0, xPx - largTip - 12) + 'px';
     };
     const sair = () => { cross.style.display = 'none'; tip.style.display = 'none'; };
 
@@ -5377,16 +5397,18 @@ function MF_ativarGraficoVisitas(raiz) {
     raiz.querySelectorAll('.mf-vis-toggle').forEach((btn) => {
         btn.addEventListener('click', () => {
             const chave = btn.getAttribute('data-serie');
-            const painel = box.querySelector(`g[data-serie="${chave}"]`);
-            const off = escondidas.has(chave);
-            if (off) { escondidas.delete(chave); } else { escondidas.add(chave); }
-            if (painel) painel.style.display = off ? '' : 'none';
-            btn.setAttribute('aria-pressed', off ? 'true' : 'false');
-            btn.style.opacity = off ? '1' : '0.4';
-            sair();
+            // Esconder o <g> deixava um buraco branco do tamanho do painel — o espaço
+            // continuava reservado. Guarda a escolha e REDESENHA com os painéis que
+            // sobraram, que voltam a dividir a altura entre si.
+            if (MF_visOcultas.has(chave)) MF_visOcultas.delete(chave); else MF_visOcultas.add(chave);
+            // Nunca deixar o card sem nenhum painel: o último aceso não desliga.
+            if (MF_visOcultas.size >= MF_SERIES_VISITAS.length) { MF_visOcultas.delete(chave); return; }
+            if (typeof window.MF_redesenhaVisitas === 'function') window.MF_redesenhaVisitas();
         });
     });
 }
+// Séries que o vendedor desligou. Fora da função porque precisa sobreviver ao redesenho.
+const MF_visOcultas = new Set();
 
 /** Caminho SVG de uma série, quebrando a linha onde o dado não existe. */
 function MF_caminhoSerie(pontos, chave, x0, larg, y0, alt) {
