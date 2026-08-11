@@ -163,7 +163,10 @@ const MOCK = false;
 const state = {
   sellerId: null,
   status: 'active',              // active | paused | all
-  order: 'last_updated_desc',
+  // Padrão pedido pelo Lucas em 11/08/2026: a lista abre pelos mais vendidos. A ML NÃO
+  // ordena por vendas (o available_orders dela só tem tempo, estoque e preço), então a
+  // ordem vem pronta do proxy — ver ORDER_MAIS_VENDIDOS e loadSalesRanking.
+  order: 'sales30_desc',
   search: '',
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   statusRestore: null,           // status a devolver quando o degrau que força "Todos" sair
@@ -192,6 +195,9 @@ const state = {
   visitsMap: {},         // itemId -> nº de visitas 30d (undefined=carregando, null=falhou)  (camada C)
   visitsSeries: {},      // itemId -> [visitas por dia, 30 posições] (mesma chamada do total — custo zero extra)
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
+  ranking: null,         // [{item_id, units, orders}] já ordenado pelo servidor (ordem "mais vendidos")
+  rankingInfo: null,     // { complete, orders_scanned, orders_total, items_with_sales } — pra tela poder ser honesta
+  rankingIndisponivel: false, // true quando a rota não existe/falhou: a ordem cai pra ML e a tela AVISA
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
   moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
   promoMap: {},          // itemId -> { price, original_price, discount_percent, promotion_name }
@@ -556,6 +562,45 @@ async function loadSales30(sellerId) {
     renderCurrentRows();
   } catch (e) { /* sem escopo de pedidos / erro -> segue sem conversão; previsão cai no ritmo desde a criação */ }
 }
+/* =========================================================================
+   Ordem "mais vendidos" — a conta vem PRONTA do servidor.
+   A ML não ordena por vendas (available_orders só tem tempo, estoque e preço), e somar
+   sold_quantity item a item seriam ~250 multigets numa conta de 5.000 anúncios. O proxy
+   monta o ranking a partir dos PEDIDOS, que só trazem quem vendeu.
+   Aqui o front NÃO calcula nada: pede, pagina e desenha (regra de 11/08 — a inteligência
+   fica no servidor).
+   ========================================================================= */
+const ORDER_MAIS_VENDIDOS = 'sales30_desc';
+const ORDER_FALLBACK = 'last_updated_desc';
+
+async function loadSalesRanking() {
+  if (state.ranking) return state.ranking;           // já carregado nesta sessão de tela
+  const cached = getCachedJson('mf_sel_ranking30');
+  if (cached && Array.isArray(cached.ranking)) {
+    state.ranking = cached.ranking;
+    state.rankingInfo = cached.info;
+    return state.ranking;
+  }
+  const resp = await proxyGet(`/api/sales-ranking?seller_id=${state.sellerId}&days=${CONFIG.SALES_WINDOW_DAYS}`);
+  const ranking = Array.isArray(resp && resp.ranking) ? resp.ranking : [];
+  const info = {
+    complete: !!(resp && resp.complete),
+    orders_scanned: resp && resp.orders_scanned,
+    orders_total: resp && resp.orders_total,
+    items_with_sales: resp && resp.items_with_sales,
+  };
+  state.ranking = ranking;
+  state.rankingInfo = info;
+  setCachedJson('mf_sel_ranking30', { ranking, info });
+  // Alimenta o badge de vendas da linha com a mesma fonte da ordenação — duas contagens
+  // diferentes de "vendas" na mesma tela seria o bug das três contagens de novo.
+  const mapa = {};
+  for (const r of ranking) mapa[r.item_id] = r.units;
+  state.sales30Map = mapa;
+  state.sales30Incomplete = !info.complete;
+  return ranking;
+}
+
 // Unidades vendidas nos últimos 30d de um item (null = camada indisponível/incompleta)
 function sales30Of(id) {
   if (!state.sales30Map || state.sales30Incomplete) return null;
@@ -1066,6 +1111,7 @@ function computeBadges(item) {
   const id = item.id || '';
   const inSet = (sigId) => !!(state.signalSets[sigId] && state.signalSets[sigId].has(id));
 
+
   // Moderação do ML vem PRIMEIRO: o anúncio está fora do ar até ser corrigido, e o
   // texto do que fazer é do próprio Mercado Livre (não é palpite nosso).
   const mod = state.moderationMap[id];
@@ -1163,6 +1209,19 @@ function computeBadges(item) {
   // marcar esses anúncios só enchia a linha de sinal que não pede ação nenhuma.
   if (item.shipping && item.shipping.free_shipping === false && Number(item.price) >= PROBLEM_RULES.freeShippingFloor) {
     out.push({ text: 'Sem frete grátis', cls: 'gray' });
+  }
+  // Quanto vendeu no período. Na ordem "mais vendidos" é a explicação de por que a linha
+  // está onde está — sem isso a ordem parece arbitrária. Entra em `out` e não em
+  // `problems`: vender não é problema e não pode apagar o "Sem problemas" da linha.
+  // Só aparece quando a contagem é confiável — sales30Of devolve null se a varredura de
+  // pedidos ficou incompleta, e número de venda errado é pior que número nenhum.
+  const vendas30 = sales30Of(id);
+  if (vendas30 != null && vendas30 > 0) {
+    out.push({
+      text: `${vendas30} ${vendas30 === 1 ? 'venda' : 'vendas'} em ${CONFIG.SALES_WINDOW_DAYS}d`,
+      cls: 'green',
+      hint: `Unidades vendidas nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias, somadas dos seus pedidos pagos.`,
+    });
   }
   // "Ainda sem vendas" (não "Sem vendas"): não contradiz o "Sem problemas" na mesma linha
   if (item.sold_quantity === 0) out.push({ text: 'Ainda sem vendas', cls: 'gray' });
@@ -1981,6 +2040,57 @@ async function loadPage() {
       loadVisitsForPage(pageItems.map((i) => i.id));
       return;
     }
+    // Ordem "mais vendidos" (padrão): o ranking vem pronto do proxy e a lista é paginada
+    // sobre ele. É um recorte de quem VENDEU no período — por isso não se mistura com a
+    // busca por texto, que tem escada própria.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search) {
+      let ranking;
+      try {
+        ranking = await loadSalesRanking();
+      } catch (err) {
+        if (desatualizada()) return;
+        // A rota pode não existir ainda no proxy (o front sobe antes do servidor) ou ter
+        // falhado. Cai pra ordem da ML, mas DIZENDO — em 10/08 um servidor à frente do
+        // cliente deixou o vendedor clicando em loop sem entender o que estava errado.
+        state.rankingIndisponivel = true;
+        state.order = ORDER_FALLBACK;
+        const sel = $('#orderSelect'); if (sel) sel.value = state.order;
+        state.pendingBanner = { kind: 'warn', msg: err && err.status === 404
+          ? 'A ordenação por mais vendidos ainda está sendo liberada. Mostrando por atualização recente.'
+          : 'Não consegui montar a lista de mais vendidos agora. Mostrando por atualização recente — tente de novo em alguns minutos.' };
+        return loadPage();
+      }
+      if (desatualizada()) return;
+
+      // Ninguém vendeu no período: lista vazia aqui seria uma tela morta e sem explicação.
+      if (!ranking.length) {
+        state.order = ORDER_FALLBACK;
+        const sel = $('#orderSelect'); if (sel) sel.value = state.order;
+        state.pendingBanner = { kind: 'info', msg: `Nenhum anúncio vendeu nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias. Mostrando por atualização recente.` };
+        return loadPage();
+      }
+
+      state.scanAtivo = true;   // paginação local, igual aos recortes de conta inteira
+      state.total = ranking.length;
+      if (state.offset >= state.total) state.offset = 0;
+      const idsPagina = ranking.slice(state.offset, state.offset + CONFIG.PAGE_SIZE).map((r) => r.item_id);
+      const items = await hydrate(idsPagina);
+      if (desatualizada()) return;
+      state.lastItems = items;
+      state.loading = false;
+      renderRows(items);
+      loadAttrNames();
+      loadVisitsForPage(idsPagina);
+
+      const info = state.rankingInfo || {};
+      if (info.complete === false) {
+        // Ordem parcial engana igual a número parcial: dizer de quantos pedidos ela saiu.
+        setBanner('warn', `Esta ordem saiu dos ${info.orders_scanned} pedidos mais recentes, de ${info.orders_total} no período — anúncios que venderam só no começo do mês podem estar faltando.`);
+      } else {
+        setBanner('info', `${ranking.length} ${ranking.length === 1 ? 'anúncio vendeu' : 'anúncios venderam'} nos últimos ${CONFIG.SALES_WINDOW_DAYS} dias, do que mais vendeu para o que menos vendeu. Troque a ordenação para ver a conta inteira.`);
+      }
+      return;
+    }
     state.scanAtivo = false;
 
     const searchResp = await mlGet(buildListUrl());
@@ -2197,7 +2307,7 @@ function setStatusToggle(status) {
   });
 }
 function isDefaultState() {
-  return state.status === 'active' && state.order === 'last_updated_desc' && !state.search
+  return state.status === 'active' && state.order === ORDER_MAIS_VENDIDOS && !state.search
     && !state.activeChip && !state.listingType && !state.logisticType && !state.discountOnly
     && !state.freeShipUnder;
 }
@@ -2206,7 +2316,7 @@ function isDefaultState() {
 function updateFiltersToggle() {
   const t = $('#filtersToggle');
   if (!t) return;
-  const n = (state.order !== 'last_updated_desc' ? 1 : 0) + (state.listingType ? 1 : 0)
+  const n = (state.order !== ORDER_MAIS_VENDIDOS ? 1 : 0) + (state.listingType ? 1 : 0)
     + (state.logisticType ? 1 : 0) + (state.discountOnly ? 1 : 0) + (state.freeShipUnder ? 1 : 0);
   // aberto/fechado no próprio rótulo (mesmo padrão de caret que flipa das famílias e do "+N sinais")
   const open = $('#filtersCard') && $('#filtersCard').classList.contains('open');
@@ -2335,7 +2445,7 @@ function writeStateToUrl() {
   // que ela nunca escolheu, e o statusRestore — que só existe em memória — sumia.
   const statusDoVendedor = state.statusRestore != null ? state.statusRestore : state.status;
   if (statusDoVendedor !== 'active') p.set('status', statusDoVendedor);
-  if (state.order !== 'last_updated_desc') p.set('order', state.order);
+  if (state.order !== ORDER_MAIS_VENDIDOS) p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
   // Em que degrau da escada a busca parou. 'buscapor' estava na lista de chaves desde o
   // port, mas nunca era escrito nem lido: o F5 jogava a busca de volta no primeiro degrau
@@ -2546,7 +2656,7 @@ function wireControls() {
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
-    state.status = 'active'; state.order = 'last_updated_desc';
+    state.status = 'active'; state.order = ORDER_MAIS_VENDIDOS;
     state.search = ''; state.searchParam = null; resetSearchLadder();
     state.statusRestore = null; state.statusManual = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;
