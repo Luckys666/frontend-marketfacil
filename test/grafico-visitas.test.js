@@ -82,7 +82,16 @@ console.log('\n== a linha não atravessa o buraco ==');
   const d = MF_caminhoSerie(pontos, 'visitas', 4, 292, 0, 46);
   const moves = (d.match(/M/g) || []).length;
   check('o path recomeça depois do buraco (2 "M")', moves === 2, d);
-  check('e não tem L ligando por cima do vazio', (d.match(/L/g) || []).length === 0, d);
+  // O critério aqui era "não existe L". Ele ficou obsoleto em 12/08, quando o ponto sem
+  // vizinho passou a desenhar um segmento de comprimento ZERO pra virar ponto visível — o
+  // que gera L legítimo. O que importa nunca mudou: nenhum traço pode ATRAVESSAR o dia
+  // vazio. Então medimos o vão coberto, não a letra do comando.
+  const passos = d.trim().split(/(?=[ML])/).map((s) => ({ cmd: s[0], x: parseFloat(s.slice(1)) }));
+  let atravessa = false;
+  for (let i = 1; i < passos.length; i++) {
+    if (passos[i].cmd === 'L' && Math.abs(passos[i].x - passos[i - 1].x) > 1) atravessa = true;
+  }
+  check('nenhum traço atravessa o dia vazio', !atravessa, d);
 
   const cheio = MF_caminhoSerie([{ dia: 'a', visitas: 1 }, { dia: 'b', visitas: 2 }], 'visitas', 4, 292, 0, 46);
   check('série sem buraco vira um traço só', (cheio.match(/M/g)||[]).length === 1 && (cheio.match(/L/g)||[]).length === 1, cheio);
@@ -168,6 +177,85 @@ console.log('\n== sem Ads o resumo tem só visitas ==');
   check('coluna Visitas existe', html.includes('>Visitas<'));
   check('coluna Vendas não', !html.includes('>Vendas<'));
   check('e o card explica por quê', reg['resumoSemAds'].textContent.includes('publicidade'));
+}
+
+// ── o buraco não pode comer o dado que EXISTE ───────────────────────────
+console.log('\n== ponto sem vizinho continua visível ==');
+{
+  /*
+   * Lucas, 12/08: "tem horas que os gráficos do card de desempenho ficam com furos. não faz
+   * sentido". Medido: `M x y` sozinho não desenha NADA em SVG — path só com moveTo é
+   * invisível, mesmo com stroke-linecap="round". Numa série alternada (dado, buraco, dado…)
+   * o gráfico saía COMPLETAMENTE vazio com 5 valores dentro.
+   *
+   * "Não vendeu" e "não deu pra saber" continuam coisas diferentes: o buraco segue sendo
+   * buraco e a linha não passa por cima dele. O que muda é que um dia com valor aparece —
+   * como ponto, quando não tem vizinho pra formar traço.
+   */
+  const MF_caminhoSerie = get('MF_caminhoSerie');
+  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+
+  const isolado = MF_caminhoSerie(
+    [{ dia: dia(3), vendas: null }, { dia: dia(2), vendas: 5 }, { dia: dia(1), vendas: null }],
+    'vendas', 4, 292, 12, 46
+  );
+  check('ponto isolado desenha algo', /L/.test(isolado), JSON.stringify(isolado));
+
+  const alternada = MF_caminhoSerie(
+    Array.from({ length: 10 }, (_, i) => ({ dia: dia(10 - i), vendas: i % 2 === 0 ? i + 1 : null })),
+    'vendas', 4, 292, 12, 46
+  );
+  check('série alternada desenha os 5 valores', (alternada.match(/L/g) || []).length === 5,
+    `${(alternada.match(/L/g) || []).length} traços | ${alternada.slice(0, 120)}`);
+
+  // O que já funcionava não pode mudar: sequência contínua é UM traço, e o buraco corta.
+  const continua = MF_caminhoSerie(
+    [{ dia: dia(3), vendas: 1 }, { dia: dia(2), vendas: 2 }, { dia: dia(1), vendas: 3 }],
+    'vendas', 4, 292, 12, 46
+  );
+  check('sequência contínua continua uma linha só', (continua.match(/M/g) || []).length === 1, continua);
+
+  const comBuraco = MF_caminhoSerie(
+    [{ dia: dia(4), vendas: 1 }, { dia: dia(3), vendas: 2 }, { dia: dia(2), vendas: null }, { dia: dia(1), vendas: 4 }],
+    'vendas', 4, 292, 12, 46
+  );
+  check('o buraco ainda parte a linha em dois', (comBuraco.match(/M/g) || []).length === 2, comBuraco);
+  check('e o ponto depois do buraco aparece', (comBuraco.match(/L/g) || []).length === 2, comBuraco);
+}
+
+console.log('\n== o eixo é das visitas; o Ads não inventa dia ==');
+{
+  /*
+   * O daily do Ads vai de date_from a date_to INCLUSIVE — traz HOJE. As visitas, não. Esse
+   * dia entrava no gráfico com `visitas: null` e abria um furo bem na ponta da linha, todo
+   * santo dia, em todo anúncio com Ads.
+   */
+  const MF_seriesDiarias = get('MF_seriesDiarias');
+  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const visitas = Array.from({ length: 30 }, (_, i) => ({ date: dia(i + 1), total: 10 }));
+  const ads = Array.from({ length: 31 }, (_, i) => ({ date: dia(i), units_quantity: 1, organic_units_quantity: 0 }));
+
+  const pontos = MF_seriesDiarias(visitas, ads);
+  check('nenhum ponto sem visita', pontos.every((p) => typeof p.visitas === 'number'),
+    JSON.stringify(pontos.filter((p) => typeof p.visitas !== 'number').map((p) => p.dia)));
+  check('o dia extra do Ads não vira ponto', pontos.length === 30, String(pontos.length));
+  check('as vendas dos dias válidos continuam lá', pontos.every((p) => typeof p.vendas === 'number'),
+    JSON.stringify(pontos.filter((p) => typeof p.vendas !== 'number').map((p) => p.dia)));
+
+  // A guarda é só pra PONTA. Na primeira versão dela eu descartei TODO dia ausente nas
+  // visitas — e sumi com as vendas de quem não teve visita nenhuma no período. Some o
+  // furo, não a informação.
+  const semVisitas = MF_seriesDiarias([], [{ date: dia(1), units_quantity: 2, organic_units_quantity: 0 }]);
+  check('anúncio sem série de visitas ainda mostra a venda', semVisitas.length === 1 && semVisitas[0].vendas === 2,
+    JSON.stringify(semVisitas));
+
+  // Buraco no MEIO continua sendo buraco de verdade (o dia existe nos dois lados).
+  const comBuracoMeio = MF_seriesDiarias(
+    [{ date: dia(3), total: 5 }, { date: dia(1), total: 5 }],
+    [{ date: dia(2), units_quantity: 9, organic_units_quantity: 0 }]
+  );
+  check('dia entre dois dias de visita continua entrando', comBuracoMeio.some((p) => p.vendas === 9),
+    JSON.stringify(comBuracoMeio.map((p) => p.dia + ':' + p.vendas)));
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);

@@ -2873,3 +2873,26 @@
   .ana-wrapper .mf-conteudo-acoes .mf-btn-secundario { flex: 1 1 auto; text-align: center; }
   .ana-wrapper .mf-garantia-linha { flex-direction: column; gap: 8px; }
 }
+
+/* Marcações do ML: veredito primeiro, lista atrás de um clique (Lucas, 12/08).
+   `<details>` nativo de propósito — não depende de listener pendurado depois do innerHTML,
+   que no Bubble já mordeu antes. */
+.ana-wrapper .mf-tags-detalhe { margin-top: 10px; }
+.ana-wrapper .mf-tags-detalhe > summary {
+  cursor: pointer;
+  padding: 6px 2px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ana-wrapper .mf-tags-detalhe > summary::-webkit-details-marker { display: none; }
+.ana-wrapper .mf-tags-detalhe > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  color: var(--text-muted);
+}
+.ana-wrapper .mf-tags-detalhe[open] > summary::before { content: '▾ '; }
+.ana-wrapper .mf-tags-detalhe > summary:hover { color: var(--blue); }

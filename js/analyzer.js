@@ -1880,7 +1880,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
     if (!Array.isArray(fichaTecnica) || fichaTecnica.length === 0) {
         el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.2s;">
-            <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Ficha Técnica</span></div>
+            <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Otimização de Palavras da Ficha Técnica</span></div>
             <p class="text-small">Nenhuma ficha técnica disponível.</p>
         </div>`;
         return;
@@ -1979,7 +1979,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
         <div class="ana-card" style="animation-delay: 0.2s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📋</span>
-                <span class="ana-card-title">Ficha Técnica</span>
+                <span class="ana-card-title">Otimização de Palavras da Ficha Técnica</span>
                 <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${problemAttrs.length + okAttrs.length} atributos</span>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
@@ -3654,18 +3654,40 @@ function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
             </div>`;
     };
 
+    // Veredito ANTES do detalhe (Lucas, 12/08): quem abre a análise quer saber se tem
+    // problema, não ler 14 etiquetas técnicas pra descobrir. A lista continua inteira —
+    // atrás de um clique, pra quem quiser conferir.
+    const problemas = alertTags.length;
+    const tudoCerto = problemas === 0;
+    const veredito = tudoCerto
+        ? { icone: '✅', titulo: 'Tudo certo por aqui', cor: 'var(--green)', fundo: 'var(--green-light)',
+            frase: 'O Mercado Livre não marcou nada que atrapalhe este anúncio.' }
+        : { icone: '⚠️', titulo: `${problemas} ${problemas === 1 ? 'ponto de atenção' : 'pontos de atenção'}`,
+            cor: 'var(--red)', fundo: 'var(--red-light)',
+            frase: 'O Mercado Livre marcou este anúncio. Abra para ver o que é.' };
+
     el.innerHTML = `
          <div class="ana-card">
             <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">🏷️</span>
-                <span class="ana-card-title">Tags Ativas</span>
-                <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${tags.length} tags</span>
+                <span class="ana-card-title">Situação no Mercado Livre</span>
+                <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${tags.length} ${tags.length === 1 ? 'marcação' : 'marcações'}</span>
             </div>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px;">
-                ${renderCol('Boas Práticas', '✅', 'var(--green)', goodTags)}
-                ${renderCol('Atenção', '⚠️', 'var(--red)', alertTags)}
-                ${renderCol('Neutras', 'ℹ️', 'var(--text-muted)', neutralTags)}
+            <div style="display:flex; align-items:center; gap:10px; padding:12px 14px; background:${veredito.fundo}; border-left:3px solid ${veredito.cor}; border-radius:var(--radius-sm);">
+                <span style="font-size:1.3rem; flex-shrink:0;">${veredito.icone}</span>
+                <div style="flex:1; min-width:0;">
+                    <span style="font-weight:700; font-size:0.9rem; color:var(--text);">${veredito.titulo}</span>
+                    <span class="text-small" style="display:block; margin-top:1px;">${veredito.frase}</span>
+                </div>
             </div>
+            <details class="mf-tags-detalhe"${tudoCerto ? '' : ' open'}>
+                <summary>Ver todas as marcações</summary>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-top:12px;">
+                    ${renderCol('Boas Práticas', '✅', 'var(--green)', goodTags)}
+                    ${renderCol('Atenção', '⚠️', 'var(--red)', alertTags)}
+                    ${renderCol('Neutras', 'ℹ️', 'var(--text-muted)', neutralTags)}
+                </div>
+            </details>
         </div>
     `;
 }
@@ -5811,11 +5833,21 @@ function MF_seriesDiarias(results, adsDaily) {
         const d = (v.date || '').slice(0, 10);
         if (d) porDia.set(d, { dia: d, visitas: Number(v.total) || 0, vendas: null, conversao: null });
     }
+    // O daily do Ads vai de date_from a date_to INCLUSIVE, então traz HOJE — que as visitas
+    // ainda não têm. Esse dia entrava como ponto de `visitas: null` e abria um furo na ponta
+    // da linha, todo dia, em todo anúncio com Ads (12/08/2026).
+    //
+    // A guarda é só pra PONTA: dia fora do intervalo que as visitas cobrem não vira ponto.
+    // Buraco no meio continua valendo, e anúncio SEM série de visitas nenhuma continua
+    // mostrando as vendas do Ads — some o furo, não a informação.
+    const diasVisita = [...porDia.keys()].sort();
+    const primeiro = diasVisita[0], ultimo = diasVisita[diasVisita.length - 1];
     const temAds = Array.isArray(adsDaily) && adsDaily.length > 0;
     if (temAds) {
         for (const a of adsDaily) {
             const d = (a.date || '').slice(0, 10);
             if (!d) continue;
+            if (diasVisita.length && (d < primeiro || d > ultimo)) continue;
             const vendas = (Number(a.units_quantity) || 0) + (Number(a.organic_units_quantity) || 0);
             const linha = porDia.get(d) || { dia: d, visitas: null, vendas: null, conversao: null };
             linha.vendas = vendas;
@@ -5941,7 +5973,16 @@ function MF_caminhoSerie(pontos, chave, x0, larg, y0, alt) {
     pontos.forEach((p, i) => {
         const v = p[chave];
         if (typeof v !== 'number') { abriu = false; return; }   // buraco: não liga os pontos
-        d += `${abriu ? 'L' : 'M'}${px(i).toFixed(1)} ${py(v).toFixed(1)} `;
+        const x = px(i).toFixed(1), y = py(v).toFixed(1);
+        if (abriu) { d += `L${x} ${y} `; return; }
+        // Dia com valor mas sem vizinho válido: `M x y` sozinho NÃO desenha nada — path só
+        // com moveTo é invisível, mesmo com stroke-linecap="round". Numa série alternada
+        // (dado, buraco, dado…) o gráfico saía vazio COM dados dentro, e era isso que o
+        // Lucas via como "furos que não fazem sentido" (12/08/2026). Um segmento de
+        // comprimento zero vira um ponto redondo por causa do linecap.
+        const proximo = pontos[i + 1];
+        const temVizinho = proximo && typeof proximo[chave] === 'number';
+        d += temVizinho ? `M${x} ${y} ` : `M${x} ${y} L${x} ${y} `;
         abriu = true;
     });
     return d.trim();
