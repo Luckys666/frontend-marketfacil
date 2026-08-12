@@ -2704,8 +2704,15 @@
    escrito em cada campo de largura 100% — sem ele, padding + borda somam por fora e o
    overflow do wrapper corta a borda direita.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* `.ana-wrapper button` deixa TODO botão em CAIXA ALTA com letter-spacing. "ESCREVER
+   DESCRIÇÃO" gritando dentro de um card de checklist não combina com o resto da tela — os
+   botões de período já desligam isso inline. Aqui vem por classe: (0,2,0) contra (0,1,1)
+   ganha sem depender da ordem do arquivo. Só a tela mostrou isso; o teste de layout agora
+   mede o textTransform pra não voltar. */
 .ana-wrapper .mf-conteudo-botao {
   flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -2773,6 +2780,8 @@
   font-family: inherit;
   font-size: 0.78rem;
   font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
   cursor: pointer;
   white-space: nowrap;
   box-sizing: border-box;
