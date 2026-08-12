@@ -660,7 +660,11 @@ function MF_getAttrPlaceholder(catAttr) {
 // evolução do score e mudanças desde a última visita do vendedor.
 // Sem persistir em DB do app — só no browser do user.
 // ============================================================
-const MF_SNAP_KEY = (id) => `mf_analyze_snap_v1_${id}`;
+// v2: os snapshots gravados em 11/08/2026 têm 60 dias de visitas dentro de um campo
+// chamado `visits30`. Comparar aqueles com os de agora mostraria "📉 Visitas -50%" pra
+// todo anúncio já analisado — queda que nunca aconteceu. Trocar a chave descarta a base
+// velha: a primeira análise volta a ser "sem comparação", que é a verdade.
+const MF_SNAP_KEY = (id) => `mf_analyze_snap_v2_${id}`;
 
 function MF_loadSnap(itemId) {
     if (!itemId) return null;
@@ -675,8 +679,28 @@ function MF_saveSnap(itemId, snap) {
     try { localStorage.setItem(MF_SNAP_KEY(itemId), JSON.stringify(snap)); } catch (e) {}
 }
 
+/**
+ * Recorta a série de visitas nos últimos N dias.
+ *
+ * A chamada de visitas pede 60 dias porque o card "Desempenho do Anúncio" compara 30 dias
+ * com os 30 anteriores. Todo o resto da tela fala em 30 — e somar os 60 num lugar que
+ * escreve "em 30d" não é detalhe de rótulo: no card de oportunidades isso dobrava o
+ * "+R$ X/mês" e cortava a conversão pela metade (11/08/2026). Quem precisa dos 60 dias
+ * pede a série inteira; quem fala em 30 passa por aqui.
+ */
+function MF_visitasDosUltimos(results, dias = 30) {
+    if (!Array.isArray(results)) return [];
+    return results.filter((v) => {
+        const iso = String(v && v.date || '').slice(0, 10);
+        if (!iso) return false;
+        const t = new Date(iso + 'T12:00:00').getTime();
+        if (isNaN(t)) return false;
+        return (Date.now() - t) / 86400000 < dias;
+    });
+}
+
 function MF_buildSnap(detail, visitsData, adsData, score) {
-    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    const visits30 = MF_visitasDosUltimos(visitsData?.results, 30).reduce((s, v) => s + (v.total || 0), 0);
     let sales30 = 0;
     let adsActive = false;
     let adsLevel = null;
@@ -840,7 +864,10 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
     const _cfg = (typeof window !== 'undefined' && window.MF_getSiteConfig) ? window.MF_getSiteConfig(_site) : { locale: 'pt-BR', currency: 'BRL' };
     const fmtMoney = (n) => new Intl.NumberFormat(_cfg.locale, { style: 'currency', currency: _cfg.currency }).format(n || 0);
     const price = detail?.price || 0;
-    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    // 30 dias de verdade: a série chega com 60 (ver MF_visitasDosUltimos) e os textos
+    // daqui prometem "em 30d" — e viram reais no bolso do vendedor.
+    const visitas30d = MF_visitasDosUltimos(visitsData?.results, 30);
+    const visits30 = visitas30d.reduce((s, v) => s + (v.total || 0), 0);
     const soldQuantityLifetime = detail?.sold_quantity || 0;
     const availableQty = detail?.available_quantity || 0;
     const itemId = detail?.id || '';
@@ -906,8 +933,11 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
 
         let visitsTrend = null;
         let visitsRatio = 1;
-        if (Array.isArray(visitsData?.results) && visitsData.results.length >= 4) {
-            const visitsSplit = _mfSplitByDate(visitsData.results);
+        // Metade de 30 dias é 15 — que é o que a frase abaixo promete. Com a série de 60
+        // o "recente vs anterior" virava 30 × 30 enquanto as vendas seguiam 15 × 15, e a
+        // projeção de quando o estoque acaba misturava duas escalas.
+        if (visitas30d.length >= 4) {
+            const visitsSplit = _mfSplitByDate(visitas30d);
             const visitsOlder = visitsSplit.older.reduce((s, v) => s + (v.total || 0), 0);
             const visitsRecent = visitsSplit.recent.reduce((s, v) => s + (v.total || 0), 0);
             visitsTrend = _mfTrend(visitsOlder, visitsRecent);
@@ -3864,7 +3894,10 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         }
         // Visit trend + ghost ad detection
         if (d.visitsData && d.visitsData.results && !d.visitsData.error) {
-            const results = d.visitsData.results || [];
+            // 30 dias de verdade: a série chega com 60 e as duas frases daqui dizem
+            // "em 30 dias". Sem o recorte, o total saía dobrado e "Sem visitas nos últimos
+            // 30 dias" parava de acusar quem teve visita só no mês retrasado.
+            const results = MF_visitasDosUltimos(d.visitsData.results, 30);
             results.sort((a, b) => new Date(a.date) - new Date(b.date));
             const len = results.length;
             const sumV = arr => arr.reduce((a, c) => a + (c.total || 0), 0);
@@ -4290,6 +4323,67 @@ window.reloadAdsMetrics = async function(days) {
     }
 };
 
+/**
+ * Cruza o daily de Ads com as visitas NO PERÍODO QUE OS DOIS COBREM.
+ *
+ * As duas fontes têm janelas próprias e independentes: as visitas vêm de 60 dias fixos
+ * (o card de visitas precisa disso pra comparar 30 dias com os 30 anteriores) e o daily
+ * de Ads vem do período escolhido nos botões 7/15/30/60/90. Somar uma contra a outra foi
+ * o bug de 11/08/2026 — com 60 dias de visitas e 30 de cliques, o que sobrava como
+ * "orgânico" carregava 30 dias que o Ads nem cobriu, e no sentido oposto (90d de Ads
+ * contra 60 de visitas) os cliques passavam as visitas e a linha do orgânico zerava.
+ *
+ * A janela aqui é a INTERSEÇÃO real das duas, e `dias` é o que a tela deve anunciar:
+ * escrever "90 dias" num número que cobriu 60 é a mesma mentira, só que por extenso.
+ * Sem dia em comum devolve null — a seção some, não inventa.
+ */
+function MF_janelaCanais(daily, visitResults) {
+    const datasDe = (arr) => (arr || [])
+        .map((x) => String(x && x.date || '').slice(0, 10))
+        .filter(Boolean)
+        .sort();
+    const dAds = datasDe(daily);
+    const dVis = datasDe(visitResults);
+    if (!dAds.length || !dVis.length) return null;
+
+    // ISO (AAAA-MM-DD) compara certo como string — sem fuso pra errar no meio do caminho.
+    const ini = dAds[0] > dVis[0] ? dAds[0] : dVis[0];
+    const fim = dAds[dAds.length - 1] < dVis[dVis.length - 1] ? dAds[dAds.length - 1] : dVis[dVis.length - 1];
+    if (ini > fim) return null;
+    const dentro = (d) => d >= ini && d <= fim;
+
+    const cliquesPorDia = {};
+    let vendasAds = 0, vendasOrganicas = 0;
+    for (const a of (daily || [])) {
+        const d = String(a && a.date || '').slice(0, 10);
+        if (!d || !dentro(d)) continue;
+        cliquesPorDia[d] = (cliquesPorDia[d] || 0) + (a.clicks || 0);
+        vendasAds += a.units_quantity || 0;
+        vendasOrganicas += a.organic_units_quantity || 0;
+    }
+
+    let visitasTotal = 0, visitasAds = 0;
+    for (const v of (visitResults || [])) {
+        const d = String(v && v.date || '').slice(0, 10);
+        if (!d || !dentro(d)) continue;
+        const total = v.total || 0;
+        // Clique não pode passar a visita do dia. O ML conta as duas coisas por caminhos
+        // diferentes; sem esse teto um dia desencontrado viraria orgânico negativo.
+        visitasTotal += total;
+        visitasAds += Math.min(total, cliquesPorDia[d] || 0);
+    }
+
+    const dias = Math.round(
+        (new Date(fim + 'T12:00:00').getTime() - new Date(ini + 'T12:00:00').getTime()) / 86400000
+    ) + 1;
+
+    return {
+        ini, fim, dias, dentro,
+        visitasTotal, visitasAds, visitasOrganicas: Math.max(0, visitasTotal - visitasAds),
+        vendasAds, vendasOrganicas, vendasTotal: vendasAds + vendasOrganicas,
+    };
+}
+
 function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, visitsData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -4331,6 +4425,18 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const convRate = totalClicks > 0 ? ((totalOrders / totalClicks) * 100).toFixed(2) : '0.00';
     const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0;
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
+
+    // Visitas: o parâmetro é a fonte, o estado da análise é o resgate. Antes a tabela de
+    // canal lia o parâmetro e o gráfico lia o estado — bastava um vir vazio pra metade do
+    // card falar de um período e a outra metade de outro.
+    const visitsFonte = (visitsData && Array.isArray(visitsData.results) && !visitsData.error)
+        ? visitsData
+        : ((window.currentAnalysisState && window.currentAnalysisState.visitsData) || null);
+    const visitsResults = (visitsFonte && Array.isArray(visitsFonte.results) && !visitsFonte.error)
+        ? visitsFonte.results : [];
+    // Uma régua só para tudo que mistura visita com Ads: tabela de canal, barra de
+    // composição e o gráfico diário. Três contas separadas foi como elas divergiram.
+    const canais = MF_janelaCanais(daily, visitsResults);
 
     // --- 2. Calculate trends: last half vs first half ---
     const sortedDaily = [...daily].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -4447,15 +4553,14 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             ${metricCard('Conversão Ads', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
         </div>
         ${(() => {
-            // Breakdown Ads × Orgânico × Total — só faz sentido com visitsData válido
-            if (!visitsData || !Array.isArray(visitsData.results) || visitsData.error) return '';
-            const visitResults = visitsData.results || [];
-            const totalVisits = visitResults.reduce((s, v) => s + (v.total || 0), 0);
-            const adsVisits = totalClicks;
-            const organicVisits = Math.max(0, totalVisits - adsVisits);
-            const adsSales = totalOrders;
-            const organicSales = totalOrganic;
-            const totalSales = adsSales + organicSales;
+            // Breakdown Ads × Orgânico × Total — só existe com dia em comum entre visitas e Ads
+            if (!canais || canais.visitasTotal <= 0) return '';
+            const totalVisits = canais.visitasTotal;
+            const adsVisits = canais.visitasAds;
+            const organicVisits = canais.visitasOrganicas;
+            const adsSales = canais.vendasAds;
+            const organicSales = canais.vendasOrganicas;
+            const totalSales = canais.vendasTotal;
             const cvr = (sales, vis) => vis > 0 ? ((sales / vis) * 100) : 0;
             const adsCvr = cvr(adsSales, adsVisits);
             const orgCvr = cvr(organicSales, organicVisits);
@@ -4479,7 +4584,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             })() : '';
             return `
             <div style="margin-bottom:16px;">
-                <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${activeDays} dias)</div>
+                <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${canais.dias} dias)</div>
                 <div style="border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
                     <div class="ana-channel-row" style="padding:6px 10px; background:var(--row-alt); font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.04em;">
                         <span>Canal</span><span style="text-align:right;">Visitas</span><span style="text-align:right;">Vendas</span><span style="text-align:right;">Conversão</span>
@@ -4579,7 +4684,6 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     let visitsAdsChartHtml = '';
     const visitsCanvasId = 'visitsAdsChart_' + Date.now();
     let _visitsChartData = null;
-    const visitsResults = window.currentAnalysisState?.visitsData?.results || [];
     if (sortedDaily.length > 0) {
         // Build maps by date
         const adsClicksByDate = {};
@@ -4592,9 +4696,12 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             }
         });
 
-        // Match visits with ads per day
-        const sortedVisits = visitsResults.length > 0
-            ? [...visitsResults].sort((a, b) => new Date(a.date) - new Date(b.date))
+        // Match visits with ads per day — só nos dias que Ads e visitas cobrem juntos.
+        // Desenhar os 60 dias das visitas com o Ads de 30 pintava metade do gráfico como
+        // 100% orgânico, quando na verdade o Ads nem foi consultado naqueles dias.
+        const visitasNaJanela = canais ? visitsResults.filter(v => canais.dentro(String(v && v.date || '').slice(0, 10))) : [];
+        const sortedVisits = visitasNaJanela.length > 0
+            ? [...visitasNaJanela].sort((a, b) => new Date(a.date) - new Date(b.date))
             : sortedDaily.map(d => ({ date: d.date, total: d.clicks || 0 }));
 
         const entries = sortedVisits.map(v => {
@@ -4630,7 +4737,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             </div>
             <div style="margin-top:10px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                    <span style="font-size:0.68rem;color:var(--text-muted);">Composição do tráfego (${activeDays}d)</span>
+                    <span style="font-size:0.68rem;color:var(--text-muted);">Composição do tráfego (${canais ? canais.dias : activeDays}d)</span>
                     <span style="font-size:0.68rem;color:var(--text-muted);">${fmt(totalAdsSum)} ads / ${fmt(totalVisitsSum)} total</span>
                 </div>
                 <div style="height:12px;border-radius:6px;background:var(--border);overflow:hidden;display:flex;">
@@ -5070,7 +5177,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
             <div class="ana-card" style="animation-delay: 0.1s;">
                 <div class="ana-card-header">
                     <span class="ana-card-icon">📊</span>
-                    <span class="ana-card-title">Visitas (30 dias)</span>
+                    <span class="ana-card-title">Desempenho do Anúncio</span>
                 </div>
                 <p class="text-small" style="color: var(--text-muted); font-style:italic;">${motivo}</p>
             </div>`;
