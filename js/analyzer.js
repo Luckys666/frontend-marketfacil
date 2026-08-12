@@ -339,6 +339,12 @@ const API_PERFORMANCE_ENDPOINT = `${BASE_URL_PROXY}/api/performance`;
 const API_VISITS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-visits`; // Rota no backend para visitas
 const API_REVIEWS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-reviews`; // Rota no backend para reviews
 const API_ADS_METRICS_ENDPOINT = `${BASE_URL_PROXY}/api/ads-metrics`; // Rota para métricas de Product Ads
+// Escrita de descrição e garantia (12/08/2026). O que vale como descrição e o que é uma
+// garantia válida é decidido no proxy — daqui só sai o que o vendedor digitou.
+const API_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/description`;
+const API_GARANTIA_ENDPOINT = `${BASE_URL_PROXY}/api/warranty`;
+const API_GARANTIA_VALORES_ENDPOINT = `${BASE_URL_PROXY}/api/warranty-values`;
+const API_GPT_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/gpt-descricao`;
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -1561,6 +1567,9 @@ function reRenderAnalysisView() {
     // Update dependent components
     processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
     exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
+    // Checklist junto: descrição e garantia agora se resolvem por ele, e um "❌ Não
+    // preenchida" que sobrevive ao próprio salvamento faz o vendedor salvar de novo.
+    exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`);
 
     // Re-render score WITH analysisData so improvements panel persists
     const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
@@ -3194,20 +3203,39 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
         imageDetail = imageOk ? `${imageCount} fotos` : `Mínimo 3 fotos (tem ${imageCount})`;
     }
 
+    // `source` só aparece quando o ITEM não tem descrição própria e a gente foi buscar a
+    // herdada. Ou seja: descrição herdada É o caso que este botão resolve — o rótulo muda
+    // de "Editar" para "Escrever a sua" porque são coisas diferentes pro vendedor.
+    const descHerdada = hasDesc && !!descSource;
     const items = [
-        { ok: hasDesc, label: 'Descrição em texto', detail: hasDesc ? descSourceLabel : 'Não preenchida' },
-        { ok: hasWarranty, label: 'Garantia', detail: hasWarranty ? warrantyText : 'Não informada' },
-        { ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
+        {
+            chave: 'descricao',
+            ok: hasDesc,
+            label: 'Descrição em texto',
+            detail: hasDesc ? descSourceLabel : 'Não preenchida',
+            acao: hasDesc ? (descHerdada ? 'Escrever a sua' : 'Editar') : 'Escrever descrição',
+        },
+        {
+            chave: 'garantia',
+            ok: hasWarranty,
+            label: 'Garantia',
+            detail: hasWarranty ? warrantyText : 'Não informada',
+            acao: hasWarranty ? 'Alterar' : 'Informar garantia',
+        },
+        // Imagem tem tela própria (o redimensionador) — botão aqui só levaria a lugar nenhum.
+        { chave: 'imagens', ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
     ];
 
     const renderItem = (item) => `
         <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:${item.ok ? 'var(--green-light)' : 'var(--red-light)'}; border-radius:var(--radius-sm); border-left:3px solid ${item.ok ? 'var(--green)' : 'var(--red)'};">
             <span style="font-size:1.1rem; flex-shrink:0;">${item.ok ? '✅' : '❌'}</span>
-            <div style="flex:1;">
+            <div style="flex:1; min-width:0;">
                 <span style="font-weight:600; font-size:0.88rem; color:var(--text);">${item.label}</span>
                 <span class="text-small" style="display:block; margin-top:1px;">${item.detail}</span>
             </div>
-        </div>`;
+            ${item.acao ? `<button type="button" class="mf-conteudo-botao" onclick="window.mfAbrirEditorConteudo('${item.chave}')">${item.acao}</button>` : ''}
+        </div>
+        ${item.acao ? `<div id="mf-editor-${item.chave}" class="mf-conteudo-editor" style="display:none;"></div>` : ''}`;
 
 
     el.innerHTML = `
@@ -3221,6 +3249,371 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             </div>
         </div>
     `;
+}
+
+/* =========================================================================
+   Descrição e garantia: resolver pela tela (12/08/2026, pedido do Lucas de 11/08)
+
+   Até aqui o Checklist só apontava "Não preenchida" e "Não informada". Diagnóstico sem
+   caminho de saída é o tipo de tela que o vendedor lê, concorda e fecha.
+
+   Onde mora cada coisa:
+   - O que vale como descrição (a ML só aceita texto simples) e o que é uma garantia
+     válida são decisões do PROXY. Daqui sai o que o vendedor digitou; a recusa volta
+     pronta, com a posição do problema, e esta tela só desenha.
+   - Garantia é `sale_terms` (WARRANTY_TYPE + WARRANTY_TIME), nunca `attributes`.
+
+   Vale para o ANÚNCIO ABERTO, não para a família (decisão do Lucas em 12/08): salvar aqui
+   não mexe nos irmãos de variação, e a tela diz isso em vez de deixar o vendedor supor.
+   ========================================================================= */
+
+// Qual editor está aberto. Um por vez: dois campos grandes abertos ao mesmo tempo empurram
+// a página e o vendedor perde de vista o que estava fazendo.
+window.MF_editorAberto = null;
+
+function MF_ehFamilia(detail) {
+    return !!(detail && detail.family_id);
+}
+
+/** Texto atual da descrição — inclusive a herdada, que serve de ponto de partida. */
+function MF_descricaoAtual(state) {
+    const d = state && state.descriptionData;
+    if (!d) return '';
+    return String(d.plain_text || d.text || '').trim();
+}
+
+/** Lê a garantia gravada e devolve as partes, pra reabrir o editor no que já está lá. */
+function MF_garantiaAtual(detail) {
+    const termos = Array.isArray(detail && detail.sale_terms) ? detail.sale_terms : [];
+    const tipoNome = (termos.find((t) => t && t.id === 'WARRANTY_TYPE') || {}).value_name || '';
+    const prazo = (termos.find((t) => t && t.id === 'WARRANTY_TIME') || {}).value_name || '';
+    const tipo = /fábrica|fabrica/i.test(tipoNome) ? 'fabrica'
+        : (/sem garantia/i.test(tipoNome) ? 'sem' : (tipoNome ? 'vendedor' : ''));
+    const m = String(prazo).match(/^(\d+)\s*(dia|dias|m[êe]s|meses|ano|anos)$/i);
+    const unidade = m ? ({ dia: 'dias', dias: 'dias', mes: 'meses', 'mês': 'meses', meses: 'meses', ano: 'anos', anos: 'anos' })[m[2].toLowerCase()] : '';
+    return { tipo, tempo: m ? m[1] : '', unidade: unidade || 'meses', prazoLiteral: prazo };
+}
+
+window.mfFecharEditorConteudo = function () {
+    const anterior = window.MF_editorAberto;
+    window.MF_editorAberto = null;
+    if (!anterior) return;
+    const el = document.getElementById(`mf-editor-${anterior}`);
+    if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+};
+
+window.mfAbrirEditorConteudo = function (qual) {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    if (window.MF_editorAberto === qual) return window.mfFecharEditorConteudo();
+    window.mfFecharEditorConteudo();
+
+    const el = document.getElementById(`mf-editor-${qual}`);
+    if (!el) return;
+    window.MF_editorAberto = qual;
+    el.style.display = 'block';
+    el.innerHTML = qual === 'descricao' ? MF_editorDescricaoHtml(state) : MF_editorGarantiaHtml(state);
+
+    if (qual === 'descricao') {
+        const ta = document.getElementById('mf-desc-input');
+        if (ta) {
+            ta.focus();
+            ta.addEventListener('input', () => MF_atualizaContadorDescricao());
+            MF_atualizaContadorDescricao();
+        }
+    } else {
+        MF_ligaEditorGarantia();
+        MF_carregarValoresGarantia(state);
+    }
+};
+
+function MF_avisoFamiliaHtml(detail) {
+    if (!MF_ehFamilia(detail)) return '';
+    return `<div class="mf-conteudo-aviso">Vale só para este anúncio. As outras variações do grupo seguem com o que já tinham.</div>`;
+}
+
+function MF_editorDescricaoHtml(state) {
+    const atual = MF_descricaoAtual(state);
+    const herdada = !!(state.descriptionData && state.descriptionData.source);
+    const origem = herdada
+        ? `<div class="mf-conteudo-aviso">O texto abaixo veio ${state.descriptionData.source === 'catalog' ? 'da ficha do catálogo' : 'do seu produto (MLBU)'}. Salvando, ele passa a ser a descrição deste anúncio.</div>`
+        : '';
+    return `
+        <div class="mf-conteudo-box">
+            ${origem}
+            ${MF_avisoFamiliaHtml(state.detail)}
+            <textarea id="mf-desc-input" class="mf-conteudo-textarea" rows="9"
+                placeholder="Conte o que o comprador ainda não sabe: medidas, material, o que vem na caixa, como usar.">${escapeHtml(atual)}</textarea>
+            <div class="mf-conteudo-rodape">
+                <span id="mf-desc-contador" class="text-small"></span>
+                <div class="mf-conteudo-acoes">
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfSugerirDescricao()" id="mf-desc-sugerir">Sugerir com IA</button>
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfFecharEditorConteudo()">Cancelar</button>
+                    <button type="button" class="mf-btn-primario" onclick="window.mfSalvarDescricao()" id="mf-desc-salvar">Salvar descrição</button>
+                </div>
+            </div>
+            <div id="mf-desc-erro" class="mf-conteudo-erro" style="display:none;"></div>
+            <div class="mf-conteudo-dica">O Mercado Livre aceita só texto simples aqui — sem emoji e sem HTML.</div>
+        </div>`;
+}
+
+function MF_atualizaContadorDescricao() {
+    const ta = document.getElementById('mf-desc-input');
+    const cont = document.getElementById('mf-desc-contador');
+    if (!ta || !cont) return;
+    const n = (ta.value || '').trim().length;
+    const loc = (window.MF_getSiteConfig && window.MF_currentSiteId)
+        ? window.MF_getSiteConfig(window.MF_currentSiteId()).locale : 'pt-BR';
+    // Placar honesto: diz onde está, sem inventar meta. O piso de 400 é o que a sugestão
+    // da IA persegue; abaixo disso o texto costuma não responder nada ao comprador.
+    cont.textContent = n === 0 ? 'Nada escrito ainda'
+        : (n < 400 ? `${n.toLocaleString(loc)} caracteres — dá pra detalhar mais` : `${n.toLocaleString(loc)} caracteres`);
+    cont.style.color = n > 0 && n < 400 ? 'var(--text-muted)' : 'var(--text-secondary)';
+}
+
+function MF_erroConteudo(id, msg, extraHtml = '') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = `${escapeHtml(msg)}${extraHtml}`;
+    el.style.display = 'block';
+}
+
+window.mfSalvarDescricao = async function () {
+    const state = window.currentAnalysisState;
+    const ta = document.getElementById('mf-desc-input');
+    const btn = document.getElementById('mf-desc-salvar');
+    const erroEl = document.getElementById('mf-desc-erro');
+    if (!state || !ta) return;
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+
+    const texto = (ta.value || '').trim();
+    if (!texto) return MF_erroConteudo('mf-desc-erro', 'Escreva a descrição antes de salvar.');
+
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroConteudo('mf-desc-erro', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    try {
+        const res = await fetch(`${API_DESCRICAO_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plain_text: texto }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // O proxy manda o texto sem emoji junto da recusa: em vez de mandar o vendedor
+            // procurar o caractere no meio de mil, a tela oferece o ajuste em um clique.
+            const oferta = dados.texto_limpo
+                ? ` <button type="button" class="mf-link-acao" onclick="window.mfAplicarTextoLimpo()">Tirar e continuar</button>`
+                : '';
+            if (dados.texto_limpo) window.MF_textoLimpoSugerido = dados.texto_limpo;
+            return MF_erroConteudo('mf-desc-erro', dados.error || `Não deu para salvar (erro ${res.status}).`, oferta);
+        }
+
+        // Passou a ser descrição PRÓPRIA do anúncio: o `source` da herdada sai junto, senão
+        // o checklist continuaria dizendo "Herdada do catálogo" depois de salvar.
+        state.descriptionData = { plain_text: dados.plain_text || texto, text: dados.plain_text || texto };
+        window.mfFecharEditorConteudo();
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroConteudo('mf-desc-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Salvar descrição'; }
+    }
+};
+
+window.mfAplicarTextoLimpo = function () {
+    const ta = document.getElementById('mf-desc-input');
+    if (!ta || !window.MF_textoLimpoSugerido) return;
+    ta.value = window.MF_textoLimpoSugerido;
+    window.MF_textoLimpoSugerido = null;
+    const erroEl = document.getElementById('mf-desc-erro');
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+    MF_atualizaContadorDescricao();
+    ta.focus();
+};
+
+window.mfSugerirDescricao = async function () {
+    const state = window.currentAnalysisState;
+    const ta = document.getElementById('mf-desc-input');
+    const btn = document.getElementById('mf-desc-sugerir');
+    if (!state || !ta) return;
+
+    // Texto escrito não é sobrescrito sem aviso: a sugestão é ajuda, não substituição.
+    if ((ta.value || '').trim() && !window.confirm('Isto substitui o texto que está no campo. Continuar?')) return;
+
+    const detail = state.detail || {};
+    const atributos = (detail.attributes || [])
+        .filter((a) => a && a.value_name && a.name)
+        .map((a) => ({ name: a.name, value: a.value_name }));
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Escrevendo…'; }
+    try {
+        let uid = state.userId;
+        if (!uid) { uid = await fetchUserIdForScraping(); if (uid) state.userId = uid; }
+        if (!uid) return MF_erroConteudo('mf-desc-erro', 'Sessão expirada. Recarregue a página.');
+
+        const res = await fetch(API_GPT_DESCRICAO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${uid}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                titulo: detail.title || '',
+                categoria: (state.categoryName || ''),
+                atributos,
+                garantia: getWarrantyText(detail) || '',
+                site_id: (typeof window.MF_currentSiteId === 'function' ? window.MF_currentSiteId() : 'MLB'),
+            }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroConteudo('mf-desc-erro', dados.error || 'Não foi possível gerar a sugestão agora.');
+
+        ta.value = dados.plain_text || '';
+        MF_atualizaContadorDescricao();
+        ta.focus();
+        // Nada foi pro Mercado Livre: o texto está no campo e quem salva é o vendedor.
+        MF_erroConteudo('mf-desc-erro', 'Sugestão pronta no campo. Leia, ajuste o que quiser e salve — nada foi enviado ainda.');
+        const el = document.getElementById('mf-desc-erro');
+        if (el) el.className = 'mf-conteudo-erro mf-conteudo-info';
+    } catch (e) {
+        MF_erroConteudo('mf-desc-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Sugerir com IA'; }
+    }
+};
+
+function MF_editorGarantiaHtml(state) {
+    const atual = MF_garantiaAtual(state.detail);
+    const opt = (v, rotulo, sel) => `<option value="${v}"${sel === v ? ' selected' : ''}>${rotulo}</option>`;
+    return `
+        <div class="mf-conteudo-box">
+            ${MF_avisoFamiliaHtml(state.detail)}
+            <div class="mf-garantia-linha">
+                <label class="mf-conteudo-label">Tipo
+                    <select id="mf-gar-tipo" class="mf-conteudo-select">
+                        ${opt('vendedor', 'Garantia do vendedor', atual.tipo || 'vendedor')}
+                        ${opt('fabrica', 'Garantia de fábrica', atual.tipo)}
+                        ${opt('sem', 'Sem garantia', atual.tipo)}
+                    </select>
+                </label>
+                <label class="mf-conteudo-label" id="mf-gar-prazo-campo">Prazo
+                    <span class="mf-garantia-prazo">
+                        <input type="number" id="mf-gar-tempo" class="mf-conteudo-input" min="1" step="1" value="${escapeHtml(atual.tempo || '')}" placeholder="3" inputmode="numeric" />
+                        <select id="mf-gar-unidade" class="mf-conteudo-select">
+                            ${opt('dias', 'dias', atual.unidade)}
+                            ${opt('meses', 'meses', atual.unidade)}
+                            ${opt('anos', 'anos', atual.unidade)}
+                        </select>
+                    </span>
+                </label>
+            </div>
+            <div id="mf-gar-fechada" style="display:none;"></div>
+            <div class="mf-conteudo-rodape">
+                <span id="mf-gar-fonte" class="text-small"></span>
+                <div class="mf-conteudo-acoes">
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfFecharEditorConteudo()">Cancelar</button>
+                    <button type="button" class="mf-btn-primario" onclick="window.mfSalvarGarantia()" id="mf-gar-salvar">Salvar garantia</button>
+                </div>
+            </div>
+            <div id="mf-gar-erro" class="mf-conteudo-erro" style="display:none;"></div>
+        </div>`;
+}
+
+/** "Sem garantia" não tem prazo — o campo some em vez de ficar lá pedindo número à toa. */
+function MF_ligaEditorGarantia() {
+    const tipo = document.getElementById('mf-gar-tipo');
+    const campo = document.getElementById('mf-gar-prazo-campo');
+    if (!tipo || !campo) return;
+    const ajusta = () => { campo.style.display = tipo.value === 'sem' ? 'none' : ''; };
+    tipo.addEventListener('change', ajusta);
+    ajusta();
+}
+
+/**
+ * Pergunta ao proxy o que ESTA categoria aceita. É conveniência: se não vier, o vendedor
+ * ainda escolhe tipo e prazo normalmente — por isso a falha aqui não mostra erro.
+ */
+async function MF_carregarValoresGarantia(state) {
+    const catId = state.detail && state.detail.category_id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!catId || !token) return;
+    try {
+        const res = await fetch(`${API_GARANTIA_VALORES_ENDPOINT}/${encodeURIComponent(catId)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const dados = await res.json();
+        const fonteEl = document.getElementById('mf-gar-fonte');
+        if (fonteEl && dados.obrigatoria) fonteEl.textContent = 'Esta categoria pede garantia.';
+
+        // Categoria de lista fechada: o vendedor escolhe um prazo que a ML já publicou, em
+        // vez de digitar um número que ela vai recusar depois.
+        if (Array.isArray(dados.valores_fechados) && dados.valores_fechados.length) {
+            const caixa = document.getElementById('mf-gar-fechada');
+            const campoLivre = document.getElementById('mf-gar-prazo-campo');
+            if (!caixa) return;
+            caixa.style.display = 'block';
+            caixa.innerHTML = `<label class="mf-conteudo-label">Prazo
+                <select id="mf-gar-literal" class="mf-conteudo-select">
+                    ${dados.valores_fechados.map((v) => `<option value="${escapeHtml(v.nome)}">${escapeHtml(v.nome)}</option>`).join('')}
+                </select>
+            </label>`;
+            if (campoLivre) campoLivre.style.display = 'none';
+        }
+    } catch (e) { /* conveniência: sem lista, o editor segue funcionando */ }
+}
+
+window.mfSalvarGarantia = async function () {
+    const state = window.currentAnalysisState;
+    const btn = document.getElementById('mf-gar-salvar');
+    const erroEl = document.getElementById('mf-gar-erro');
+    if (!state) return;
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+
+    const tipo = (document.getElementById('mf-gar-tipo') || {}).value || '';
+    const literalEl = document.getElementById('mf-gar-literal');
+    const corpo = literalEl && literalEl.value && tipo !== 'sem'
+        ? { tipo, valor_literal: literalEl.value }
+        : {
+            tipo,
+            tempo: Number((document.getElementById('mf-gar-tempo') || {}).value || 0),
+            unidade: (document.getElementById('mf-gar-unidade') || {}).value || 'meses',
+        };
+
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroConteudo('mf-gar-erro', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    try {
+        const res = await fetch(`${API_GARANTIA_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroConteudo('mf-gar-erro', dados.error || `Não deu para salvar (erro ${res.status}).`);
+
+        // Espelha o que foi gravado.
+        const outros = (state.detail.sale_terms || []).filter((t) => t && t.id !== 'WARRANTY_TYPE' && t.id !== 'WARRANTY_TIME');
+        state.detail.sale_terms = outros.concat(dados.sale_terms || []);
+        // `warranty` é o campo LEGADO e getWarrantyText prefere ele. Deixá-lo de pé faria a
+        // tela mostrar a garantia velha logo depois de gravar a nova — o vendedor salvaria
+        // de novo achando que não pegou. Quem manda agora é o sale_terms que acabou de ir.
+        state.detail.warranty = null;
+        window.mfFecharEditorConteudo();
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroConteudo('mf-gar-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Salvar garantia'; }
+    }
+};
+
+/** Redesenha o que depende de descrição e garantia — inclusive a nota, que muda com eles. */
+function MF_reRenderConteudo(state) {
+    // O checklist entrou no reRenderAnalysisView: chamar aqui também desenharia duas vezes.
+    reRenderAnalysisView();
 }
 
 function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
@@ -5900,7 +6293,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Store global state for UI toggles
             window.currentAnalysisState = {
-                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData,
+                // userId vai junto pra sugestão de descrição não ter que ir buscar de novo
+                // no Bubble a cada clique.
+                userId
             };
 
             exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`, detail);

@@ -2694,3 +2694,173 @@
     background: var(--red-light);
     color: var(--red);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Descrição e garantia editáveis pelo Checklist (12/08/2026)
+
+   Classes próprias, sem reaproveitar .attr-edit-*: aquelas são de uma caixa `row` com
+   botões quadrados de 28px, e herdar isso pra um textarea de 9 linhas foi exatamente o
+   caminho que estourou o alerta de renomear pra fora do card em 10/08. `box-sizing` vem
+   escrito em cada campo de largura 100% — sem ele, padding + borda somam por fora e o
+   overflow do wrapper corta a borda direita.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ana-wrapper .mf-conteudo-botao {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ana-wrapper .mf-conteudo-botao:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--blue-light);
+}
+.ana-wrapper .mf-conteudo-editor { margin: 6px 0 2px; }
+.ana-wrapper .mf-conteudo-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-card);
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-conteudo-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 120px;
+}
+.ana-wrapper .mf-conteudo-textarea:focus,
+.ana-wrapper .mf-conteudo-input:focus,
+.ana-wrapper .mf-conteudo-select:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+.ana-wrapper .mf-conteudo-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ana-wrapper .mf-conteudo-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.ana-wrapper .mf-btn-primario,
+.ana-wrapper .mf-btn-secundario {
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-btn-primario {
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+.ana-wrapper .mf-btn-secundario {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.ana-wrapper .mf-btn-primario:disabled,
+.ana-wrapper .mf-btn-secundario:disabled { opacity: 0.6; cursor: default; }
+.ana-wrapper .mf-conteudo-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ana-wrapper .mf-conteudo-input,
+.ana-wrapper .mf-conteudo-select {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-garantia-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ana-wrapper .mf-garantia-prazo { display: flex; gap: 6px; }
+.ana-wrapper .mf-garantia-prazo .mf-conteudo-input { width: 80px; }
+.ana-wrapper .mf-conteudo-aviso,
+.ana-wrapper .mf-conteudo-dica {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-conteudo-aviso {
+  padding: 7px 10px;
+  border-left: 3px solid var(--yellow, #f59e0b);
+  border-radius: 4px;
+  background: var(--yellow-light, #fef3c7);
+  color: var(--text);
+}
+.ana-wrapper .mf-conteudo-erro {
+  padding: 7px 10px;
+  border-left: 3px solid var(--red);
+  border-radius: 4px;
+  background: var(--red-light);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  box-sizing: border-box;
+}
+/* Mesma caixa, outro recado: a sugestão da IA não é erro. */
+.ana-wrapper .mf-conteudo-erro.mf-conteudo-info {
+  border-left-color: var(--blue);
+  background: var(--blue-light);
+}
+.ana-wrapper .mf-link-acao {
+  border: none;
+  background: none;
+  padding: 0 0 0 4px;
+  color: var(--blue);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  /* No celular os botões ficam em linha própria: espremidos ao lado do contador, "Salvar
+     descrição" quebrava no meio da palavra. */
+  .ana-wrapper .mf-conteudo-acoes { margin-left: 0; width: 100%; }
+  .ana-wrapper .mf-conteudo-acoes .mf-btn-primario,
+  .ana-wrapper .mf-conteudo-acoes .mf-btn-secundario { flex: 1 1 auto; text-align: center; }
+  .ana-wrapper .mf-garantia-linha { flex-direction: column; gap: 8px; }
+}
