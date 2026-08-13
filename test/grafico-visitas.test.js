@@ -258,5 +258,75 @@ console.log('\n== o eixo é das visitas; o Ads não inventa dia ==');
     JSON.stringify(comBuracoMeio.map((p) => p.dia + ':' + p.vendas)));
 }
 
+console.log('\n== dia que a API omite é dia de ZERO visita ==');
+{
+  /*
+   * Medido na conta em 13/08/2026, em dois anúncios de tráfego oposto:
+   *   MLB3264800533 — 48 registros numa janela de 60 dias, menor total 1
+   *   MLB3370980603 — 58 registros numa janela de 60 dias, menor total 1
+   * Nenhum `total: 0` nos dois. A API não devolve o dia sem visita: ela OMITE.
+   *
+   * Então dia que falta dentro do intervalo não é desconhecido, é zero — e tratá-lo como
+   * desconhecido custava duas coisas: o furo na linha e, pior, o eixo encolhido. Com 48
+   * pontos ocupando 60 dias, a linha ligava 19/06 direto em 21/06 como se fossem dias
+   * seguidos, e a inclinação passava a mentir sobre o ritmo (Lucas, 13/08: "quando não
+   * tiver visita/venda ou conversão o valor é 0 né? fica melhor que ficar sem nada").
+   */
+  const MF_seriesDiarias = get('MF_seriesDiarias');
+  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+
+  // 5 dias de janela, com o do meio omitido pela API.
+  const visitas = [{ date: dia(5), total: 8 }, { date: dia(4), total: 3 }, { date: dia(2), total: 6 }, { date: dia(1), total: 4 }];
+  const ads = [dia(5), dia(4), dia(3), dia(2), dia(1)].map((d) => ({ date: d, units_quantity: 0, organic_units_quantity: 0 }));
+  const p = MF_seriesDiarias(visitas, ads);
+
+  check('o dia omitido entra na série', p.length === 5, String(p.length));
+  check('e entra com ZERO visita, não null', p[2].visitas === 0, String(p[2].visitas));
+  check('a série fica densa (sem vão no eixo)', p.every((x, i) => i === 0 || x.dia > p[i - 1].dia) && p.length === 5);
+  check('zero visita e zero venda = 0% de conversão', p[2].conversao === 0, String(p[2].conversao));
+  check('os dias reais não foram mexidos', p[0].visitas === 8 && p[4].visitas === 4);
+
+  // Sem Ads o dia omitido não entrava por lado nenhum — o gráfico de visitas ficava com
+  // menos pontos que dias e o eixo comprimia sozinho. É o caso mais comum da conta.
+  const semAds = MF_seriesDiarias([{ date: dia(4), total: 9 }, { date: dia(2), total: 7 }, { date: dia(1), total: 5 }], null);
+  check('sem Ads, o dia omitido também entra', semAds.length === 4, JSON.stringify(semAds.map((x) => x.dia)));
+  check('sem Ads, o dia omitido é zero visita', semAds[1].visitas === 0, String(semAds[1].visitas));
+  check('sem Ads, nenhum dia inventa venda', semAds.every((x) => x.vendas === null));
+  check('sem fonte de vendas, conversão não é 0%', semAds.every((x) => x.conversao === null),
+    JSON.stringify(semAds.map((x) => x.conversao)));
+
+  // A ponta continua protegida: HOJE o Ads já traz e as visitas ainda não propagaram.
+  // Zero ali seria mentira — o dia não acabou. (guarda de 12/08)
+  const comHoje = MF_seriesDiarias(
+    [{ date: dia(2), total: 5 }, { date: dia(1), total: 5 }],
+    [{ date: dia(2), units_quantity: 1, organic_units_quantity: 0 }, { date: dia(1), units_quantity: 1, organic_units_quantity: 0 }, { date: dia(0), units_quantity: 1, organic_units_quantity: 0 }]
+  );
+  check('hoje continua fora da série', comHoje.length === 2 && !comHoje.some((x) => x.dia === dia(0)),
+    JSON.stringify(comHoje.map((x) => x.dia)));
+
+  // Venda em dia de zero visita: a visita que gerou foi contada em outro dia. Não dá pra
+  // dividir por zero — 0% aqui seria mentira ao contrário (vendeu e o gráfico diz que não
+  // converteu nada). Segue null, e é o único furo que resta.
+  const vendaSemVisita = MF_seriesDiarias(
+    [{ date: dia(3), total: 4 }, { date: dia(1), total: 4 }],
+    [{ date: dia(2), units_quantity: 2, organic_units_quantity: 0 }]
+  );
+  const meio = vendaSemVisita.find((x) => x.dia === dia(2));
+  check('venda em dia sem visita continua contando', meio.vendas === 2, String(meio.vendas));
+  check('mas a conversão dele não é 0% — é null', meio.conversao === null, String(meio.conversao));
+
+  // Vendas seguem outra fonte: sem cobertura do Ads, continua null. O preenchimento é de
+  // VISITA, não de venda — o Ads não omite dia, então falta ali é falta de verdade.
+  const semCoberturaAds = MF_seriesDiarias(
+    [{ date: dia(3), total: 4 }, { date: dia(2), total: 4 }, { date: dia(1), total: 4 }],
+    [{ date: dia(3), units_quantity: 1, organic_units_quantity: 0 }]
+  );
+  check('dia fora do daily do Ads não inventa venda 0', semCoberturaAds[1].vendas === null, String(semCoberturaAds[1].vendas));
+
+  // O preenchimento não pode mexer nos totais das janelas — soma de zeros é zero.
+  const soma = (arr) => arr.reduce((s, x) => s + (typeof x.visitas === 'number' ? x.visitas : 0), 0);
+  check('somar a série densa dá o mesmo total', soma(p) === 8 + 3 + 6 + 4, String(soma(p)));
+}
+
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);

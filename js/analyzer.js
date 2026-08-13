@@ -5822,16 +5822,42 @@ const MF_SERIES_VISITAS = [
     { chave: 'conversao', rotulo: 'Conversão',  cor: '#c2410c', sufixo: '%' },
 ];
 
+/** Dia seguinte em ISO, pelo UTC — somar 86400000 escorrega no horário de verão. */
+function MF_diaSeguinte(iso) {
+    const t = new Date(iso + 'T12:00:00Z');
+    t.setUTCDate(t.getUTCDate() + 1);
+    return t.toISOString().slice(0, 10);
+}
+
 /**
  * Monta as séries diárias a partir das visitas e do daily de Ads.
- * Dia sem fonte de vendas devolve `null` (buraco na linha), nunca 0 — não vendeu e
- * não deu pra saber são coisas diferentes, e a segunda não pode virar número.
+ *
+ * VISITA: dia que a API omite é dia de ZERO visita, e entra como 0. Medido na conta em
+ * 13/08/2026 em dois anúncios de tráfego oposto — 48 e 58 registros numa janela de 60
+ * dias, nenhum `total: 0` nos dois, menor valor 1. A API simplesmente não devolve o dia
+ * sem visita. Tratar essa ausência como desconhecido custava o furo na linha e, pior, o
+ * eixo encolhido: 48 pontos ocupando 60 dias ligavam 19/06 direto em 21/06 como se
+ * fossem dias seguidos, e a inclinação mentia sobre o ritmo.
+ *
+ * VENDA: continua `null` quando não há fonte (buraco na linha), nunca 0 — o daily do Ads
+ * não omite dia, então falta ali é falta de verdade, e "não vendeu" e "não deu pra saber"
+ * não podem virar o mesmo desenho.
  */
 function MF_seriesDiarias(results, adsDaily) {
     const porDia = new Map();
     for (const v of (results || [])) {
         const d = (v.date || '').slice(0, 10);
         if (d) porDia.set(d, { dia: d, visitas: Number(v.total) || 0, vendas: null, conversao: null });
+    }
+    // Preenche só o MIOLO: do primeiro ao último dia que a API devolveu. Fora daí não se
+    // sabe se o anúncio existia — e a ponta de hoje ainda está propagando (ver guarda
+    // abaixo), então zero ali seria afirmar que o dia acabou sem visita nenhuma.
+    const ordenados = [...porDia.keys()].sort();
+    if (ordenados.length > 1) {
+        const fim = ordenados[ordenados.length - 1];
+        for (let d = MF_diaSeguinte(ordenados[0]); d < fim; d = MF_diaSeguinte(d)) {
+            if (!porDia.has(d)) porDia.set(d, { dia: d, visitas: 0, vendas: null, conversao: null });
+        }
     }
     // O daily do Ads vai de date_from a date_to INCLUSIVE, então traz HOJE — que as visitas
     // ainda não têm. Esse dia entrava como ponto de `visitas: null` e abria um furo na ponta
@@ -5851,8 +5877,13 @@ function MF_seriesDiarias(results, adsDaily) {
             const vendas = (Number(a.units_quantity) || 0) + (Number(a.organic_units_quantity) || 0);
             const linha = porDia.get(d) || { dia: d, visitas: null, vendas: null, conversao: null };
             linha.vendas = vendas;
-            // Conversão só existe com visita no dia: dividir por zero viraria 0% ou ∞.
-            linha.conversao = (linha.visitas > 0) ? (vendas / linha.visitas) * 100 : null;
+            // Com visita, a conta normal. Sem visita nenhuma e sem venda, a conversão do dia
+            // É zero — nada entrou e nada converteu, e o vendedor lê isso direto. Mas venda
+            // em dia de zero visita não vira 0%: a visita que gerou foi contada em outro dia,
+            // e dizer "0% de conversão" num dia que VENDEU seria mentira ao contrário. Esse
+            // é o único furo que resta na linha de conversão.
+            linha.conversao = (linha.visitas > 0) ? (vendas / linha.visitas) * 100
+                : (vendas === 0 ? 0 : null);
             porDia.set(d, linha);
         }
     }
