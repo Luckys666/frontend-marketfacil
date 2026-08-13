@@ -1550,6 +1550,12 @@ window.saveAttr = async function (attrId) {
             if (idx >= 0) state.detail.attributes[idx] = merged;
             else (state.detail.attributes = state.detail.attributes || []).push(merged);
         }
+        // A lista da ML é do carregamento e ela atualiza periodicamente: a linha vai
+        // continuar pedindo este campo. Marcar aqui é o que evita o vendedor achar que o
+        // salvamento não pegou e fazer tudo de novo pelo Mercado Livre.
+        MF_marcaResolvidoNoML(state, attrId);
+        exibirPerformance(state.performanceData, `performanceTexto${state.containerIdSuffix || ''}`);
+
         // Re-render the category card with fresh values
         const containerId = `categoryAttributes${state.containerIdSuffix || ''}`;
         exibirAtributosCategoria(state.categoryAttributes, state.detail.attributes, containerId);
@@ -3918,6 +3924,17 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
     const perfEl = document.getElementById(containerId);
     if (!perfEl) return;
 
+    // Falha NOSSA não pode virar recado da ML: dizer "eles não calcularam" quando quem não
+    // conseguiu perguntar fomos nós manda o vendedor procurar problema no lugar errado.
+    if (performanceData && performanceData._falhou) {
+        perfEl.innerHTML = `
+            <div class="ana-card" style="animation-delay: 0.3s;">
+                <div class="ana-card-header"><span class="ana-card-icon">⚡</span><span class="ana-card-title">Qualidade do Anúncio (Mercado Livre)</span></div>
+                <p class="text-small" style="color:var(--text-muted);">Não deu para consultar o Mercado Livre agora. O dado existe — só não chegou nesta tentativa.</p>
+                <button type="button" class="mf-conteudo-botao" onclick="window.mfRecarregarQualidadeML()" style="align-self:flex-start; margin-top:8px;">Tentar de novo</button>
+            </div>`;
+        return;
+    }
     if (!performanceData || typeof performanceData !== 'object' || !performanceData.buckets) {
         perfEl.innerHTML = `
             <div class="ana-card" style="animation-delay: 0.3s;">
@@ -3979,6 +3996,8 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
             </div>`;
     };
 
+    const resolvidosNoML = (window.currentAnalysisState && window.currentAnalysisState.resolvidosNoML) || new Set();
+
     const renderBucket = (bucket) => {
         const bScore = bucket.score !== undefined ? Math.round(bucket.score) : 0;
         const bLevel = bScore >= 85 ? 'good' : (bScore < 50 ? 'bad' : 'neutral');
@@ -4023,6 +4042,16 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
                     rulesHtml += renderRule(r, vColor);
                 });
             }
+            // "na visão do mercado livre ainda tem mensagem falando pra preencher no
+            // mercado livre mesmo a gente já tendo ajustado os campos" (Lucas, 13/08).
+            // Esta lista é a do CARREGAMENTO da página, e a /performance da ML atualiza
+            // periodicamente — então a linha realmente continua lá depois de salvar.
+            // Sumir com ela seria mentir na outra direção: não sabemos se a ML aceitou.
+            // Fica, marcada, sem prometer prazo que não controlamos.
+            const resolvidoAgora = !isCompleted && resolvidosNoML.has(v.key);
+            const selo = resolvidoAgora
+                ? `<div style="margin:6px 0 0 22px; padding:6px 9px; background:var(--blue-light); border-left:3px solid var(--blue); border-radius:4px; font-size:0.74rem; color:var(--text); line-height:1.35;">✏️ Você resolveu isso agora pelo app. O Mercado Livre leva um tempo para atualizar esta lista.</div>`
+                : '';
             varsHtml += `
                 <div style="padding:10px 0; border-bottom:1px solid var(--border,#e5e7eb);">
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -4031,6 +4060,7 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
                         ${acaoNaLinha}
                         ${vScore !== null ? `<span style="font-family:var(--font-mono, 'DM Mono',monospace); font-size:0.75rem; color:${vColor}; font-weight:700;">${vScore}%</span>` : ''}
                     </div>
+                    ${selo}
                     ${rulesHtml}
                 </div>`;
         });
@@ -4795,7 +4825,58 @@ async function fetchInheritedDescription(detail, accessToken) {
     return null;
 }
 
-async function fetchPerformanceData(itemId, accessToken) { return fetchApiData(`${API_PERFORMANCE_ENDPOINT}?item_id=${itemId}`, accessToken); }
+/**
+ * Qualidade do anúncio pelos olhos da ML.
+ *
+ * Não usa `fetchApiData` porque ele devolve `null` para QUALQUER erro, e aqui `null` tem
+ * significado próprio: "a ML não calcula qualidade pra este anúncio". Em 13/08/2026 a tela
+ * dizia "Qualidade ainda não calculada pelo ML" num anúncio cuja rota respondia 200 com
+ * score 58 — a chamada tinha falhado uma vez e o card falou pela ML.
+ *
+ * 400 continua virando `null` de propósito: é a resposta dela em anúncio pausado e em
+ * catálogo, onde a ausência é real.
+ */
+async function fetchPerformanceData(itemId, accessToken) {
+    try {
+        const res = await fetch(`${API_PERFORMANCE_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
+        });
+        if (res.ok) return await res.json();
+        if (res.status === 400) return null;
+        return { _falhou: true, _status: res.status };
+    } catch (e) {
+        return { _falhou: true, _motivo: 'rede' };
+    }
+}
+
+/**
+ * Chaves que a ML usa nas linhas de qualidade, para o que o app resolve.
+ * Sem a de descrição e a de garantia porque a ML não lista essas duas (medido na conta em
+ * 13/08: as 11 variables de um anúncio ativo são UP_TITLE, UP_PICTURES, UP_GTIN,
+ * UP_TECHNICAL_SPECIFICATIONS_MAIN, UP_PRICE, UP_FREE_SHIPPING, UP_PROMOTIONS, UP_SHORTS,
+ * UP_FINANCING e as de estoque).
+ */
+const MF_ATTR_PARA_LINHA_ML = { GTIN: 'UP_GTIN', EAN: 'UP_GTIN', UPC: 'UP_GTIN' };
+
+/**
+ * Registra que o vendedor resolveu isto AGORA, pelo app. A lista da ML é do carregamento
+ * da página e a /performance dela atualiza periodicamente, então a linha continua lá —
+ * marcada, para ele não achar que o salvamento não pegou.
+ */
+function MF_marcaResolvidoNoML(state, attrId) {
+    if (!state) return;
+    if (!state.resolvidosNoML) state.resolvidosNoML = new Set();
+    state.resolvidosNoML.add(MF_ATTR_PARA_LINHA_ML[attrId] || 'UP_TECHNICAL_SPECIFICATIONS_MAIN');
+}
+
+window.mfRecarregarQualidadeML = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.detail) return;
+    const alvo = document.getElementById(`performanceTexto${state.containerIdSuffix || ''}`);
+    if (alvo) alvo.innerHTML = '<div class="ana-card"><p class="text-small">Consultando o Mercado Livre…</p></div>';
+    state.performanceData = await fetchPerformanceData(state.detail.id, state.accessToken || window._adsAccessToken);
+    exibirPerformance(state.performanceData, `performanceTexto${state.containerIdSuffix || ''}`);
+};
 async function fetchPurchaseExperience(itemId, accessToken) {
     const raw = await fetchApiData(`${BASE_URL_PROXY}/api/purchase-experience?item_id=${itemId}`, accessToken);
     // Proxy retorna { [itemId]: {...} } — desembrulha

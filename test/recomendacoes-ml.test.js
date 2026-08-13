@@ -23,7 +23,7 @@ function check(name, cond, detail) {
   else { fail++; console.error('  FAIL- ' + name + (detail ? ' | ' + detail : '')); }
 }
 
-const { get, reg } = carregar();
+const { get, reg, sandbox } = carregar();
 const extractMLQualityItems = get('extractMLQualityItems');
 const exibirChecklistRapido = get('exibirChecklistRapido');
 const exibirPontuacao = get('exibirPontuacao');
@@ -293,6 +293,92 @@ console.log('\n== o que não é repetição continua intacto ==');
     txt.includes('Suba fotos de 1200x1200') && txt.includes('Remova texto sobreposto'));
   check('o título da variável aparece', txt.includes('Fotos'));
   check('o score do bucket aparece', txt.includes('90%'));
+}
+
+/* =========================================================================
+   13/08/2026 — o card não pode falar pelo Mercado Livre
+
+   Visto ao vivo em MLB3426071385: a tela dizia "Qualidade ainda não calculada pelo ML" e
+   a mesma rota respondia 200 com score 58. A chamada tinha falhado uma vez (o proxy vinha
+   apanhando de rate limit) e `fetchApiData` engole TODO erro devolvendo null — que o card
+   desenhava como uma afirmação sobre a ML.
+
+   É a regra do "falha nunca vira zero" com outra roupa: em vez de virar 0, virou "eles não
+   calcularam". O vendedor lê e conclui que o problema é de lá.
+
+   400 continua sendo ausência legítima: é o que a ML responde em anúncio pausado e em
+   catálogo, onde ela realmente não calcula qualidade.
+   ========================================================================= */
+console.log('\n== falha de rede não vira recado do Mercado Livre ==');
+{
+  const exibirPerformance = get('exibirPerformance');
+
+  exibirPerformance({ _falhou: true, _status: 429 }, 'perfFalhou');
+  const htmlFalha = reg['perfFalhou'].innerHTML;
+  const textoFalha = reg['perfFalhou'].textContent;
+  check('falha NÃO diz que o ML não calculou', !/não calculada/i.test(textoFalha), textoFalha.slice(0, 200));
+  check('falha assume que o problema é nosso', /não deu para consultar|não conseguimos/i.test(textoFalha), textoFalha.slice(0, 200));
+  check('e oferece tentar de novo', /mfRecarregarQualidadeML/.test(htmlFalha), htmlFalha.slice(0, 400));
+
+  // Ausência de verdade continua com o texto de ausência.
+  exibirPerformance(null, 'perfVazio');
+  const textoVazio = reg['perfVazio'].textContent;
+  check('sem dado da ML segue dizendo "ainda não calculada"', /não calculada/i.test(textoVazio), textoVazio.slice(0, 200));
+  check('e ausência não oferece "tentar de novo"', !/mfRecarregarQualidadeML/.test(reg['perfVazio'].innerHTML), reg['perfVazio'].innerHTML.slice(0, 300));
+}
+
+/* =========================================================================
+   13/08 — "na visão do mercado livre ainda tem mensagem falando pra preencher no mercado
+   livre mesmo a gente já tendo ajustado teoricamente os campos" (Lucas).
+
+   `reRenderAnalysisView` reusa o performanceData do CARREGAMENTO: salvar não reconsulta a
+   ML, então o card fica congelado no estado de quando a página abriu. E mesmo
+   reconsultando, a /performance da ML atualiza "periodicamente".
+
+   Some a linha seria mentir na outra direção — não sabemos se a ML aceitou. Então a linha
+   fica, marcada: o vendedor entende por que ela ainda está ali.
+   ========================================================================= */
+console.log('\n== o que o vendedor acabou de resolver aparece marcado ==');
+{
+  const exibirPerformance = get('exibirPerformance');
+  const perf = {
+    score: 58, level: 'STANDARD',
+    buckets: [{
+      title: 'Ficha', key: 'USER_PRODUCT', score: 40,
+      variables: [
+        { key: 'UP_TECHNICAL_SPECIFICATIONS_MAIN', title: 'Preencha as características principais', status: 'PENDING', score: 0,
+          rules: [{ key: 'R1', status: 'PENDING', mode: 'OPPORTUNITY', wordings: { title: 'Preencha as características principais', label: 'Preencher', link: 'https://ml/ficha' } }] },
+        { key: 'UP_FREE_SHIPPING', title: 'Ofereça frete grátis', status: 'PENDING', score: 0, rules: [] },
+      ],
+    }],
+  };
+
+  sandbox.currentAnalysisState = { detail: { id: 'MLB1' }, resolvidosNoML: new Set(['UP_TECHNICAL_SPECIFICATIONS_MAIN']) };
+  exibirPerformance(perf, 'perfMarcado');
+  const texto = reg['perfMarcado'].textContent;
+  check('a linha resolvida ganha a marcação', /você (resolveu|preencheu) isso agora/i.test(texto), texto.slice(0, 500));
+  check('e a marcação explica a demora sem prometer prazo',
+    /leva um tempo|pode demorar/i.test(texto) && !/\d+\s*(minutos?|horas?)/i.test(texto), texto.slice(0, 500));
+  check('a linha NÃO some (não sabemos se a ML aceitou)', /Preencha as características principais/.test(texto), texto.slice(0, 400));
+  check('o que não foi mexido continua sem marcação',
+    (texto.match(/você resolveu isso agora/gi) || []).length === 1, String((texto.match(/você resolveu isso agora/gi) || []).length));
+
+  sandbox.currentAnalysisState = { detail: { id: 'MLB1' } };
+  exibirPerformance(perf, 'perfSemMarca');
+  check('sem nada resolvido, nenhuma marcação', !/você resolveu isso agora/i.test(reg['perfSemMarca'].textContent),
+    reg['perfSemMarca'].textContent.slice(0, 300));
+}
+{
+  // O mapa attrId → chave da ML. Salvar um campo qualquer da ficha marca a linha de ficha
+  // técnica; GTIN tem linha própria na ML e marca a dele.
+  const MF_marcaResolvidoNoML = get('MF_marcaResolvidoNoML');
+  const st = { detail: { id: 'MLB1' } };
+  MF_marcaResolvidoNoML(st, 'BRAND');
+  check('atributo comum marca a ficha técnica', st.resolvidosNoML.has('UP_TECHNICAL_SPECIFICATIONS_MAIN'), JSON.stringify([...st.resolvidosNoML]));
+  MF_marcaResolvidoNoML(st, 'GTIN');
+  check('GTIN marca a linha de GTIN', st.resolvidosNoML.has('UP_GTIN'), JSON.stringify([...st.resolvidosNoML]));
+  check('e não apaga a marcação anterior', st.resolvidosNoML.has('UP_TECHNICAL_SPECIFICATIONS_MAIN'), JSON.stringify([...st.resolvidosNoML]));
+  check('estado sem Set não quebra', (() => { const s = {}; MF_marcaResolvidoNoML(s, 'BRAND'); return s.resolvidosNoML && s.resolvidosNoML.size === 1; })());
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
