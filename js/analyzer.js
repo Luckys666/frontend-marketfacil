@@ -4417,40 +4417,19 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         MF_saveSnap(_itemIdForSnap, _currSnap);
     }
 
-    // Checklist card — heurístico original + seção ML ADICIONAL (quando disponível)
+    // Checklist card — só os checks heurísticos NOSSOS.
+    //
+    // A seção "Ações Recomendadas pelo ML" saiu daqui em 13/08/2026. Ela renderizava a
+    // mesma `mlQuality.pending`, com os mesmos deep links, que o card "Qualidade do Anúncio
+    // (Mercado Livre)" já mostra — agrupada por bloco, com % e com as concluídas. Na tela a
+    // recomendação saía duas vezes ("Preencha as características principais", "Ofereça
+    // frete grátis…", "Participe de uma promoção…" em MLB3264800533).
+    //
+    // É o mesmo defeito de 11/08 pelo par que sobrou: lá o duplicado era Checklist Rápido ×
+    // este card. Decisão do Lucas: fica só no card dedicado. As duas fontes eram o MESMO
+    // `performanceData`, então nada some sozinho — sem dado da ML o card dedicado já diz
+    // "Qualidade ainda não calculada" e aqui não havia o que mostrar.
     if (checkEl) {
-        // Seção ML extra: pendências reais do ML com deep links (além dos heurísticos)
-        let mlSectionHtml = '';
-        if (mlQuality && (mlQuality.pending.length > 0 || mlQuality.completed.length > 0)) {
-            const renderMLRow = (p) => {
-                const mode = p.mode || 'OPPORTUNITY';
-                const isWarn = mode === 'WARNING';
-                const cColor = isWarn ? 'var(--red)' : 'var(--yellow,#f59e0b)';
-                const cBg = isWarn ? 'var(--red-light)' : 'var(--yellow-light,#fef3c7)';
-                const icon = isWarn ? '⚠' : '○';
-                const linkHtml = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.7rem; white-space:nowrap; flex-shrink:0;">${escapeHtml(p.label || 'Resolver')} →</a>` : '';
-                return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:${cBg};border-radius:var(--radius-sm);border-left:3px solid ${cColor};">
-                    <span style="color:${cColor};font-weight:bold;flex-shrink:0;">${icon}</span>
-                    <span class="text-small" style="color:var(--text); flex:1; line-height:1.3;">${escapeHtml(p.text)}</span>
-                    ${linkHtml}
-                </div>`;
-            };
-            const summaryHtml = mlQuality.pending.length === 0
-                ? `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--green-light);border-radius:var(--radius-sm);border-left:3px solid var(--green);"><span style="color:var(--green);font-weight:bold;">🎉</span><span class="text-small" style="color:var(--green-dark);">Todos os ${mlQuality.completed.length} critérios ML concluídos!</span></div>`
-                : mlQuality.pending.map(renderMLRow).join('');
-            mlSectionHtml = `
-                <div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
-                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                        <span style="font-size:0.85rem;">⚡</span>
-                        <span style="font-weight:700; font-size:0.78rem; color:var(--text); text-transform:uppercase; letter-spacing:0.03em;">Ações Recomendadas pelo ML</span>
-                        <span class="text-small" style="margin-left:auto; color:var(--text-muted); font-size:0.68rem;">${mlQuality.pending.length}/${mlQuality.pending.length + mlQuality.completed.length}</span>
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:4px;">
-                        ${summaryHtml}
-                    </div>
-                </div>`;
-        }
-
         checkEl.innerHTML = `
             <div class="ana-card" style="height:100%;">
                 <div class="ana-card-header" style="padding-bottom:10px; margin-bottom:10px;">
@@ -4461,7 +4440,6 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
                     ${failedChecks.map((c, i) => `<div class="check-fail-animate" style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--red-light);border-radius:var(--radius-sm);border-left:3px solid var(--red);animation-delay:${i*0.08}s;"><span style="color:var(--red);font-weight:bold;flex-shrink:0;">✖</span><span class="text-small" style="color:var(--red-dark);">${c.text}</span></div>`).join('')}
                     ${passedChecks.map(c => `<div style="display:flex;align-items:center;gap:8px;padding:3px 10px;background:var(--green-light);border-radius:var(--radius-sm);border-left:3px solid var(--green);"><span style="color:var(--green);font-weight:bold;flex-shrink:0;">✔</span><span class="text-small" style="color:var(--green-dark);">${c.text}</span></div>`).join('')}
                 </div>
-                ${mlSectionHtml}
             </div>
         `;
     }

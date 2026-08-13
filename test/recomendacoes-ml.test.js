@@ -140,29 +140,67 @@ console.log('\n== só um card mostra as recomendações ==');
 
   exibirPontuacao(70, false, 'scoreCircle', { title: detail.title, detail }, 'scoreChecklist', perfNormal);
   const htmlScore = reg['scoreChecklist'] ? reg['scoreChecklist'].innerHTML : '';
-  check('"O que Melhorar" mostra as Ações Recomendadas pelo ML',
-    htmlScore.includes('Ações Recomendadas pelo ML'), htmlScore.slice(0, 200));
-  check('e mostra as duas recomendações reais',
-    htmlScore.includes('fundo branco') && htmlScore.includes('código universal'));
 
-  // O ponto da correção: a mesma frase não pode sair nos dois cards.
+  /*
+   * 13/08/2026 — o par de 11/08 (Checklist × O que Melhorar) foi resolvido, mas na tela
+   * a recomendação continuava saindo duas vezes: sobrou "O que Melhorar" × o card
+   * "Qualidade do Anúncio (Mercado Livre)", que renderiza a MESMA `mlQuality.pending`,
+   * com os mesmos deep links, só que agrupada por bloco e com %.
+   * Medido em MLB3264800533: "Preencha as características principais", "Ofereça frete
+   * grátis…" e "Participe de uma promoção…" em dois nós do DOM, em cards diferentes.
+   *
+   * Decisão do Lucas (13/08): fica só no card dedicado, que já tem o nível, o % por bloco
+   * e as concluídas. "O que Melhorar" volta a ser só dos nossos checks.
+   * As duas fontes são o MESMO `performanceData`, então nada some sozinho: sem dado da ML
+   * o card dedicado já diz "Qualidade ainda não calculada" e não havia o que mostrar.
+   */
+  check('"O que Melhorar" não repete mais as Ações Recomendadas pelo ML',
+    !htmlScore.includes('Ações Recomendadas pelo ML'), htmlScore.slice(0, 200));
+  check('e nenhuma recomendação da ML sobrou nele',
+    !htmlScore.includes('fundo branco') && !htmlScore.includes('código universal'), htmlScore.slice(0, 300));
+  check('"O que Melhorar" continua mostrando os checks que são DELE',
+    htmlScore.includes('Título') || htmlScore.includes('Descrição') || htmlScore.includes('Garantia'),
+    htmlScore.slice(0, 300));
+
+  // O card dedicado é quem carrega a lista — e com os links, senão a recomendação vira
+  // aviso sem saída.
+  const exibirPerf = get('exibirPerformance');
+  exibirPerf(perfNormal, 'performanceTexto0');
+  const htmlPerf = reg['performanceTexto0'] ? reg['performanceTexto0'].innerHTML : '';
+  check('o card "Qualidade do Anúncio (ML)" mostra as duas recomendações',
+    htmlPerf.includes('fundo branco') && htmlPerf.includes('código universal'), htmlPerf.slice(0, 300));
+  check('e mantém o link de resolver', htmlPerf.includes('https://ml/fotos'), htmlPerf.slice(0, 300));
+
+  // A frase não pode sair em NENHUM par de cards da mesma tela.
   const frase = 'fundo branco';
-  const nosDois = htmlChecklist.includes(frase) && htmlScore.includes(frase);
-  check('nenhuma recomendação aparece nos DOIS cards', !nosDois,
-    `checklist=${htmlChecklist.includes(frase)} score=${htmlScore.includes(frase)}`);
+  const cardsComAFrase = [htmlChecklist, htmlScore, htmlPerf].filter((h) => h.includes(frase)).length;
+  check('cada recomendação aparece em UM card só', cardsComAFrase === 1, `apareceu em ${cardsComAFrase} cards`);
 }
 
 // ── 6. contagem do cabeçalho bate com o que está na tela ────────────────
 console.log('\n== a contagem do cabeçalho bate com as linhas ==');
 {
-  // Com o dedup, o "X/Y" tem que contar a lista JÁ deduplicada — senão o cabeçalho diz 3
-  // e a tela mostra 1, que é a mesma classe de bug das três contagens de campos (05/08).
+  /*
+   * O contador mudou de card em 13/08 junto com a lista. O que ele não pode fazer é
+   * discordar do que está desenhado logo abaixo — é a classe de bug das três contagens de
+   * campos (05/08). Com três regras caindo no mesmo fallback, a tela mostra UMA linha:
+   * o cabeçalho tem que dizer 1, não 3.
+   */
   const q = extractMLQualityItems(perfComRegrasSemTitulo);
+  const exibirPerformance = get('exibirPerformance');
+  exibirPerformance(perfComRegrasSemTitulo, 'performanceTexto2');
+  const html = reg['performanceTexto2'] ? reg['performanceTexto2'].innerHTML : '';
+  const linhasNaTela = (html.match(/Complete a ficha técnica/g) || []).length;
+  check('a tela mostra UMA linha (as 3 regras deduplicadas)', linhasNaTela === 1, String(linhasNaTela));
+  check(`e o cabeçalho diz ${q.pending.length} pendente, batendo com ela`,
+    html.includes(`${q.pending.length} pendente`),
+    `esperado "${q.pending.length} pendente" | html tem: ${(html.match(/\d+ pendente/g) || []).join(',')}`);
+
+  // E o card que perdeu a seção não pode ter ficado com um contador órfão.
   exibirPontuacao(50, false, 'scoreCircle2', { title: 't', detail: { id: 'MLB2', attributes: [] } }, 'scoreChecklist2', perfComRegrasSemTitulo);
-  const html = reg['scoreChecklist2'] ? reg['scoreChecklist2'].innerHTML : '';
-  const esperado = `${q.pending.length}/${q.pending.length + q.completed.length}`;
-  check(`cabeçalho mostra ${esperado} (a lista deduplicada)`, html.includes(esperado),
-    `esperado ${esperado} | html tem: ${(html.match(/\d+\/\d+/g) || []).join(',')}`);
+  const htmlMelhorar = reg['scoreChecklist2'] ? reg['scoreChecklist2'].innerHTML : '';
+  check('"O que Melhorar" não ficou com contador X/Y sem lista',
+    !/\d+\/\d+/.test(htmlMelhorar), (htmlMelhorar.match(/\d+\/\d+/g) || []).join(','));
 }
 
 // ── card "Qualidade do Anúncio (Mercado Livre)" ─────────────────────────
