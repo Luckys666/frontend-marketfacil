@@ -3207,6 +3207,21 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
     // herdada. Ou seja: descrição herdada É o caso que este botão resolve — o rótulo muda
     // de "Editar" para "Escrever a sua" porque são coisas diferentes pro vendedor.
     const descHerdada = hasDesc && !!descSource;
+
+    /*
+     * ATALHOS DE 1 CLIQUE (Lucas, 13/08/2026) — "só pra ele não precisar escolher".
+     *
+     * A régua saiu da frase que fechou o assunto: "descrição se não tiver preenchida ainda
+     * pode gravar direto". Vale para os dois botões — o atalho grava sozinho apenas onde
+     * NÃO há trabalho do vendedor em risco. Campo vazio não tem o que destruir; campo
+     * preenchido (inclusive descrição HERDADA, que já aparece no anúncio) volta a pedir
+     * a passagem pela tela.
+     *
+     * O padrão de garantia vem do proxy em `state.garantiaPadrao`: `undefined` = ainda não
+     * perguntamos, `null` = a categoria não aceita o nosso padrão, objeto = pode oferecer.
+     * Qual é o nosso padrão não se decide aqui.
+     */
+    const padraoGar = window.currentAnalysisState && window.currentAnalysisState.garantiaPadrao;
     const items = [
         {
             chave: 'descricao',
@@ -3214,6 +3229,7 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             label: 'Descrição em texto',
             detail: hasDesc ? descSourceLabel : 'Não preenchida',
             acao: hasDesc ? (descHerdada ? 'Escrever a sua' : 'Editar') : 'Escrever descrição',
+            acaoRapida: hasDesc ? null : { rotulo: 'Escrever com IA', fn: 'mfDescricaoIAUmClique' },
         },
         {
             chave: 'garantia',
@@ -3221,20 +3237,29 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             label: 'Garantia',
             detail: hasWarranty ? warrantyText : 'Não informada',
             acao: hasWarranty ? 'Alterar' : 'Informar garantia',
+            acaoRapida: (!hasWarranty && padraoGar)
+                ? { rotulo: `Usar ${padraoGar.rotulo || 'o padrão'}`, fn: 'mfGarantiaPadraoUmClique' }
+                : null,
         },
         // Imagem tem tela própria (o redimensionador) — botão aqui só levaria a lugar nenhum.
         { chave: 'imagens', ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
     ];
 
+    // A linha é CLASSE, não estilo inline: com os dois atalhos de 13/08 ela passou a ter
+    // dois botões de rótulo comprido, e em 375px eles saíam 145px pra fora do card — que
+    // tem overflow escondido, ou seja, o botão manual sumia sem deixar rastro. Media query
+    // não alcança estilo inline (foi o mesmo tropeço do grid de métricas em 08/08).
     const renderItem = (item) => `
-        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:${item.ok ? 'var(--green-light)' : 'var(--red-light)'}; border-radius:var(--radius-sm); border-left:3px solid ${item.ok ? 'var(--green)' : 'var(--red)'};">
+        <div class="mf-chk-linha${item.ok ? ' mf-chk-ok' : ''}">
             <span style="font-size:1.1rem; flex-shrink:0;">${item.ok ? '✅' : '❌'}</span>
-            <div style="flex:1; min-width:0;">
+            <div class="mf-chk-texto">
                 <span style="font-weight:600; font-size:0.88rem; color:var(--text);">${item.label}</span>
                 <span class="text-small" style="display:block; margin-top:1px;">${item.detail}</span>
             </div>
+            ${item.acaoRapida ? `<button type="button" class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-rapido-${item.chave}" onclick="window.${item.acaoRapida.fn}()">${item.acaoRapida.rotulo}</button>` : ''}
             ${item.acao ? `<button type="button" class="mf-conteudo-botao" onclick="window.mfAbrirEditorConteudo('${item.chave}')">${item.acao}</button>` : ''}
         </div>
+        ${item.acao ? `<div id="mf-rapido-erro-${item.chave}" class="mf-conteudo-erro" style="display:none;"></div>` : ''}
         ${item.acao ? `<div id="mf-editor-${item.chave}" class="mf-conteudo-editor" style="display:none;"></div>` : ''}`;
 
 
@@ -3249,6 +3274,10 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             </div>
         </div>
     `;
+
+    // Só perguntamos o padrão quando ele teria uso: anúncio SEM garantia. Anúncio que já
+    // tem não gasta chamada nenhuma. A resposta redesenha este card quando chega.
+    if (!hasWarranty) MF_carregaPadraoGarantia(window.currentAnalysisState);
 }
 
 /* =========================================================================
@@ -3479,6 +3508,182 @@ window.mfSugerirDescricao = async function () {
         MF_erroConteudo('mf-desc-erro', e.message || 'Falha de rede.');
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Sugerir com IA'; }
+    }
+};
+
+/* -------------------------------------------------------------------------
+   Atalhos de 1 clique (Lucas, 13/08/2026)
+
+   Os dois gravam direto, e só existem onde o campo está VAZIO — a régua que ele deu:
+   "descrição se não tiver preenchida ainda pode gravar direto". Onde há texto do vendedor
+   (ou garantia já escolhida), o caminho continua sendo o editor.
+
+   Nenhum dos dois inventa conteúdo: o padrão da garantia vem do proxy e o texto da
+   descrição vem da IA pelo proxy. Aqui só se aperta o botão.
+   ------------------------------------------------------------------------- */
+
+/** Erro do atalho aparece na própria linha do checklist, onde o vendedor está olhando. */
+function MF_erroAtalho(chave, msg) {
+    const el = document.getElementById(`mf-rapido-erro-${chave}`);
+    if (!el) return;
+    el.style.display = 'block';
+    el.textContent = msg;
+}
+
+/**
+ * Busca o padrão de garantia da categoria e, se existir, redesenha o checklist com o botão.
+ * `state.garantiaPadrao` fica `null` quando a categoria não aceita — e `null` é resposta,
+ * não "ainda não perguntei", então não repetimos a chamada.
+ */
+/**
+ * Cache por CATEGORIA: quem varre a conta analisa vários anúncios da mesma categoria em
+ * sequência, e o que cada uma aceita não muda no meio da sessão. Sem isso, o atalho
+ * custaria uma chamada por anúncio aberto.
+ */
+window.MF_padraoGarantiaPorCategoria = window.MF_padraoGarantiaPorCategoria || {};
+
+async function MF_carregaPadraoGarantia(state) {
+    if (!state || state.garantiaPadrao !== undefined) return;
+    // O checklist é redesenhado a cada salvamento; sem a trava de "em voo", duas
+    // renderizações antes da resposta viram duas chamadas pro proxy.
+    if (state._garantiaPadraoEmVoo) return;
+    const cat = state.detail && state.detail.category_id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!cat || !token) return;
+
+    if (Object.prototype.hasOwnProperty.call(window.MF_padraoGarantiaPorCategoria, cat)) {
+        state.garantiaPadrao = window.MF_padraoGarantiaPorCategoria[cat];
+        if (state.garantiaPadrao) MF_reRenderConteudo(state);
+        return;
+    }
+
+    state._garantiaPadraoEmVoo = true;
+    try {
+        const res = await fetch(`${API_GARANTIA_VALORES_ENDPOINT}/${encodeURIComponent(cat)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const dados = await res.json().catch(() => ({}));
+        // Proxy antigo (sem o campo) não pode virar "categoria não aceita": sem resposta
+        // sobre o padrão, o certo é não oferecer atalho E não fingir que perguntamos.
+        if (!res.ok || !Object.prototype.hasOwnProperty.call(dados, 'padrao_sugerido')) return;
+        state.garantiaPadrao = dados.padrao_sugerido || null;
+        window.MF_padraoGarantiaPorCategoria[cat] = state.garantiaPadrao;
+        if (state.garantiaPadrao) MF_reRenderConteudo(state);
+    } catch (_) {
+        // Silencioso de propósito: é oferta de atalho, não diagnóstico. O caminho manual
+        // está na tela do lado.
+    } finally {
+        state._garantiaPadraoEmVoo = false;
+    }
+}
+
+window.mfGarantiaPadraoUmClique = async function () {
+    const state = window.currentAnalysisState;
+    const padrao = state && state.garantiaPadrao;
+    if (!state || !padrao) return;
+
+    const btn = document.getElementById('mf-rapido-garantia');
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroAtalho('garantia', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Gravando…'; }
+    try {
+        // O corpo é o que o PROXY mandou, repassado inteiro. Montar aqui um "vendedor/7/dias"
+        // por conta própria seria a regra de negócio voltando pro front pela porta dos fundos
+        // — e quebraria a categoria de lista fechada, que precisa de valor_literal.
+        const corpo = padrao.valor_literal
+            ? { tipo: padrao.tipo, valor_literal: padrao.valor_literal }
+            : { tipo: padrao.tipo, tempo: padrao.tempo, unidade: padrao.unidade };
+        const res = await fetch(`${API_GARANTIA_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroAtalho('garantia', dados.error || `Não deu para gravar (erro ${res.status}).`);
+
+        // O state acompanha o que foi gravado: um "❌ Não informada" que sobrevive ao
+        // próprio salvamento faz o vendedor gravar de novo.
+        const gravados = Array.isArray(dados.sale_terms) ? dados.sale_terms : [];
+        const outros = (state.detail.sale_terms || []).filter((t) => t && t.id !== 'WARRANTY_TYPE' && t.id !== 'WARRANTY_TIME');
+        state.detail.sale_terms = outros.concat(gravados.length ? gravados : [
+            { id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' },
+            { id: 'WARRANTY_TIME', value_name: padrao.valor_literal || `${padrao.tempo} ${padrao.unidade}` },
+        ]);
+        // Campo LEGADO: `getWarrantyText` prefere ele, e a tela mostraria a garantia velha
+        // logo depois de gravar a nova.
+        state.detail.warranty = null;
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroAtalho('garantia', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = `Usar ${padrao.rotulo || 'o padrão'}`; }
+    }
+};
+
+window.mfDescricaoIAUmClique = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+
+    const btn = document.getElementById('mf-rapido-descricao');
+    const detail = state.detail || {};
+    const itemId = detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroAtalho('descricao', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Escrevendo…'; }
+    try {
+        let uid = state.userId;
+        if (!uid) { uid = await fetchUserIdForScraping(); if (uid) state.userId = uid; }
+        if (!uid) return MF_erroAtalho('descricao', 'Sessão expirada. Recarregue a página.');
+
+        const atributos = (detail.attributes || [])
+            .filter((a) => a && a.value_name && a.name)
+            .map((a) => ({ name: a.name, value: a.value_name }));
+
+        const gerada = await fetch(API_GPT_DESCRICAO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${uid}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                titulo: detail.title || '',
+                categoria: (state.categoryName || ''),
+                atributos,
+                garantia: getWarrantyText(detail) || '',
+                site_id: (typeof window.MF_currentSiteId === 'function' ? window.MF_currentSiteId() : 'MLB'),
+            }),
+        });
+        const dadosIA = await gerada.json().catch(() => ({}));
+        if (!gerada.ok) return MF_erroAtalho('descricao', dadosIA.error || 'A IA não respondeu agora. Tente de novo em instantes.');
+
+        const texto = String(dadosIA.plain_text || '').trim();
+        // IA sem conteúdo NÃO vira gravação. Descrição vazia no ML é pior que descrição
+        // faltando: some o diagnóstico e o vendedor acha que resolveu.
+        if (!texto) {
+            if (btn) { btn.textContent = 'Escrever com IA'; }
+            return MF_erroAtalho('descricao', 'A IA não devolveu texto desta vez. Tente de novo, ou escreva pelo botão ao lado.');
+        }
+
+        if (btn) btn.textContent = 'Gravando…';
+        const res = await fetch(`${API_DESCRICAO_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plain_text: texto }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // Aqui o "Tirar e continuar" do editor não serve: não há campo aberto pra
+            // aplicar o texto limpo. Mandamos pro editor com o texto já dentro.
+            window.MF_textoIAPendente = texto;
+            return MF_erroAtalho('descricao', `${dados.error || `Não deu para gravar (erro ${res.status}).`} Abra "Escrever descrição" para ajustar o texto.`);
+        }
+
+        state.descriptionData = { plain_text: dados.plain_text || texto, text: dados.plain_text || texto };
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroAtalho('descricao', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; if (btn.textContent !== 'Escrever com IA') btn.textContent = 'Escrever com IA'; }
     }
 };
 

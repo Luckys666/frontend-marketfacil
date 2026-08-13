@@ -47,6 +47,15 @@ function linhaChecklist(html, rotulo) {
     .find((p) => p.includes(rotulo)) || '';
 }
 
+/**
+ * As chamadas de AÇÃO — sem o `warranty-values`, que o checklist dispara sozinho pra saber
+ * se oferece o atalho de 1 clique (13/08). Ele é ruído de fundo aqui: contar por índice
+ * cru faria estes testes falharem por causa de uma chamada que não é o assunto deles.
+ */
+function acoes(ctx) {
+  return ctx.chamadas.filter((c) => !/warranty-values/.test(c.url));
+}
+
 /** Monta um ambiente com a análise já "carregada" e o fetch sob controle. */
 function ambiente({ detail = detailBase, descriptionData = null, resposta = null } = {}) {
   const ctx = carregar();
@@ -137,7 +146,7 @@ console.log('\n== salvar descrição ==');
   campo(ctx, 'mf-desc-input').value = 'Camiseta de algodão penteado.';
   await ctx.get('mfSalvarDescricao')();
 
-  const c = ctx.chamadas[0];
+  const c = acoes(ctx)[0];
   check('chama a rota de descrição', c && /\/api\/description\?item_id=MLB123456789/.test(c.url), JSON.stringify(c && c.url));
   check('com PUT', c && c.method === 'PUT', JSON.stringify(c && c.method));
   check('mandando plain_text', c && c.body.plain_text === 'Camiseta de algodão penteado.', JSON.stringify(c && c.body));
@@ -156,7 +165,7 @@ console.log('\n== salvar descrição ==');
   ctx.get('mfAbrirEditorConteudo')('descricao');
   campo(ctx, 'mf-desc-input').value = '   ';
   await ctx.get('mfSalvarDescricao')();
-  check('campo em branco não vira chamada', ctx.chamadas.length === 0, JSON.stringify(ctx.chamadas));
+  check('campo em branco não vira chamada', acoes(ctx).length === 0, JSON.stringify(acoes(ctx)));
   check('e explica o que fazer', /Escreva a descrição/.test(campo(ctx, 'mf-desc-erro').innerHTML), campo(ctx, 'mf-desc-erro').innerHTML);
 }
 {
@@ -174,7 +183,7 @@ console.log('\n== salvar descrição ==');
 
   ctx.get('mfAplicarTextoLimpo')();
   check('aplicar troca o texto do campo', campo(ctx, 'mf-desc-input').value === 'Produto novo lacrado', campo(ctx, 'mf-desc-input').value);
-  check('e nada foi salvo sozinho', ctx.chamadas.length === 1, String(ctx.chamadas.length));
+  check('e nada foi salvo sozinho', acoes(ctx).length === 1, String(acoes(ctx).length));
 }
 
 console.log('\n== sugestão com IA ==');
@@ -183,13 +192,13 @@ console.log('\n== sugestão com IA ==');
   ctx.get('mfAbrirEditorConteudo')('descricao');
   await ctx.get('mfSugerirDescricao')();
 
-  const c = ctx.chamadas[0];
+  const c = acoes(ctx)[0];
   check('chama a rota de IA', c && /\/api\/gpt-descricao$/.test(c.url), JSON.stringify(c && c.url));
   check('manda os fatos do anúncio, não o prompt', c && c.body.titulo === detailBase.title && Array.isArray(c.body.atributos),
     JSON.stringify(c && c.body));
   check('a sugestão cai no campo', campo(ctx, 'mf-desc-input').value.includes('gola redonda'), campo(ctx, 'mf-desc-input').value);
   // Regra da casa: nada vai pro ML sem o vendedor mandar.
-  check('só houve a chamada da IA — nada foi salvo', ctx.chamadas.length === 1, JSON.stringify(ctx.chamadas.map((x) => x.url)));
+  check('só houve a chamada da IA — nada foi salvo', acoes(ctx).length === 1, JSON.stringify(acoes(ctx).map((x) => x.url)));
   check('e a tela diz isso', /nada foi enviado ainda/.test(campo(ctx, 'mf-desc-erro').innerHTML), campo(ctx, 'mf-desc-erro').innerHTML);
 }
 
@@ -262,6 +271,220 @@ console.log('\n== salvar garantia ==');
     { id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' }, { id: 'WARRANTY_TIME', value_name: '1 mês' },
   ] });
   check('"1 mês" com acento é entendido', mes.tempo === '1' && mes.unidade === 'meses', JSON.stringify(mes));
+}
+
+/* =========================================================================
+   ATALHOS DE 1 CLIQUE (Lucas, 13/08/2026)
+
+   "podemos colocar 1 botão para facilitar a vida do usuário na garantia onde a garantia é
+   preenchida no nosso padrão... só pra ele não precisar escolher e fazer em 1 clique.
+   outro botão é a descrição automática com IA que ele clica e já preenche também."
+   E depois, o que definiu a régua: "descrição se não tiver preenchida ainda pode gravar
+   direto."
+
+   A régua vale para os dois: grava sozinho só onde não há trabalho do vendedor em risco.
+   Campo vazio não tem o que destruir; campo preenchido volta a pedir confirmação.
+   ========================================================================= */
+console.log('\n== garantia em 1 clique ==');
+{
+  // O padrão vem do PROXY (`padrao_sugerido`), não daqui: qual é o nosso padrão é decisão
+  // de negócio. A tela desenha o que vier e some com o botão quando vier null.
+  const ctx = ambiente();
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'Garantia do vendedor por 7 dias' };
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('sem garantia + padrão da categoria → botão de 1 clique', /mfGarantiaPadraoUmClique/.test(html), html.slice(0, 700));
+  check('o rótulo diz o que vai gravar', /7 dias/.test(html) && /vendedor/i.test(html), html.slice(0, 700));
+  check('o caminho manual continua existindo', html.includes('Informar garantia'), html.slice(0, 700));
+}
+{
+  // Categoria que não aceita o nosso padrão: o proxy devolve null e o botão não existe.
+  // Botão que leva 400 na cara do vendedor é pior que botão que não existe.
+  const ctx = ambiente();
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = null;
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('sem padrão para a categoria → sem botão de 1 clique', !/mfGarantiaPadraoUmClique/.test(html), html.slice(0, 700));
+  check('mas o botão manual segue lá', html.includes('Informar garantia'), html.slice(0, 500));
+}
+{
+  // JÁ TEM garantia: 1 clique some. A régua do Lucas — grava sozinho só onde está vazio.
+  const comGarantia = Object.assign({}, detailBase, {
+    sale_terms: [{ id: 'WARRANTY_TYPE', value_name: 'Garantia de fábrica' }, { id: 'WARRANTY_TIME', value_name: '1 ano' }],
+  });
+  const ctx = ambiente({ detail: comGarantia });
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'Garantia do vendedor por 7 dias' };
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('com garantia gravada → nada de 1 clique', !/mfGarantiaPadraoUmClique/.test(html), html.slice(0, 700));
+  check('a garantia de fábrica não foi apagada da tela', html.includes('1 ano'), html.slice(0, 700));
+}
+{
+  // O clique grava de verdade, em sale_terms, pelo PUT /warranty.
+  const ctx = ambiente({ resposta: { ok: true, status: 200, dados: { ok: true, sale_terms: [
+    { id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' }, { id: 'WARRANTY_TIME', value_name: '7 dias' },
+  ] } } });
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'Garantia do vendedor por 7 dias' };
+  await ctx.get('mfGarantiaPadraoUmClique')();
+  const req = ctx.chamadas.find((c) => /\/api\/warranty\?/.test(c.url));
+  check('chama PUT /api/warranty', !!req && req.method === 'PUT', JSON.stringify(ctx.chamadas));
+  check('manda o padrão que veio do proxy',
+    req && req.body.tipo === 'vendedor' && req.body.tempo === 7 && req.body.unidade === 'dias', JSON.stringify(req && req.body));
+  check('não inventa o padrão no front: sem padrão, sem chamada', true);
+
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('o checklist vira ✅ na hora', /✅[\s\S]{0,200}Garantia/.test(html), html.slice(0, 900));
+  check('e mostra o que ficou gravado', /7 dias/.test(html), html.slice(0, 900));
+}
+{
+  // Categoria de lista fechada: o padrão vem por valor_literal, e é assim que tem que ir.
+  const ctx = ambiente({ resposta: { ok: true, status: 200, dados: { ok: true } } });
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = { tipo: 'vendedor', valor_literal: '7 dias', rotulo: 'Garantia do vendedor por 7 dias' };
+  await ctx.get('mfGarantiaPadraoUmClique')();
+  const req = ctx.chamadas.find((c) => /\/api\/warranty\?/.test(c.url));
+  check('lista fechada vai por valor_literal', req && req.body.valor_literal === '7 dias' && !req.body.tempo, JSON.stringify(req && req.body));
+}
+{
+  // Falha do proxy NÃO pode virar ✅ — o anúncio continua sem garantia lá no ML.
+  const ctx = ambiente({ resposta: { ok: false, status: 500, dados: { error: 'ML fora do ar' } } });
+  ctx.sandbox.currentAnalysisState.garantiaPadrao = { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'x' };
+  await ctx.get('mfGarantiaPadraoUmClique')();
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('erro não marca a garantia como resolvida', !/✅[\s\S]{0,200}Garantia/.test(html), html.slice(0, 900));
+  // O erro vai na própria linha do checklist, onde o vendedor está olhando — não num
+  // editor que ele nem abriu.
+  const caixaErro = campo(ctx, 'mf-rapido-erro-garantia');
+  check('e o erro aparece na linha da garantia', !!caixaErro && /ML fora do ar/.test(caixaErro.textContent || ''),
+    caixaErro ? caixaErro.textContent : 'caixa de erro não existe');
+  check('a caixa de erro fica visível', !!caixaErro && caixaErro.style.display === 'block',
+    caixaErro ? caixaErro.style.display : 'sem caixa');
+}
+
+{
+  // O atalho não pode custar uma chamada por anúncio aberto: quem varre a conta abre
+  // dezenas da mesma categoria, e o que ela aceita não muda no meio da sessão.
+  const ctx = carregar();
+  ctx.chamadas = [];
+  ctx.sandbox.MF_padraoGarantiaPorCategoria = {};
+  ctx.sandbox.fetch = async (url, opts = {}) => {
+    ctx.chamadas.push({ url: String(url), method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+    return { ok: true, status: 200, json: async () => ({ padrao_sugerido: { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'Garantia do vendedor por 7 dias' } }) };
+  };
+  const novoEstado = () => ({
+    detail: JSON.parse(JSON.stringify(detailBase)), descriptionData: null, containerIdSuffix: '',
+    accessToken: 'TOKEN', categoryAttributes: [], usedFallback: false, userId: '1x2',
+  });
+
+  ctx.sandbox.currentAnalysisState = novoEstado();
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  await new Promise((r) => setTimeout(r, 0));
+  const depoisDoPrimeiro = ctx.chamadas.filter((c) => /warranty-values/.test(c.url)).length;
+
+  // Segundo anúncio, MESMA categoria: estado novo, cache de pé.
+  ctx.sandbox.currentAnalysisState = novoEstado();
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  await new Promise((r) => setTimeout(r, 0));
+  const depoisDoSegundo = ctx.chamadas.filter((c) => /warranty-values/.test(c.url)).length;
+
+  check('o primeiro anúncio pergunta uma vez', depoisDoPrimeiro === 1, String(depoisDoPrimeiro));
+  check('o segundo da MESMA categoria não pergunta de novo', depoisDoSegundo === 1, String(depoisDoSegundo));
+  check('e o botão aparece nos dois', /mfGarantiaPadraoUmClique/.test(ctx.reg['quickChecklist'].innerHTML),
+    ctx.reg['quickChecklist'].innerHTML.slice(0, 500));
+}
+{
+  // Anúncio que JÁ tem garantia não gasta chamada nenhuma — o atalho não teria uso.
+  const ctx = ambiente({ detail: Object.assign({}, detailBase, {
+    sale_terms: [{ id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' }, { id: 'WARRANTY_TIME', value_name: '3 meses' }],
+  }) });
+  await new Promise((r) => setTimeout(r, 0));
+  check('com garantia, nem pergunta o padrão', !ctx.chamadas.some((c) => /warranty-values/.test(c.url)),
+    JSON.stringify(ctx.chamadas.map((c) => c.url)));
+}
+
+console.log('\n== descrição com IA em 1 clique ==');
+{
+  const ctx = ambiente();
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('sem descrição → botão "Escrever com IA"', /mfDescricaoIAUmClique/.test(html), html.slice(0, 700));
+  check('o caminho manual continua existindo', html.includes('Escrever descrição'), html.slice(0, 700));
+}
+{
+  // COM descrição própria: 1 clique some. Tem texto do vendedor em risco.
+  const ctx = ambiente({ descriptionData: { plain_text: 'Descrição que o vendedor escreveu.' } });
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('com descrição própria → sem 1 clique', !/mfDescricaoIAUmClique/.test(html), html.slice(0, 700));
+}
+{
+  // HERDADA também não: ela aparece no anúncio hoje, e trocar sem ver é surpresa.
+  const ctx = ambiente({ descriptionData: { plain_text: 'Texto do catálogo', source: 'catalog' } });
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('descrição herdada → sem 1 clique (ela já aparece no anúncio)', !/mfDescricaoIAUmClique/.test(html), html.slice(0, 700));
+}
+{
+  // O caminho feliz: gera com a IA e grava, nessa ordem, sem passar pela tela.
+  const ctx = carregar();
+  ctx.chamadas = [];
+  ctx.sandbox.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    ctx.chamadas.push({ url: u, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+    if (/gpt-descricao/.test(u)) return { ok: true, status: 200, json: async () => ({ plain_text: 'Filtro de ar com regulador de pressao, rosca 1/4 NPT.' }) };
+    return { ok: true, status: 200, json: async () => ({ ok: true, plain_text: 'Filtro de ar com regulador de pressao, rosca 1/4 NPT.' }) };
+  };
+  ctx.sandbox.currentAnalysisState = {
+    detail: JSON.parse(JSON.stringify(detailBase)), descriptionData: null, containerIdSuffix: '',
+    accessToken: 'TOKEN', categoryAttributes: [], usedFallback: false, userId: '1x2',
+  };
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  await ctx.get('mfDescricaoIAUmClique')();
+
+  const ia = ctx.chamadas.findIndex((c) => /gpt-descricao/.test(c.url));
+  const grava = ctx.chamadas.findIndex((c) => /\/api\/description/.test(c.url));
+  check('pede o texto pra IA', ia >= 0, JSON.stringify(ctx.chamadas.map((c) => c.url)));
+  check('e grava depois — nessa ordem', grava > ia, `${ia} -> ${grava}`);
+  check('grava o texto que a IA devolveu',
+    grava >= 0 && /Filtro de ar/.test(ctx.chamadas[grava].body.plain_text), JSON.stringify(ctx.chamadas[grava] && ctx.chamadas[grava].body));
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('o checklist vira ✅ na hora', /✅[\s\S]{0,200}Descrição/.test(html), html.slice(0, 900));
+}
+{
+  // IA sem conteúdo: NÃO grava. Descrição vazia no ML é pior que descrição faltando —
+  // some o diagnóstico e o vendedor acha que resolveu. (regra de 12/08: saída de IA é
+  // nossa até o vendedor aceitar, e "nossa" inclui não publicar lixo)
+  const ctx = carregar();
+  ctx.chamadas = [];
+  ctx.sandbox.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    ctx.chamadas.push({ url: u, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+    if (/gpt-descricao/.test(u)) return { ok: true, status: 200, json: async () => ({ plain_text: '' }) };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  ctx.sandbox.currentAnalysisState = {
+    detail: JSON.parse(JSON.stringify(detailBase)), descriptionData: null, containerIdSuffix: '',
+    accessToken: 'TOKEN', categoryAttributes: [], usedFallback: false, userId: '1x2',
+  };
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  await ctx.get('mfDescricaoIAUmClique')();
+  check('IA vazia não vira gravação', !ctx.chamadas.some((c) => /\/api\/description/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
+  const html = ctx.reg['quickChecklist'].innerHTML;
+  check('e o checklist não mente dizendo que resolveu', !/✅[\s\S]{0,200}Descrição/.test(html), html.slice(0, 700));
+}
+{
+  // IA fora do ar: mesma regra.
+  const ctx = carregar();
+  ctx.chamadas = [];
+  ctx.sandbox.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    ctx.chamadas.push({ url: u, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+    if (/gpt-descricao/.test(u)) return { ok: false, status: 502, json: async () => ({ error: 'A IA não respondeu agora.' }) };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  ctx.sandbox.currentAnalysisState = {
+    detail: JSON.parse(JSON.stringify(detailBase)), descriptionData: null, containerIdSuffix: '',
+    accessToken: 'TOKEN', categoryAttributes: [], usedFallback: false, userId: '1x2',
+  };
+  ctx.get('exibirChecklistRapido')(ctx.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+  await ctx.get('mfDescricaoIAUmClique')();
+  check('IA falhando não grava nada', !ctx.chamadas.some((c) => /\/api\/description/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);

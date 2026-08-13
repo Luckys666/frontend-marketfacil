@@ -2729,6 +2729,66 @@
   color: var(--blue);
   background: var(--blue-light);
 }
+/* Linha do Checklist Rápido. Era estilo inline até 13/08, quando ganhou dois botões de
+   rótulo comprido ("Usar Garantia do vendedor por 7 dias" + "Informar garantia") e passou a
+   vazar 145px pra fora do card em 375px — com overflow escondido, o botão manual sumia sem
+   deixar rastro. Virou classe pra media query alcançar. */
+.ana-wrapper .mf-chk-linha {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--red-light);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--red);
+}
+.ana-wrapper .mf-chk-linha.mf-chk-ok {
+  background: var(--green-light);
+  border-left-color: var(--green);
+}
+/* `min-width: 0` é o que deixa o texto encolher em vez de empurrar os botões pra fora:
+   item de flex tem min-width auto por padrão e se recusa a ficar menor que o conteúdo. */
+.ana-wrapper .mf-chk-texto { flex: 1 1 160px; min-width: 0; }
+
+/* No celular os botões descem pra linha própria e dividem a largura. Espremidos ao lado do
+   texto eles ou vazam ou ficam com 20px de área de toque. */
+@media (max-width: 620px) {
+  .ana-wrapper .mf-chk-texto { flex: 1 1 100%; }
+  .ana-wrapper .mf-chk-linha .mf-conteudo-botao {
+    flex: 1 1 auto;
+    min-height: 34px;
+    white-space: normal;
+  }
+}
+
+/* Atalho de 1 clique: é o caminho que resolve na hora, então é ele que tem cor. O botão
+   manual ao lado continua neutro — dois botões sólidos lado a lado brigariam e o vendedor
+   pararia pra escolher, que é justo o que este atalho existe pra evitar.
+   (0,2,0) como o irmão, mas escrito DEPOIS: mesma especificidade, ganha por ordem. Onde
+   isso importa de verdade (o alerta de renomear) a regra é escopada; aqui a ordem basta
+   porque as duas classes vivem no mesmo arquivo, uma embaixo da outra. */
+.ana-wrapper .mf-conteudo-botao-rapido {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+.ana-wrapper .mf-conteudo-botao-rapido:hover {
+  background: var(--blue-dark, #0052cc);
+  border-color: var(--blue-dark, #0052cc);
+  color: #fff;
+}
+.ana-wrapper .mf-conteudo-botao-rapido:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* O erro do atalho reusa `.mf-conteudo-erro`, que já existe mais abaixo neste arquivo
+   (com border-box e tudo). Escrever uma segunda regra com o mesmo seletor aqui seria
+   perder por ordem e depurar isso de novo — só o espaçamento é próprio. */
+.ana-wrapper .mf-conteudo-erro[id^="mf-rapido-erro-"] {
+  margin: 4px 0 2px;
+  overflow-wrap: anywhere;
+}
 .ana-wrapper .mf-conteudo-editor { margin: 6px 0 2px; }
 .ana-wrapper .mf-conteudo-box {
   display: flex;

@@ -40,6 +40,21 @@ const state = {
 const htmlDescricao = get('MF_editorDescricaoHtml')(state);
 const htmlGarantia = get('MF_editorGarantiaHtml')(state);
 
+/*
+ * A linha do checklist com os DOIS atalhos de 13/08. É a que mais assusta na régua:
+ * "Usar Garantia do vendedor por 7 dias" é um rótulo comprido, com `white-space: nowrap`,
+ * ao lado de "Informar garantia" e do texto da linha. Em 375px isso é candidato natural a
+ * estourar o card — e o card tem overflow escondido, então estouro vira sumiço silencioso.
+ */
+const ctxChk = carregar();
+ctxChk.sandbox.currentAnalysisState = {
+  detail: { id: 'MLB1', title: 'Camiseta básica', category_id: 'MLB1051', sale_terms: [], pictures: [], attributes: [] },
+  garantiaPadrao: { tipo: 'vendedor', tempo: 7, unidade: 'dias', rotulo: 'Garantia do vendedor por 7 dias' },
+  accessToken: 'T', containerIdSuffix: '',
+};
+ctxChk.get('exibirChecklistRapido')(ctxChk.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
+const htmlChecklist = ctxChk.reg['quickChecklist'].innerHTML;
+
 const PAGINA = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}
 body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
 /* O checklist tem overflow escondido: é ele que corta o que vaza. */
@@ -50,6 +65,7 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
   <div class="simula-card" id="card-linha" style="margin-bottom:14px">
     <button type="button" class="mf-conteudo-botao">Escrever descrição</button>
   </div>
+  <div class="simula-card" id="card-chk" style="margin-bottom:14px">${htmlChecklist}</div>
   <div class="simula-card" id="card-desc">${htmlDescricao}</div>
   <div class="simula-card" id="card-gar" style="margin-top:14px">${htmlGarantia}</div>
 </div></div></body></html>`;
@@ -90,7 +106,21 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         const e = document.querySelector(sel);
         return e ? getComputedStyle(e).textTransform : '(sem elemento)';
       };
+      // Cor e visibilidade entram junto: em 12/08 o teste media posição e tamanho e passou
+      // com os botões gritando em CAIXA ALTA. Medir não basta — tem que medir o que a
+      // pessoa VÊ.
+      const visual = (sel) => {
+        const e = document.querySelector(sel);
+        if (!e) return null;
+        const cs = getComputedStyle(e);
+        return { transform: cs.textTransform, visibilidade: cs.visibility, cor: cs.color, fundo: cs.backgroundColor, display: cs.display };
+      };
       return {
+        rapidoGar: medirDentro('#card-chk', '#mf-rapido-garantia'),
+        rapidoDesc: medirDentro('#card-chk', '#mf-rapido-descricao'),
+        manualGar: medirDentro('#card-chk', "button[onclick*=\"'garantia'\"]"),
+        visualRapidoGar: visual('#mf-rapido-garantia'),
+        visualRapidoDesc: visual('#mf-rapido-descricao'),
         transformBotaoLinha: caixaAlta('#card-linha .mf-conteudo-botao'),
         transformSalvar: caixaAlta('#mf-desc-salvar'),
         transformSugerir: caixaAlta('#mf-desc-sugerir'),
@@ -111,6 +141,28 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     const dentro = (x) => x && x.foraDireita <= 1 && x.foraEsquerda <= 1;
 
     check(`${larg}px: a página não ganha rolagem lateral`, m.pagina.scroll <= m.pagina.cliente, JSON.stringify(m.pagina));
+
+    // ── atalhos de 1 clique (13/08) ──
+    check(`${larg}px: "Usar 7 dias do vendedor" cabe no card`, dentro(m.rapidoGar), JSON.stringify(m.rapidoGar));
+    check(`${larg}px: e não fica cortado`, m.rapidoGar && !m.rapidoGar.cortado, JSON.stringify(m.rapidoGar));
+    check(`${larg}px: "Escrever com IA" cabe no card`, dentro(m.rapidoDesc), JSON.stringify(m.rapidoDesc));
+    check(`${larg}px: e não fica cortado`, m.rapidoDesc && !m.rapidoDesc.cortado, JSON.stringify(m.rapidoDesc));
+    // O atalho não pode empurrar o caminho manual pra fora: quem não quer o padrão precisa
+    // continuar enxergando a porta de saída.
+    check(`${larg}px: o botão manual da garantia continua dentro`, dentro(m.manualGar), JSON.stringify(m.manualGar));
+    check(`${larg}px: os atalhos não saem em CAIXA ALTA`,
+      m.visualRapidoGar && m.visualRapidoGar.transform !== 'uppercase'
+      && m.visualRapidoDesc && m.visualRapidoDesc.transform !== 'uppercase',
+      `gar=${m.visualRapidoGar && m.visualRapidoGar.transform} desc=${m.visualRapidoDesc && m.visualRapidoDesc.transform}`);
+    check(`${larg}px: os atalhos estão visíveis`,
+      m.visualRapidoGar && m.visualRapidoGar.visibilidade === 'visible' && m.visualRapidoGar.display !== 'none'
+      && m.visualRapidoDesc && m.visualRapidoDesc.visibilidade === 'visible',
+      JSON.stringify([m.visualRapidoGar, m.visualRapidoDesc]));
+    // Ele é o caminho que resolve na hora: precisa se distinguir do botão neutro do lado,
+    // senão vira mais uma escolha — o oposto do que o Lucas pediu.
+    check(`${larg}px: o atalho tem cor própria, não a do botão neutro`,
+      m.visualRapidoGar && m.visualRapidoGar.fundo !== 'rgba(0, 0, 0, 0)' && m.visualRapidoGar.fundo !== 'transparent',
+      JSON.stringify(m.visualRapidoGar));
     check(`${larg}px: os botões não saem em CAIXA ALTA`,
       m.transformBotaoLinha !== 'uppercase' && m.transformSalvar !== 'uppercase'
       && m.transformSugerir !== 'uppercase' && m.transformGarantia !== 'uppercase',
