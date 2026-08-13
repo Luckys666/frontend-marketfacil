@@ -5800,9 +5800,14 @@ const MF_SERIES_VISITAS = [
     { chave: 'conversao', rotulo: 'Conversão',  cor: '#c2410c', sufixo: '%' },
 ];
 
-/** Dia seguinte em ISO, pelo UTC — somar 86400000 escorrega no horário de verão. */
+/**
+ * Dia seguinte em ISO, pelo UTC — somar 86400000 escorrega no horário de verão.
+ * Devolve null se a entrada não for data: `toISOString()` de um Invalid Date LANÇA, e
+ * quem chama está num laço.
+ */
 function MF_diaSeguinte(iso) {
     const t = new Date(iso + 'T12:00:00Z');
+    if (isNaN(t.getTime())) return null;
     t.setUTCDate(t.getUTCDate() + 1);
     return t.toISOString().slice(0, 10);
 }
@@ -5830,10 +5835,18 @@ function MF_seriesDiarias(results, adsDaily) {
     // Preenche só o MIOLO: do primeiro ao último dia que a API devolveu. Fora daí não se
     // sabe se o anúncio existia — e a ponta de hoje ainda está propagando (ver guarda
     // abaixo), então zero ali seria afirmar que o dia acabou sem visita nenhuma.
-    const ordenados = [...porDia.keys()].sort();
+    //
+    // Só entram no cálculo dos limites as chaves que SÃO data. Uma data malformada
+    // ordena depois de qualquer '2026-…' (letra > dígito), virava o "último dia" e o
+    // laço nunca chegava lá — travava o browser do vendedor. O teto de voltas é o cinto
+    // de segurança: a janela pedida é de 60 dias, então 400 nunca é alcançado por dado
+    // legítimo.
+    const ordenados = [...porDia.keys()].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
     if (ordenados.length > 1) {
         const fim = ordenados[ordenados.length - 1];
-        for (let d = MF_diaSeguinte(ordenados[0]); d < fim; d = MF_diaSeguinte(d)) {
+        let voltas = 0;
+        for (let d = MF_diaSeguinte(ordenados[0]); d && d < fim && voltas < 400; d = MF_diaSeguinte(d)) {
+            voltas++;
             if (!porDia.has(d)) porDia.set(d, { dia: d, visitas: 0, vendas: null, conversao: null });
         }
     }

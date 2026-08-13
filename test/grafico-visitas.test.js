@@ -326,6 +326,26 @@ console.log('\n== dia que a API omite é dia de ZERO visita ==');
   // O preenchimento não pode mexer nos totais das janelas — soma de zeros é zero.
   const soma = (arr) => arr.reduce((s, x) => s + (typeof x.visitas === 'number' ? x.visitas : 0), 0);
   check('somar a série densa dá o mesmo total', soma(p) === 8 + 3 + 6 + 4, String(soma(p)));
+
+  /*
+   * 🔴 Bug que o preenchimento criou e o teste do Lucas em anúncio UP pegou na hora
+   * ("pega um anúncio up da conta e testa"): data malformada TRAVAVA O BROWSER.
+   * 'abc' ordena depois de qualquer '2026-…' (letra > dígito no compare de string),
+   * então virava o "último dia" e o laço nunca chegava lá — loop infinito na tela do
+   * vendedor. Antes do preenchimento a data ruim só ficava parada no Map, inofensiva.
+   * Duas defesas: só data de verdade entra no cálculo dos limites, e um teto de voltas.
+   */
+  const inicio = Date.now();
+  let sobreviveu = false, resultado = null;
+  try { resultado = MF_seriesDiarias([{ date: 'abc', total: 5 }, { date: '2026-08-01', total: 3 }], null); sobreviveu = true; }
+  catch (_) { sobreviveu = false; }
+  check('data malformada não trava nem lança', sobreviveu && Date.now() - inicio < 3000, `${Date.now() - inicio}ms`);
+  check('e o dia válido continua na série', !!resultado && resultado.some((x) => x.dia === '2026-08-01' && x.visitas === 3),
+    JSON.stringify(resultado));
+
+  // Série de um dia só não tem miolo pra preencher.
+  const umDia = MF_seriesDiarias([{ date: dia(1), total: 4 }], null);
+  check('um dia só continua um ponto', umDia.length === 1 && umDia[0].visitas === 4, JSON.stringify(umDia));
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
