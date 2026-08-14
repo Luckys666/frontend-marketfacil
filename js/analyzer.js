@@ -7289,7 +7289,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     // aparece: nada de botão morto nem link chutado (o remédio `gerenciador_ml` ainda não
     // existe no veredito — a URL não foi levantada, ver COMPAT-SPEC §10.6).
     const blocoML = veredito.texto_ml && veredito.texto_ml.motivo ? `
-        <div style="padding:10px 12px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted); margin-top:10px;">
+        <div class="mf-compat-bloco-ml" style="padding:10px 12px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted); margin-top:10px;">
             <div class="text-small"><strong>O que o Mercado Livre diz:</strong> ${escapeHtml(veredito.texto_ml.motivo)}</div>
             ${veredito.texto_ml.como_resolver ? `<div class="text-small" style="margin-top:4px;">${escapeHtml(veredito.texto_ml.como_resolver)}</div>` : ''}
         </div>` : '';
@@ -7299,14 +7299,14 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     // que não foi medido não vira número, e não vira aviso vago também.
     const famItens = veredito.afeta_familia && veredito.afeta_familia.itens;
     const avisoFamilia = (typeof famItens === 'number' && famItens > 1)
-        ? `<div class="text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
+        ? `<div class="mf-compat-aviso-familia text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
         : '';
 
     const botaoUniversal = universal.pode
         ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" onclick="window.mfCompatUniversal()">Serve em qualquer veículo</button>`
         : '';
     const botaoCopiar = copiar.pode
-        ? `<button class="mf-conteudo-botao" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
+        ? `<button class="mf-conteudo-botao" id="mf-compat-copiar" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
         : '';
     const acoes = botaoUniversal + botaoCopiar;
 
@@ -7376,7 +7376,12 @@ window.mfCompatRecarregar = async function () {
     exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
 };
 
-/** Tela de conferência do remédio "copiar" — nunca copia sem o vendedor ver de onde vem (COMPAT-SPEC §7.1). */
+/**
+ * Tela de conferência do remédio "copiar" — nunca copia sem o vendedor ver de onde vem
+ * (COMPAT-SPEC §7.1). `GET /api/compatibilidades/candidatos` ainda não existe no proxy
+ * (decisão deliberada da Fase 1 — sem anúncio-fonte na conta medida); `copiar.pode` só
+ * fica `true` quando o proxy tiver candidatos de verdade, então este caminho não roda hoje.
+ */
 window.mfCompatAbrirCandidatos = async function () {
     const state = window.currentAnalysisState;
     if (!state) return;
@@ -7401,6 +7406,8 @@ window.mfCompatAbrirCandidatos = async function () {
     }
 };
 
+// `POST /api/compatibilidades/copiar` também ainda não existe no proxy (mesma decisão da
+// Fase 1 acima) — chega a rodar só quando `mfCompatAbrirCandidatos` listar um candidato.
 window.mfCompatCopiar = async function (fonteId) {
     const state = window.currentAnalysisState;
     if (!state || !fonteId) return;

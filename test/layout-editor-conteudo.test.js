@@ -55,6 +55,31 @@ ctxChk.sandbox.currentAnalysisState = {
 ctxChk.get('exibirChecklistRapido')(ctxChk.sandbox.currentAnalysisState.detail, null, 'quickChecklist');
 const htmlChecklist = ctxChk.reg['quickChecklist'].innerHTML;
 
+/*
+ * Card "Veículos compatíveis" (13/08/2026, Task 6/7). Veredito montado pro pior caso: fora
+ * do ar (badge + "desde"), o parágrafo INTEIRO que a própria ML manda em "como resolver"
+ * (texto mais comprido do card), aviso de família com itens:3 (força a linha de aviso) e os
+ * DOIS botões de remédio juntos na mesma linha — é essa combinação que mais arrisca vazar.
+ */
+const ctxCompat = carregar();
+const veredictoCompat = {
+  exige: true, situacao: 'fora_do_ar', certeza: 'moderacao', desde: '2026-06-18',
+  ja_preenchido: { total: 0, do_vendedor: 0, do_catalogo: 0 },
+  sugestoes_ml: { tem: false, quantas: null },
+  remedios: [
+    { id: 'universal', pode: true, porque: null },
+    { id: 'copiar', pode: true, candidatos: 12 },
+  ],
+  afeta_familia: { user_product_id: 'MLBU1993802314', itens: 3 },
+  texto_ml: {
+    motivo: 'Não indica os veículos compatíveis.',
+    como_resolver: 'Como reativar o anúncio?Acesse o módulo de Compatibilidade, selecione os veículos compatíveis com seu produto e salve a seleção. Se você não encontrar veículos compatíveis, também pode indicar essa informação.',
+  },
+  placar_conta: { parados: 2, resolvidos: 1 },
+};
+ctxCompat.get('exibirCompatibilidades')(veredictoCompat, 'compat');
+const htmlCompat = ctxCompat.reg['compat'].innerHTML;
+
 const PAGINA = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}
 body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
 /* O checklist tem overflow escondido: é ele que corta o que vaza. */
@@ -68,6 +93,7 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
   <div class="simula-card" id="card-chk" style="margin-bottom:14px">${htmlChecklist}</div>
   <div class="simula-card" id="card-desc">${htmlDescricao}</div>
   <div class="simula-card" id="card-gar" style="margin-top:14px">${htmlGarantia}</div>
+  <div class="simula-card" id="card-compat" style="margin-top:14px">${htmlCompat}</div>
 </div></div></body></html>`;
 
 (async () => {
@@ -135,10 +161,26 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         inputTempo: medirDentro('#card-gar', '#mf-gar-tempo'),
         salvarGar: medirDentro('#card-gar', '#mf-gar-salvar'),
         linhaGarantia: medirDentro('#card-gar', '.mf-garantia-linha'),
+
+        // Card "Veículos compatíveis" (Task 7) — mesma medição relativa ao .simula-card.
+        compatCard: medirDentro('#card-compat', '.ana-card'),
+        compatBadge: medirDentro('#card-compat', '.status-badge'),
+        compatBlocoML: medirDentro('#card-compat', '.mf-compat-bloco-ml'),
+        compatAvisoFamilia: medirDentro('#card-compat', '.mf-compat-aviso-familia'),
+        compatLinhaBotoes: medirDentro('#card-compat', '.mf-chk-linha'),
+        compatBotaoUniversal: medirDentro('#card-compat', '#mf-compat-universal'),
+        compatBotaoCopiar: medirDentro('#card-compat', '#mf-compat-copiar'),
+        transformCompatUniversal: caixaAlta('#mf-compat-universal'),
+        transformCompatCopiar: caixaAlta('#mf-compat-copiar'),
       };
     });
 
     const dentro = (x) => x && x.foraDireita <= 1 && x.foraEsquerda <= 1;
+    // Régua pedida pra este card: sem tolerância de arredondamento — só "não vazou pra
+    // fora" (foraDireita/foraEsquerda negativos ou zero são o card com folga; positivo é
+    // vazamento de verdade). `=== 0` exato reprovaria até um card correto, porque todo
+    // `.ana-card` tem padding — a folga negativa é o padding fazendo o trabalho dele.
+    const dentro0 = (x) => !!x && x.foraDireita <= 0 && x.foraEsquerda <= 0;
 
     check(`${larg}px: a página não ganha rolagem lateral`, m.pagina.scroll <= m.pagina.cliente, JSON.stringify(m.pagina));
 
@@ -183,6 +225,24 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     check(`${larg}px: "Salvar garantia" não vaza`, dentro(m.salvarGar), JSON.stringify(m.salvarGar));
     check(`${larg}px: "Salvar garantia" não fica cortado`, m.salvarGar && !m.salvarGar.cortado, JSON.stringify(m.salvarGar));
     check(`${larg}px: a linha da garantia cabe`, dentro(m.linhaGarantia), JSON.stringify(m.linhaGarantia));
+
+    // ── card "Veículos compatíveis" (Task 7, 14/08) ──
+    // Veredito mais comprido possível: fora do ar, o parágrafo inteiro da ML em "como
+    // resolver", aviso de família e os dois botões de remédio juntos na mesma linha.
+    check(`${larg}px: o card não vaza`, dentro0(m.compatCard), JSON.stringify(m.compatCard));
+    check(`${larg}px: e não fica cortado`, m.compatCard && !m.compatCard.cortado, JSON.stringify(m.compatCard));
+    check(`${larg}px: o selo "Fora do ar" não vaza`, dentro0(m.compatBadge), JSON.stringify(m.compatBadge));
+    check(`${larg}px: o bloco do texto da ML não vaza`, dentro0(m.compatBlocoML), JSON.stringify(m.compatBlocoML));
+    check(`${larg}px: e não fica cortado (é o parágrafo mais comprido do card)`, m.compatBlocoML && !m.compatBlocoML.cortado, JSON.stringify(m.compatBlocoML));
+    check(`${larg}px: o aviso de família não vaza`, dentro0(m.compatAvisoFamilia), JSON.stringify(m.compatAvisoFamilia));
+    check(`${larg}px: a linha dos dois botões de remédio não vaza`, dentro0(m.compatLinhaBotoes), JSON.stringify(m.compatLinhaBotoes));
+    check(`${larg}px: "Serve em qualquer veículo" não vaza`, dentro0(m.compatBotaoUniversal), JSON.stringify(m.compatBotaoUniversal));
+    check(`${larg}px: e não fica cortado`, m.compatBotaoUniversal && !m.compatBotaoUniversal.cortado, JSON.stringify(m.compatBotaoUniversal));
+    check(`${larg}px: "Copiar de outro anúncio (12)" não vaza`, dentro0(m.compatBotaoCopiar), JSON.stringify(m.compatBotaoCopiar));
+    check(`${larg}px: e não fica cortado`, m.compatBotaoCopiar && !m.compatBotaoCopiar.cortado, JSON.stringify(m.compatBotaoCopiar));
+    check(`${larg}px: os botões de remédio não saem em CAIXA ALTA`,
+      m.transformCompatUniversal !== 'uppercase' && m.transformCompatCopiar !== 'uppercase',
+      `universal=${m.transformCompatUniversal} copiar=${m.transformCompatCopiar}`);
 
     // No celular os botões ganham a linha inteira; espremidos ao lado do contador, "Salvar
     // descrição" quebrava no meio da palavra.
