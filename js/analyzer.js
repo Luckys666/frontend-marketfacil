@@ -7240,6 +7240,9 @@ const MF_COMPAT_ERROS = {
     // pra essa categoria. Tentar de novo dá o mesmo erro sempre.
     categoria_nao_aceita: 'O Mercado Livre não aceita "serve em qualquer veículo" nesta categoria.',
     sem_candidatos: 'Nenhum outro anúncio seu tem veículos compatíveis para copiar.',
+    // O front já avisa e desabilita o botão antes de chegar a 200 (ver MF_renderEscadaCompat);
+    // esta entrada é o defensivo caso o limite mude do lado do proxy sem o front saber.
+    limite_de_familias: 'Muitos veículos de uma vez. O máximo por envio é 200 — grave em duas etapas.',
     muitas_chamadas: 'Muitas consultas seguidas. Espere um minuto e tente de novo.',
     nao_deu_pra_consultar: 'Não deu para consultar agora.',
     ml_recusou: 'O Mercado Livre não aceitou.',
@@ -7313,7 +7316,11 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     const botaoCopiar = copiar.pode
         ? `<button class="mf-conteudo-botao" id="mf-compat-copiar" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
         : '';
-    const acoes = botaoUniversal + botaoCopiar;
+    // Ao contrário de universal/copiar, este remédio não depende de `pode` do proxy — é o
+    // caminho manual, sempre disponível quando o ML exige compatibilidade (fecha o fluxo:
+    // até 14/08 o card só diagnosticava, sem jeito de resolver pelo app).
+    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">Escolher os veículos</button>`;
+    const acoes = botaoUniversal + botaoCopiar + botaoEscada;
 
     // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem
     // placar. Nunca inventar número aqui (amigavel-e-gamificacao: não custa honestidade).
@@ -7335,6 +7342,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         ${acoes ? `<div class="mf-chk-linha" style="margin-top:10px;">${acoes}</div>` : ''}
         <div id="mf-rapido-erro-compat" class="mf-conteudo-erro" style="display:none;"></div>
         <div id="mf-compat-candidatos" style="display:none; margin-top:10px;"></div>
+        <div id="mf-compat-escada" style="display:none; margin-top:10px;"></div>
     </div>`;
 }
 
@@ -7431,6 +7439,268 @@ window.mfCompatCopiar = async function (fonteId) {
         await window.mfCompatRecarregar();
     } catch (e) {
         MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    }
+};
+
+/* -------------------------------------------------------------------------
+   Escolher os veículos manualmente — escada marca → modelo → ano (14/08/2026)
+
+   Fecha o fluxo: até aqui o card só diagnosticava, sem jeito de resolver pelo app quando
+   universal/copiar não davam conta. GET .../compatibilidades/veiculos devolve as opções de
+   cada nível já ordenadas por popularidade — o front NÃO reordena. POST grava, mas nunca
+   sem o vendedor ver a lista inteira e confirmar (regra do Lucas: compatibilidade errada é
+   pior que faltando — o comprador recebe peça que não serve).
+   ------------------------------------------------------------------------- */
+
+/**
+ * Busca as opções de um nível. Não usa `fetchApiData` de propósito: aqui "erro na busca"
+ * (mostra o `code` + Tentar de novo) e "nível sem opções" (lista vazia de verdade, ex: um
+ * modelo raro sem anos catalogados) são coisas diferentes — `fetchApiData` devolve `null`
+ * pros dois casos, o que apagaria essa distinção.
+ */
+async function fetchCompatVeiculos(params, accessToken) {
+    const partes = Object.keys(params)
+        .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
+        .map((k) => `${k}=${encodeURIComponent(params[k])}`);
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos?${partes.join('&')}`, {
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return { erro: true, code: (dados && dados.code) || null };
+        return { erro: false, opcoes: Array.isArray(dados && dados.opcoes) ? dados.opcoes : [] };
+    } catch (e) {
+        return { erro: true, code: null };
+    }
+}
+
+const MF_COMPAT_NIVEL_CARREGANDO = { marca: 'Carregando as marcas...', modelo: 'Carregando os modelos...', ano: 'Carregando os anos...' };
+const MF_COMPAT_NIVEL_LABEL = { marca: 'Marca', modelo: 'Modelo', ano: 'Ano (opcional)' };
+
+// Marcas e modelos não mudam no meio da sessão (é um domínio fixo da ML, igual à categoria
+// da garantia) — cache por nível+pais evita perguntar de novo ao voltar um passo na escada.
+function MF_compatChaveCache(nivel, params) {
+    return `${nivel}:${params.brand_id || ''}:${params.model_id || ''}`;
+}
+
+/** Descreve uma seleção já feita, pra lista de conferência que o vendedor vê antes de gravar. */
+function MF_compatDescreveSelecao(s) {
+    return `${s.brand_nome} ${s.model_nome}${s.year_nome ? ' ' + s.year_nome : ' (todos os anos)'}`;
+}
+
+async function MF_compatCarregarNivel(state, nivel, params) {
+    const esc = state.escadaCompat;
+    if (!esc) return;
+    esc.nivel = nivel;
+    esc.paramsAtuais = params;
+    esc.erro = null;
+    esc.carregando = true;
+    MF_renderEscadaCompat(state);
+
+    window.MF_compatVeiculosCache = window.MF_compatVeiculosCache || {};
+    const chave = MF_compatChaveCache(nivel, params);
+    let resultado = window.MF_compatVeiculosCache[chave];
+    if (!resultado) {
+        resultado = await fetchCompatVeiculos(Object.assign({ nivel }, params), state.accessToken);
+        if (!resultado.erro) window.MF_compatVeiculosCache[chave] = resultado;
+    }
+
+    // O painel pode ter trocado de nível de novo (ou fechado) enquanto a chamada estava em
+    // voo — não pisar num estado mais novo com uma resposta velha.
+    if (state.escadaCompat !== esc || esc.nivel !== nivel) return;
+    esc.carregando = false;
+    if (resultado.erro) { esc.erro = resultado.code; esc.opcoes = []; }
+    else { esc.opcoes = resultado.opcoes; }
+    MF_renderEscadaCompat(state);
+}
+
+/** Fecha uma "família" (marca+modelo[+ano]) e recomeça a escada do zero pra próxima. */
+function MF_compatAdicionarSelecao(state, extra) {
+    const esc = state.escadaCompat;
+    if (!esc || !esc.marca || !esc.modelo) return;
+    esc.selecoes.push({
+        brand_id: esc.marca.id, brand_nome: esc.marca.nome,
+        model_id: esc.modelo.id, model_nome: esc.modelo.nome,
+        year_id: (extra && extra.year_id) || null, year_nome: (extra && extra.year_nome) || null,
+    });
+    esc.marca = null;
+    esc.modelo = null;
+    MF_compatCarregarNivel(state, 'marca', {});
+}
+
+function MF_renderEscadaCompat(state) {
+    const box = document.getElementById('mf-compat-escada');
+    if (!box) return;
+    const esc = state.escadaCompat;
+    if (!esc) { box.innerHTML = ''; return; }
+
+    const trilha = [];
+    if (esc.marca) trilha.push(`<strong>${escapeHtml(esc.marca.nome)}</strong>`);
+    if (esc.modelo) trilha.push(`<strong>${escapeHtml(esc.modelo.nome)}</strong>`);
+    const blocoTrilha = trilha.length ? `
+        <div class="mf-compat-trilha text-small" style="margin-bottom:8px;">
+            ${trilha.join(' <span style="color:var(--text-muted);">›</span> ')}
+            <button class="mf-link-acao" onclick="window.mfCompatVoltarEscada()">trocar</button>
+        </div>` : '';
+
+    let corpoNivel;
+    if (esc.carregando) {
+        corpoNivel = `<p class="text-small">${MF_COMPAT_NIVEL_CARREGANDO[esc.nivel]}</p>`;
+    } else if (esc.erro) {
+        // Erro nunca vira lista vazia silenciosa: o vendedor precisa saber que foi uma
+        // falha de busca, não "essa marca não tem modelo nenhum".
+        corpoNivel = `
+            <p class="text-small">${escapeHtml(MF_COMPAT_ERROS[esc.erro] || MF_COMPAT_ERROS.nao_deu_pra_consultar)}
+                <button class="mf-conteudo-botao" onclick="window.mfCompatTentarNivelDeNovo()">Tentar de novo</button>
+            </p>`;
+    } else if (!esc.opcoes.length) {
+        corpoNivel = `<p class="text-small">Nenhuma opção encontrada.</p>`;
+    } else {
+        const opcoesHtml = esc.opcoes.map((o) => `<option value="${escapeHtml(String(o.id))}">${escapeHtml(o.nome)}</option>`).join('');
+        // "Modelo inteiro" é o caminho mais rápido e mais comum (peça que serve em várias
+        // gerações do mesmo modelo) — fica em destaque, acima do select de ano opcional.
+        const atalhoModeloInteiro = esc.nivel === 'ano' ? `
+            <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-modelo-inteiro" onclick="window.mfCompatEscolherModeloInteiro()">Usar o modelo inteiro (todos os anos)</button>
+            <p class="text-small" style="color:var(--text-muted); margin:4px 0 8px;">É o caminho mais rápido e mais comum: pega o modelo inteiro, em qualquer ano.</p>` : '';
+        corpoNivel = `
+            ${atalhoModeloInteiro}
+            <label class="mf-conteudo-label">${MF_COMPAT_NIVEL_LABEL[esc.nivel]}
+                <select class="mf-conteudo-select" id="mf-compat-select-nivel" onchange="window.mfCompatEscolherOpcao(this.value)">
+                    <option value="">Selecione...</option>
+                    ${opcoesHtml}
+                </select>
+            </label>`;
+    }
+
+    // Régua de escala: avisa ANTES de tentar gravar, não depois do erro da ML — o proxy
+    // recusa acima de 200 famílias por chamada (`limite_de_familias`).
+    const acimaDoLimite = esc.selecoes.length > 200;
+    const listaSelecoes = esc.selecoes.length ? `
+        <div style="margin-top:12px;">
+            <p class="text-small" style="font-weight:600;">Vai gravar (${esc.selecoes.length}):</p>
+            ${esc.selecoes.map((s, i) => `
+                <div class="mf-chk-linha mf-chk-ok mf-compat-selecao-item" style="margin-top:4px;">
+                    <div class="mf-chk-texto text-small">${escapeHtml(MF_compatDescreveSelecao(s))}</div>
+                    <button class="mf-conteudo-botao" onclick="window.mfCompatRemoverSelecao(${i})">Remover</button>
+                </div>`).join('')}
+            ${acimaDoLimite ? `<p class="text-small" style="color:var(--red); margin-top:6px;">São ${esc.selecoes.length} veículos — o máximo por vez é 200. Remova alguns antes de gravar.</p>` : ''}
+        </div>` : `<p class="text-small" style="margin-top:12px; color:var(--text-muted);">Nada escolhido ainda.</p>`;
+
+    box.innerHTML = `
+        <div class="mf-conteudo-box">
+            ${blocoTrilha}
+            ${corpoNivel}
+            ${listaSelecoes}
+            <div class="mf-conteudo-rodape">
+                <button class="mf-conteudo-botao" onclick="window.mfCompatAbrirEscada()">Fechar</button>
+                <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-gravar-veiculos"
+                    ${(esc.selecoes.length === 0 || acimaDoLimite) ? 'disabled' : ''}
+                    onclick="window.mfCompatGravarVeiculos()">Gravar${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}</button>
+            </div>
+        </div>`;
+}
+
+window.mfCompatAbrirEscada = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const box = document.getElementById('mf-compat-escada');
+    if (!box) return;
+    const estaFechado = box.style.display === 'none' || !box.style.display;
+    if (!estaFechado) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    if (!state.escadaCompat) {
+        state.escadaCompat = { nivel: 'marca', opcoes: [], carregando: false, erro: null, marca: null, modelo: null, selecoes: [] };
+    }
+    if (!state.escadaCompat.opcoes.length && !state.escadaCompat.erro && !state.escadaCompat.carregando) {
+        await MF_compatCarregarNivel(state, 'marca', {});
+    } else {
+        MF_renderEscadaCompat(state);
+    }
+};
+
+window.mfCompatEscolherOpcao = async function (valorId) {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat || !valorId) return;
+    const esc = state.escadaCompat;
+    const opcao = esc.opcoes.find((o) => String(o.id) === String(valorId));
+    if (!opcao) return;
+
+    if (esc.nivel === 'marca') {
+        esc.marca = { id: opcao.id, nome: opcao.nome };
+        await MF_compatCarregarNivel(state, 'modelo', { brand_id: opcao.id });
+    } else if (esc.nivel === 'modelo') {
+        esc.modelo = { id: opcao.id, nome: opcao.nome };
+        await MF_compatCarregarNivel(state, 'ano', { brand_id: esc.marca.id, model_id: opcao.id });
+    } else if (esc.nivel === 'ano') {
+        MF_compatAdicionarSelecao(state, { year_id: opcao.id, year_nome: opcao.nome });
+    }
+};
+
+window.mfCompatEscolherModeloInteiro = function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    MF_compatAdicionarSelecao(state, {});
+};
+
+window.mfCompatVoltarEscada = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    const esc = state.escadaCompat;
+    if (esc.modelo) { esc.modelo = null; await MF_compatCarregarNivel(state, 'modelo', { brand_id: esc.marca.id }); }
+    else if (esc.marca) { esc.marca = null; await MF_compatCarregarNivel(state, 'marca', {}); }
+};
+
+window.mfCompatTentarNivelDeNovo = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    await MF_compatCarregarNivel(state, state.escadaCompat.nivel, state.escadaCompat.paramsAtuais || {});
+};
+
+window.mfCompatRemoverSelecao = function (i) {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    state.escadaCompat.selecoes.splice(i, 1);
+    MF_renderEscadaCompat(state);
+};
+
+window.mfCompatGravarVeiculos = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    const esc = state.escadaCompat;
+    // Defensivo: o botão já vem `disabled` nesses dois casos (ver MF_renderEscadaCompat),
+    // mas um clique/chamada direta não pode gravar lista vazia nem estourar o limite.
+    if (!esc.selecoes.length || esc.selecoes.length > 200) return;
+
+    const btn = document.getElementById('mf-compat-gravar-veiculos');
+    const rotulo = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+        // Ids como STRING, não número — é o que o proxy pediu explicitamente.
+        const familias = esc.selecoes.map((s) => {
+            const f = { brand_id: String(s.brand_id), model_id: String(s.model_id) };
+            if (s.year_id) f.year_id = String(s.year_id);
+            return f;
+        });
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id, familias }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            return;
+        }
+        // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6) — mesma
+        // régua do botão universal, nunca "resolvido".
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        esc.selecoes = [];
+        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = rotulo; }
     }
 };
 

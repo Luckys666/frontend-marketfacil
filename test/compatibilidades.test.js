@@ -68,6 +68,50 @@ function ambiente({ resposta = null } = {}) {
   return ctx;
 }
 
+// Fixtures no molde do que foi medido em produção (114 marcas por popularidade, 54
+// modelos da VW, 8 anos do T-Cross) — reduzidas, mas na MESMA ordem que a ML devolveu
+// (Fiat, Chevrolet, Volkswagen primeiro). Ids numéricos de propósito: é como a ML manda,
+// e o front precisa converter pra string antes de gravar.
+const MARCAS = [
+  { id: 25, nome: 'Fiat', popularidade: 1 },
+  { id: 9, nome: 'Chevrolet', popularidade: 2 },
+  { id: 45, nome: 'Volkswagen', popularidade: 3 },
+];
+const MODELOS_VW = [
+  { id: 501, nome: 'Gol', popularidade: 1 },
+  { id: 502, nome: 'T-Cross', popularidade: 2 },
+];
+const ANOS_TCROSS = [
+  { id: 2023, nome: '2023' },
+  { id: 2022, nome: '2022' },
+];
+
+/** Ambiente pra escada de veículos: fetch roteado por `nivel=` na querystring. */
+function ambienteVeiculos({ marcas = [], modelos = [], anos = [], erroEm = null, respostaGravar = null } = {}) {
+  const ctx = carregar();
+  const { sandbox } = ctx;
+  ctx.chamadas = [];
+  sandbox.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    ctx.chamadas.push({ url: u, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+    const semQuery = u.split('?')[0];
+    if (opts.method === 'POST' && /\/compatibilidades\/veiculos$/.test(semQuery)) {
+      const r = respostaGravar || { ok: true, status: 200, dados: { ok: true } };
+      return { ok: r.ok, status: r.status, json: async () => r.dados };
+    }
+    const qs = u.split('?')[1] || '';
+    const params = {};
+    qs.split('&').filter(Boolean).forEach((p) => { const [k, v] = p.split('='); params[k] = decodeURIComponent(v || ''); });
+    if (erroEm && erroEm === params.nivel) {
+      return { ok: false, status: 400, json: async () => ({ code: 'nao_deu_pra_consultar' }) };
+    }
+    const porNivel = { marca: marcas, modelo: modelos, ano: anos };
+    return { ok: true, status: 200, json: async () => ({ nivel: params.nivel, opcoes: porNivel[params.nivel] || [], de_cache: false }) };
+  };
+  sandbox.currentAnalysisState = { detail: { id: 'MLB3869799637' }, accessToken: 'TOKEN', containerIdSuffix: '' };
+  return ctx;
+}
+
 async function main() {
   console.log('compatibilidades.test.js');
 
@@ -115,8 +159,10 @@ async function main() {
     check('e mostra quantos veículos já tem', /40/.test(html), html.slice(0, 300));
   }
 
-  console.log('\n== nenhum remédio disponível: só o texto do ML, nada de botão morto ou link chutado ==');
+  console.log('\n== nenhum remédio automático disponível: sobra a escada manual, nada de link chutado ==');
   {
+    // 14/08: antes deste veredito o card ficava só com o texto do ML e nenhuma ação. Agora
+    // "Escolher os veículos" fecha esse buraco — é o remédio manual, sempre disponível.
     const semRemedio = JSON.parse(JSON.stringify(VEREDITO_REAL));
     semRemedio.remedios = [
       { id: 'universal', pode: false, porque: 'ja_tem_lista' },
@@ -128,7 +174,8 @@ async function main() {
     check('sem botão de universal', !/mfCompatUniversal/.test(html), html.slice(0, 400));
     check('sem botão de copiar', !/mfCompatAbrirCandidatos/.test(html), html.slice(0, 400));
     check('sem nenhum link (gerenciador_ml não existe no veredito ainda)', !/<a\s/i.test(html), html.slice(0, 400));
-    check('mas o texto do próprio ML continua lá, como jeito de resolver',
+    check('mas oferece "Escolher os veículos"', /mfCompatAbrirEscada/.test(html), html.slice(0, 600));
+    check('e o texto do próprio ML continua lá também',
       html.includes('Acesse o módulo de Compatibilidade'), html.slice(0, 600));
   }
 
@@ -219,6 +266,222 @@ async function main() {
     await ctx.get('mfCompatUniversal')();
     const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
     check('mostra erro de rede, não fica em silêncio', /n[ãa]o deu para enviar/i.test(erro.textContent), erro.textContent);
+  }
+
+  /* =========================================================================
+     Escolher os veículos manualmente — escada marca → modelo → ano (14/08/2026)
+
+     Fecha o fluxo: até aqui o card só diagnosticava. Cobre: carregando por nível, erro por
+     nível (com Tentar de novo, nunca lista vazia silenciosa), lista vazia de verdade (sem
+     confundir com erro), "modelo inteiro" sem escolher ano, remover item, botão de gravar
+     desabilitado com a lista vazia, ids como STRING no POST, aviso de limite de 200 ANTES
+     de tentar gravar, e sucesso que nunca diz "resolvido".
+     ========================================================================= */
+  console.log('\n== escada: abrir carrega as marcas, na ordem que a ML mandou ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    const abrir = ctx.get('mfCompatAbrirEscada')();
+    // Antes da resposta chegar: MF_compatCarregarNivel já desenhou "carregando" — é
+    // síncrono até o primeiro await do fetch mockado.
+    const duranteCarregamento = ctx.sandbox.document.getElementById('mf-compat-escada').textContent;
+    check('mostra "carregando" antes da resposta chegar', /carregando as marcas/i.test(duranteCarregamento), duranteCarregamento);
+    await abrir;
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('painel abriu (display não é mais none)', ctx.sandbox.document.getElementById('mf-compat-escada').style.display === 'block');
+    check('mostra as 3 marcas, na MESMA ordem que vieram (popularidade)',
+      html.indexOf('Fiat') >= 0 && html.indexOf('Fiat') < html.indexOf('Chevrolet') && html.indexOf('Chevrolet') < html.indexOf('Volkswagen'),
+      html);
+    check('sem jargão técnico (brand_id, nivel=, etc.)', !/brand_id|model_id|nivel=/i.test(html), html);
+
+    const chamouMarca = ctx.chamadas.filter((c) => /nivel=marca/.test(c.url)).length;
+    ctx.get('mfCompatAbrirEscada')(); // fecha
+    check('clicar de novo fecha o painel', ctx.sandbox.document.getElementById('mf-compat-escada').style.display === 'none');
+  }
+
+  console.log('\n== escada: marca → modelo → ano, cada nível busca só quando chega nele ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    check('só buscou marca até aqui', !ctx.chamadas.some((c) => /nivel=modelo|nivel=ano/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
+
+    await ctx.get('mfCompatEscolherOpcao')('45'); // Volkswagen
+    let html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('pediu os modelos da Volkswagen (brand_id=45)', ctx.chamadas.some((c) => /nivel=modelo/.test(c.url) && /brand_id=45/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
+    check('mostra a marca escolhida na trilha', /Volkswagen/.test(html), html.slice(0, 400));
+    check('lista os modelos', /Gol/.test(html) && /T-Cross/.test(html), html.slice(0, 600));
+
+    await ctx.get('mfCompatEscolherOpcao')('502'); // T-Cross
+    html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('pediu os anos do T-Cross (brand_id=45&model_id=502)',
+      ctx.chamadas.some((c) => /nivel=ano/.test(c.url) && /brand_id=45/.test(c.url) && /model_id=502/.test(c.url)),
+      JSON.stringify(ctx.chamadas.map((c) => c.url)));
+    check('trilha mostra marca e modelo', /Volkswagen/.test(html) && /T-Cross/.test(html), html.slice(0, 400));
+    check('oferece "modelo inteiro" em destaque', /mfCompatEscolherModeloInteiro/.test(html), html.slice(0, 800));
+    check('e explica que é o caminho mais rápido e comum', /mais rápido/i.test(html) && /mais comum/i.test(html), html.slice(0, 800));
+    check('lista os anos também (opcional)', /2023/.test(html) && /2022/.test(html), html.slice(0, 800));
+  }
+
+  console.log('\n== escada: "modelo inteiro" entra na lista sem ano, e reinicia pra próxima família ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('entrou na lista como "todos os anos"', /Volkswagen T-Cross \(todos os anos\)/.test(html), html.slice(0, 600));
+    check('reiniciou a escada (trilha vazia, marca de novo)', !/trocar/.test(html.slice(0, html.indexOf('Vai gravar'))) , html.slice(0, 400));
+    check('não pediu marcas de novo — reaproveitou o cache', ctx.chamadas.filter((c) => /nivel=marca/.test(c.url)).length === 1, JSON.stringify(ctx.chamadas.map((c) => c.url)));
+    check('o botão de gravar já habilitou', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(0, 900));
+  }
+
+  console.log('\n== escada: escolher um ano específico entra na lista com esse ano ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    await ctx.get('mfCompatEscolherOpcao')('2023');
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('entrou na lista com o ano', /Volkswagen T-Cross 2023/.test(html), html.slice(0, 600));
+    check('não ficou marcado como "todos os anos"', !/T-Cross 2023 \(todos os anos\)/.test(html), html.slice(0, 600));
+  }
+
+  console.log('\n== escada: remover item da lista ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    ctx.get('mfCompatRemoverSelecao')(0);
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('a lista fica vazia de novo', /Nada escolhido ainda/.test(html), html.slice(0, 600));
+    check('e o botão de gravar volta a ficar desabilitado', /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(0, 900));
+  }
+
+  console.log('\n== escada: erro num nível mostra a mensagem certa + Tentar de novo, nunca lista vazia silenciosa ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, erroEm: 'modelo' });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45'); // dispara nivel=modelo, que falha
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('mostra a mensagem traduzida do código de erro', /n[ãa]o deu para consultar agora/i.test(html), html.slice(0, 600));
+    check('não vira "nenhuma opção encontrada" (isso seria mentir sobre a causa)', !/nenhuma op[çc][ãa]o encontrada/i.test(html), html.slice(0, 600));
+    check('oferece tentar de novo', /mfCompatTentarNivelDeNovo/.test(html), html.slice(0, 600));
+
+    // Corrige o mock e tenta de novo — mesmo nível, mesmos parâmetros (brand_id=45).
+    ctx.sandbox.fetch = async (url, opts = {}) => {
+      ctx.chamadas.push({ url: String(url), method: opts.method || 'GET' });
+      return { ok: true, status: 200, json: async () => ({ nivel: 'modelo', opcoes: MODELOS_VW, de_cache: false }) };
+    };
+    await ctx.get('mfCompatTentarNivelDeNovo')();
+    const html2 = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('tentar de novo busca o MESMO nível (modelo) de novo', ctx.chamadas.some((c) => /nivel=modelo/.test(c.url) && /brand_id=45/.test(c.url)));
+    check('e agora mostra os modelos', /Gol/.test(html2) && /T-Cross/.test(html2), html2.slice(0, 600));
+  }
+
+  console.log('\n== escada: lista vazia de verdade é diferente de erro ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: [] }); // marca sem nenhum modelo catalogado
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('diz que não tem opção, não que falhou', /nenhuma op[çc][ãa]o encontrada/i.test(html), html.slice(0, 400));
+    check('não oferece "tentar de novo" pra uma lista vazia de verdade', !/mfCompatTentarNivelDeNovo/.test(html), html.slice(0, 400));
+  }
+
+  console.log('\n== escada: mais de 200 famílias avisa ANTES de tentar gravar ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    ctx.sandbox.currentAnalysisState.escadaCompat.marca = { id: 45, nome: 'Volkswagen' };
+    ctx.sandbox.currentAnalysisState.escadaCompat.modelo = { id: 502, nome: 'T-Cross' };
+    for (let i = 0; i < 201; i++) {
+      ctx.sandbox.currentAnalysisState.escadaCompat.selecoes.push({ brand_id: 45, brand_nome: 'Volkswagen', model_id: 502, model_nome: 'T-Cross', year_id: 2000 + i, year_nome: String(2000 + i) });
+    }
+    ctx.get('MF_renderEscadaCompat')(ctx.sandbox.currentAnalysisState);
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('avisa do limite antes de qualquer tentativa de gravar', /m[áa]ximo por vez é 200/i.test(html), html.slice(-500));
+    check('o botão de gravar fica desabilitado', /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(-500));
+
+    const chamadasAntes = ctx.chamadas.length;
+    await ctx.get('mfCompatGravarVeiculos')();
+    check('chamar gravar mesmo assim não manda nada (defensivo)', ctx.chamadas.length === chamadasAntes, JSON.stringify(ctx.chamadas.slice(chamadasAntes)));
+  }
+
+  console.log('\n== escada: lista vazia não deixa gravar ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('botão de gravar nasce desabilitado, lista vazia', /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(-500));
+    const chamadasAntes = ctx.chamadas.length;
+    await ctx.get('mfCompatGravarVeiculos')();
+    check('chamar gravar com lista vazia não manda nada', ctx.chamadas.length === chamadasAntes, JSON.stringify(ctx.chamadas.slice(chamadasAntes)));
+  }
+
+  console.log('\n== escada: gravar manda os ids como STRING, nunca resolvido ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS,
+      respostaGravar: { ok: true, status: 200, dados: { ok: true, criadas: 2, afetou_familia: 1 } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')(); // família 1: Volkswagen T-Cross, todos os anos
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('9'); // Chevrolet
+    await ctx.get('mfCompatEscolherOpcao')('501'); // Gol (reaproveitando os modelos da VW no mock — só testando o ano)
+    await ctx.get('mfCompatEscolherOpcao')('2022'); // família 2: com ano
+
+    await ctx.get('mfCompatGravarVeiculos')();
+    const grava = ctx.chamadas.find((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url));
+    check('chama a rota de escrita', !!grava, JSON.stringify(ctx.chamadas.map((c) => c.url)));
+    check('manda o item_id', grava && grava.body.item_id === 'MLB3869799637', JSON.stringify(grava && grava.body));
+    check('manda as duas famílias', grava && Array.isArray(grava.body.familias) && grava.body.familias.length === 2, JSON.stringify(grava && grava.body));
+    const f1 = grava && grava.body.familias[0];
+    const f2 = grava && grava.body.familias[1];
+    check('ids como STRING, não número', f1 && typeof f1.brand_id === 'string' && typeof f1.model_id === 'string', JSON.stringify(f1));
+    check('família sem ano não manda year_id', f1 && !('year_id' in f1), JSON.stringify(f1));
+    check('família com ano manda year_id como STRING também', f2 && typeof f2.year_id === 'string', JSON.stringify(f2));
+
+    const aviso = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('avisa que foi ENVIADO, nunca "resolvido"', /enviado/i.test(aviso.textContent) && !/resolvido|reativado/i.test(aviso.textContent), aviso.textContent);
+    check('recarrega o veredito depois', ctx.chamadas.some((c) => /\/api\/compatibilidades\?item_id=/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
+  }
+
+  console.log('\n== escada: erro ao gravar não vira sucesso, e a lista não se perde ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS,
+      respostaGravar: { ok: false, status: 400, dados: { code: 'limite_de_familias' } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+
+    await ctx.get('mfCompatGravarVeiculos')();
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('mostra a mensagem do código de erro', /m[áa]ximo por envio é 200/i.test(erro.textContent), erro.textContent);
+    check('a seleção continua na lista — não se perde num erro', ctx.sandbox.currentAnalysisState.escadaCompat.selecoes.length === 1,
+      JSON.stringify(ctx.sandbox.currentAnalysisState.escadaCompat.selecoes));
   }
 
   console.log(`\n${pass} ok, ${fail} falhas`);
