@@ -333,6 +333,8 @@ const tagSignificados = {
 const TAGS_NEGATIVAS = new Set([
     "poor_quality_picture", "poor_quality_thumbnail",
     "incomplete_technical_specs", "moderation_penalty",
+    // `pending_compatibilities` fica DE FORA de propósito: pelo COMPAT-SPEC §3 ela é sinal
+    // informativo (há sugestões do ML esperando), não penalidade — não "consertar" isso.
     "incomplete_compatibilities"
 ]);
 
@@ -7230,7 +7232,10 @@ async function fetchCompatibilidades(itemId, accessToken) {
 // Tradução de `code` pra frase. QUAL código sai é decisão do proxy — aqui só o texto.
 const MF_COMPAT_ERROS = {
     ja_tem_lista: 'Este anúncio já tem veículos indicados. Para marcar como universal, o Mercado Livre pede para remover a lista antes.',
-    sem_permissao: 'O app não tem permissão para gravar isso. Dá para resolver direto no Mercado Livre.',
+    // Sem link clicável de propósito: a URL do Gerenciador de Compatibilidades ainda não
+    // foi levantada (COMPAT-SPEC §10.6). Descreve o caminho sem fingir que há atalho aqui
+    // — quando a URL existir, o link entra e o texto volta a prometer.
+    sem_permissao: 'O app não tem permissão para gravar isso. Você consegue resolver pelo próprio Mercado Livre, na página do anúncio.',
     // Medido em 13/08 nos terminais rotulares (categoria MLB194168): universal desabilitado
     // pra essa categoria. Tentar de novo dá o mesmo erro sempre.
     categoria_nao_aceita: 'O Mercado Livre não aceita "serve em qualquer veículo" nesta categoria.',
@@ -7398,7 +7403,7 @@ window.mfCompatAbrirCandidatos = async function () {
         }
         box.innerHTML = candidatos.map((c) => `
             <div class="mf-chk-linha" style="margin-top:6px;">
-                <div class="mf-chk-texto text-small">${escapeHtml(c.titulo || c.item_id)} — <strong>${c.veiculos || 0} veículos</strong></div>
+                <div class="mf-chk-texto text-small">${escapeHtml(c.titulo || c.item_id)} — <strong>${escapeHtml(String(c.veiculos || 0))} veículos</strong></div>
                 <button class="mf-conteudo-botao mf-conteudo-botao-rapido" onclick="window.mfCompatCopiar('${escapeHtml(c.item_id)}')">Copiar deste</button>
             </div>`).join('');
     } catch (e) {
