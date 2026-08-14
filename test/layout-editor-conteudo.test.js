@@ -80,6 +80,36 @@ const veredictoCompat = {
 ctxCompat.get('exibirCompatibilidades')(veredictoCompat, 'compat');
 const htmlCompat = ctxCompat.reg['compat'].innerHTML;
 
+/*
+ * Escada "Escolher os veículos" (14/08/2026, Task 8) — a lista cheia é o pior caso: 8
+ * seleções com nomes de marca+modelo+ano compridos ("Volkswagen Nivus Highline 250 TSI
+ * 2024"), cada linha com botão de Remover, MAIS o nível "ano" aberto (select + o botão de
+ * destaque "Usar o modelo inteiro") ao mesmo tempo — é a combinação mais carregada que a
+ * tela pode mostrar de uma vez.
+ */
+const ctxEscada = carregar();
+const stateEscada = {
+  detail: { id: 'MLB3869799637' }, accessToken: 'T', containerIdSuffix: '',
+  escadaCompat: {
+    nivel: 'ano', carregando: false, erro: null,
+    marca: { id: 45, nome: 'Volkswagen' }, modelo: { id: 502, nome: 'T-Cross' },
+    opcoes: [{ id: 2023, nome: '2023' }, { id: 2022, nome: '2022' }, { id: 2021, nome: '2021' }],
+    selecoes: [
+      { brand_id: 45, brand_nome: 'Volkswagen', model_id: 502, model_nome: 'T-Cross', year_id: 2023, year_nome: '2023' },
+      { brand_id: 45, brand_nome: 'Volkswagen', model_id: 503, model_nome: 'Nivus Highline 250 TSI', year_id: 2024, year_nome: '2024' },
+      { brand_id: 9, brand_nome: 'Chevrolet', model_id: 601, model_nome: 'Onix Plus Turbo Premier', year_id: null, year_nome: null },
+      { brand_id: 25, brand_nome: 'Fiat', model_id: 701, model_nome: 'Toro Ranch Diesel 4x4 Ultra', year_id: null, year_nome: null },
+      { brand_id: 9, brand_nome: 'Chevrolet', model_id: 602, model_nome: 'Tracker Premier Turbo', year_id: null, year_nome: null },
+      { brand_id: 25, brand_nome: 'Fiat', model_id: 702, model_nome: 'Pulse Abarth Turbo 200 Impetus', year_id: 2023, year_nome: '2023' },
+      { brand_id: 45, brand_nome: 'Volkswagen', model_id: 504, model_nome: 'Polo Track Sense MSI', year_id: null, year_nome: null },
+      { brand_id: 9, brand_nome: 'Chevrolet', model_id: 603, model_nome: 'Spin Activ7 Premier', year_id: 2022, year_nome: '2022' },
+    ],
+  },
+};
+ctxEscada.sandbox.currentAnalysisState = stateEscada;
+ctxEscada.get('MF_renderEscadaCompat')(stateEscada);
+const htmlEscada = ctxEscada.reg['mf-compat-escada'].innerHTML;
+
 const PAGINA = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}
 body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
 /* O checklist tem overflow escondido: é ele que corta o que vaza. */
@@ -94,6 +124,7 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
   <div class="simula-card" id="card-desc">${htmlDescricao}</div>
   <div class="simula-card" id="card-gar" style="margin-top:14px">${htmlGarantia}</div>
   <div class="simula-card" id="card-compat" style="margin-top:14px">${htmlCompat}</div>
+  <div class="simula-card" id="card-escada" style="margin-top:14px">${htmlEscada}</div>
 </div></div></body></html>`;
 
 (async () => {
@@ -125,6 +156,22 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
           foraEsquerda: Math.round(cr.left - r.left),
           cortado: e.scrollWidth > e.clientWidth + 1,
         };
+      };
+      // Igual a medirDentro, mas pra TODAS as ocorrências — a lista de seleções da escada
+      // tem 8 linhas, e uma só não seria o pior caso.
+      const medirTodos = (cardSel, sel) => {
+        const card = document.querySelector(cardSel);
+        if (!card) return [];
+        const cr = card.getBoundingClientRect();
+        return Array.from(card.querySelectorAll(sel)).map((e) => {
+          const r = e.getBoundingClientRect();
+          return {
+            larg: Math.round(r.width), alt: Math.round(r.height),
+            foraDireita: Math.round(r.right - cr.right),
+            foraEsquerda: Math.round(cr.left - r.left),
+            cortado: e.scrollWidth > e.clientWidth + 1,
+          };
+        });
       };
       // `.ana-wrapper button` põe TODO botão em caixa alta. Só a tela mostrou isso
       // (12/08): "ESCREVER DESCRIÇÃO" gritava dentro do checklist.
@@ -172,6 +219,18 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         compatBotaoCopiar: medirDentro('#card-compat', '#mf-compat-copiar'),
         transformCompatUniversal: caixaAlta('#mf-compat-universal'),
         transformCompatCopiar: caixaAlta('#mf-compat-copiar'),
+
+        // Escada "Escolher os veículos" (Task 8) — lista cheia (8 seleções, nomes longos)
+        // + nível "ano" aberto ao mesmo tempo (select + botão "modelo inteiro" em destaque).
+        escadaCaixa: medirDentro('#card-escada', '.mf-conteudo-box'),
+        escadaTrilha: medirDentro('#card-escada', '.mf-compat-trilha'),
+        escadaSelect: medirDentro('#card-escada', '#mf-compat-select-nivel'),
+        escadaModeloInteiro: medirDentro('#card-escada', '#mf-compat-modelo-inteiro'),
+        escadaGravar: medirDentro('#card-escada', '#mf-compat-gravar-veiculos'),
+        escadaItens: medirTodos('#card-escada', '.mf-compat-selecao-item'),
+        escadaRemover: medirTodos('#card-escada', '.mf-compat-selecao-item .mf-conteudo-botao'),
+        transformEscadaGravar: caixaAlta('#mf-compat-gravar-veiculos'),
+        transformEscadaModeloInteiro: caixaAlta('#mf-compat-modelo-inteiro'),
       };
     });
 
@@ -243,6 +302,27 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     check(`${larg}px: os botões de remédio não saem em CAIXA ALTA`,
       m.transformCompatUniversal !== 'uppercase' && m.transformCompatCopiar !== 'uppercase',
       `universal=${m.transformCompatUniversal} copiar=${m.transformCompatCopiar}`);
+
+    // ── escada "Escolher os veículos" (Task 8, 14/08) ──
+    // Pior caso: 8 seleções com nomes de marca+modelo+ano compridos, cada uma com botão de
+    // Remover, MAIS o nível "ano" aberto (select + "Usar o modelo inteiro" em destaque).
+    check(`${larg}px: o painel da escada não vaza`, dentro0(m.escadaCaixa), JSON.stringify(m.escadaCaixa));
+    check(`${larg}px: e não fica cortado`, m.escadaCaixa && !m.escadaCaixa.cortado, JSON.stringify(m.escadaCaixa));
+    check(`${larg}px: a trilha (marca › modelo) não vaza`, dentro0(m.escadaTrilha), JSON.stringify(m.escadaTrilha));
+    check(`${larg}px: o select do nível não vaza`, dentro0(m.escadaSelect), JSON.stringify(m.escadaSelect));
+    check(`${larg}px: "Usar o modelo inteiro" não vaza`, dentro0(m.escadaModeloInteiro), JSON.stringify(m.escadaModeloInteiro));
+    check(`${larg}px: e não fica cortado`, m.escadaModeloInteiro && !m.escadaModeloInteiro.cortado, JSON.stringify(m.escadaModeloInteiro));
+    check(`${larg}px: "Gravar" não vaza`, dentro0(m.escadaGravar), JSON.stringify(m.escadaGravar));
+    check(`${larg}px: e não fica cortado`, m.escadaGravar && !m.escadaGravar.cortado, JSON.stringify(m.escadaGravar));
+    check(`${larg}px: as 8 linhas da lista de seleção existem`, m.escadaItens.length === 8, String(m.escadaItens.length));
+    check(`${larg}px: NENHUMA das 8 linhas vaza`, m.escadaItens.every(dentro0), JSON.stringify(m.escadaItens));
+    check(`${larg}px: NENHUMA das 8 linhas fica cortada (nome comprido tipo "Nivus Highline 250 TSI")`,
+      m.escadaItens.every((x) => !x.cortado), JSON.stringify(m.escadaItens));
+    check(`${larg}px: os 8 botões de Remover existem e nenhum vaza`,
+      m.escadaRemover.length === 8 && m.escadaRemover.every(dentro0), JSON.stringify(m.escadaRemover));
+    check(`${larg}px: "Gravar" e "modelo inteiro" não saem em CAIXA ALTA`,
+      m.transformEscadaGravar !== 'uppercase' && m.transformEscadaModeloInteiro !== 'uppercase',
+      `gravar=${m.transformEscadaGravar} modeloInteiro=${m.transformEscadaModeloInteiro}`);
 
     // No celular os botões ganham a linha inteira; espremidos ao lado do contador, "Salvar
     // descrição" quebrava no meio da palavra.
