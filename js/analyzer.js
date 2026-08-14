@@ -325,10 +325,15 @@ const tagSignificados = {
     "catalog_product_candidate": "Este anúncio é um candidato a usar o catálogo do Mercado Livre.",
     "moderation_penalty": "Penalidade por moderação. Violação de regra detectada.",
     "free_shipping": "O anúncio oferece frete grátis.",
+    // Compatibilidades de autopeças (13/08/2026) — deixam de ser a string crua em
+    // inglês no meio das tags neutras (COMPAT-SPEC §6).
+    "incomplete_compatibilities": "O Mercado Livre pede os veículos em que esta peça serve.",
+    "pending_compatibilities": "O Mercado Livre sugeriu veículos para este anúncio.",
 };
 const TAGS_NEGATIVAS = new Set([
     "poor_quality_picture", "poor_quality_thumbnail",
-    "incomplete_technical_specs", "moderation_penalty"
+    "incomplete_technical_specs", "moderation_penalty",
+    "incomplete_compatibilities"
 ]);
 
 const BASE_URL_PROXY = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
@@ -345,6 +350,8 @@ const API_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/description`;
 const API_GARANTIA_ENDPOINT = `${BASE_URL_PROXY}/api/warranty`;
 const API_GARANTIA_VALORES_ENDPOINT = `${BASE_URL_PROXY}/api/warranty-values`;
 const API_GPT_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/gpt-descricao`;
+// Compatibilidades de autopeças (13/08/2026). Veredito pronto — nenhum limiar mora aqui.
+const API_COMPAT_ENDPOINT = `${BASE_URL_PROXY}/api/compatibilidades`;
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -1568,7 +1575,7 @@ window.saveAttr = async function (attrId) {
 
 function reRenderAnalysisView() {
     if (!window.currentAnalysisState) return;
-    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData, performanceData } = window.currentAnalysisState;
+    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData, performanceData, compatData } = window.currentAnalysisState;
 
     // Update dependent components
     processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
@@ -1576,6 +1583,8 @@ function reRenderAnalysisView() {
     // Checklist junto: descrição e garantia agora se resolvem por ele, e um "❌ Não
     // preenchida" que sobrevive ao próprio salvamento faz o vendedor salvar de novo.
     exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`);
+    // Compatibilidades também acompanha o resto — mantém o card em dia com o estado.
+    exibirCompatibilidades(compatData, `compatibilidades${containerIdSuffix}`);
 
     // Re-render score WITH analysisData so improvements panel persists
     const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
@@ -2024,12 +2033,14 @@ const MF_TAG_CATALOG = {
     poor_quality_thumbnail:      { sev: 'neg', label: 'Thumb ruim' },
     incomplete_technical_specs:  { sev: 'neg', label: 'Specs incompletas' },
     moderation_penalty:          { sev: 'neg', label: 'Punição mod.' },
+    incomplete_compatibilities:  { sev: 'neg', label: 'Faltam veículos compatíveis' },
     low_health:                  { sev: 'neg', label: 'Saúde baixa' },
     manufacturing_time:          { sev: 'neg', label: 'Sob encomenda' },
     forbidden:                   { sev: 'neg', label: 'Proibido' },
     // Neutras / informacionais (cinza)
     catalog_listing:             { sev: 'info', label: 'Catálogo' },
     dragged_bids_and_visits:     { sev: 'info', label: 'Histórico migrado' },
+    pending_compatibilities:     { sev: 'info', label: 'Veículos sugeridos pelo ML' },
     // Ignoradas (técnicas)
     user_product_listing:        { sev: 'ignore' },
     variations_migration_uptin:  { sev: 'ignore' },
@@ -3534,6 +3545,20 @@ function MF_erroAtalho(chave, msg) {
     if (!el) return;
     el.style.display = 'block';
     el.textContent = msg;
+}
+
+/**
+ * Aviso do atalho, não erro (compatibilidades, 13/08/2026). Reusa a mesma caixa —
+ * `.mf-conteudo-erro` — mas com a variante `.mf-conteudo-info` (azul), a mesma que a
+ * sugestão de IA da descrição usa: sem isso, "Enviado, o ML leva um tempo para reativar"
+ * sairia vermelho, como se tivesse dado errado.
+ */
+function MF_avisoAtalho(chave, msg) {
+    const el = document.getElementById(`mf-rapido-erro-${chave}`);
+    if (!el) return;
+    el.style.display = 'block';
+    el.textContent = msg;
+    el.className = 'mf-conteudo-erro mf-conteudo-info';
 }
 
 /**
@@ -6402,7 +6427,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         const detectedSite = (window.MF_siteIdFromItemId ? window.MF_siteIdFromItemId(itemId) : 'MLB');
         window.MF_CURRENT_SITE = detectedSite;
         console.log(`--- Iniciando Análise: ${itemId} (tipo: ${parsed.type}, site: ${detectedSite}) ---`);
-        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null, moderacaoData = null, qualidadeFichaData = null;
+        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null, moderacaoData = null, qualidadeFichaData = null, compatData = null;
 
         try {
             [accessToken, userId] = await Promise.all([fetchAccessToken(), fetchUserIdForScraping()]);
@@ -6563,7 +6588,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                 fetchPurchaseExperience(detail.id, accessToken).catch(() => null),
                 // Moderação e ficha pelos olhos do ML — uma chamada cada, junto das demais
                 fetchModeracaoAtiva(detail.id, accessToken).catch(() => null),
-                fetchQualidadeFicha(detail.id, accessToken).catch(() => null)
+                fetchQualidadeFicha(detail.id, accessToken).catch(() => null),
+                // Compatibilidades de autopeças (COMPAT-SPEC.md) — falhou → null, mesmo
+                // contrato das demais (feedback_falha_nunca_vira_zero).
+                fetchCompatibilidades(detail.id, accessToken).catch(() => null)
             ]);
             visitsData = results[0].status === 'fulfilled' ? results[0].value : null;
             reviewsData = results[1].status === 'fulfilled' ? results[1].value : null;
@@ -6572,6 +6600,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             purchaseExperienceData = results[4].status === 'fulfilled' ? results[4].value : null;
             moderacaoData = results[5].status === 'fulfilled' ? results[5].value : null;
             qualidadeFichaData = results[6].status === 'fulfilled' ? results[6].value : null;
+            compatData = results[7].status === 'fulfilled' ? results[7].value : null;
         }
 
         if (detail && detail.category_id && accessToken) {
@@ -6608,6 +6637,11 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                          vem antes dos números porque o anúncio está fora do ar -->
                     <div id="moderacaoAtiva${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
+                    <!-- ROW 2.6: Veículos compatíveis (autopeças) — API /api/compatibilidades,
+                         COMPAT-SPEC.md. Junto da moderação: mesma família de "por que está
+                         fora do ar" -->
+                    <div id="compatibilidades${containerIdSuffix}" style="margin-bottom:16px;"></div>
+
                     <!-- ROW 3: Product Ads -->
                     <div id="adsMetrics${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
@@ -6642,7 +6676,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Store global state for UI toggles
             window.currentAnalysisState = {
-                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData,
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData, compatData,
                 // userId vai junto pra sugestão de descrição não ter que ir buscar de novo
                 // no Bubble a cada clique.
                 userId
@@ -6668,6 +6702,9 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Moderação ativa (API ML /moderations/details) — motivo e solução do próprio ML
             exibirModeracao(moderacaoData, `moderacaoAtiva${containerIdSuffix}`);
+
+            // Veículos compatíveis (autopeças) — API /api/compatibilidades (COMPAT-SPEC.md)
+            exibirCompatibilidades(compatData, `compatibilidades${containerIdSuffix}`);
 
             // Ficha técnica na visão do ML (API ML /catalog_quality/status)
             exibirQualidadeFicha(qualidadeFichaData, categoryAttributes, `qualidadeFicha${containerIdSuffix}`);
@@ -7174,5 +7211,215 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     }
     return Math.max(0, Math.min(Math.round(score), 100));
 }
+
+/* =========================================================================
+   Veículos compatíveis (autopeças) — COMPAT-SPEC.md (13/08/2026)
+
+   O proxy decide (situação, certeza, quem pode escrever); aqui só se desenha o que ele
+   manda e se traduz `code` de erro pra frase. Vocabulário: a tela NUNCA escreve
+   incomplete_compatibilities, waiting_for_patch, under_review, WITHOUT_COMPATS nem
+   "compatibilities" cru (COMPAT-SPEC §6). Nenhum limiar, peso ou regra de elegibilidade
+   mora aqui — isso é o que `_regras/inteligencia-no-servidor.md` proíbe.
+   ========================================================================= */
+
+/** Veredito único do anúncio — mesmo contrato dos outros do allSettled: falhou → null. */
+async function fetchCompatibilidades(itemId, accessToken) {
+    return fetchApiData(`${API_COMPAT_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, accessToken);
+}
+
+// Tradução de `code` pra frase. QUAL código sai é decisão do proxy — aqui só o texto.
+const MF_COMPAT_ERROS = {
+    ja_tem_lista: 'Este anúncio já tem veículos indicados. Para marcar como universal, o Mercado Livre pede para remover a lista antes.',
+    sem_permissao: 'O app não tem permissão para gravar isso. Dá para resolver direto no Mercado Livre.',
+    // Medido em 13/08 nos terminais rotulares (categoria MLB194168): universal desabilitado
+    // pra essa categoria. Tentar de novo dá o mesmo erro sempre.
+    categoria_nao_aceita: 'O Mercado Livre não aceita "serve em qualquer veículo" nesta categoria.',
+    sem_candidatos: 'Nenhum outro anúncio seu tem veículos compatíveis para copiar.',
+    muitas_chamadas: 'Muitas consultas seguidas. Espere um minuto e tente de novo.',
+    nao_deu_pra_consultar: 'Não deu para consultar agora.',
+    ml_recusou: 'O Mercado Livre não aceitou.',
+};
+
+// Classes existentes de .status-badge (success/error/neutral/muted) — 'neutral' já é o
+// amarelo de "atenção" usado em "Pausado" (linha ~1769), não existe .warning no CSS.
+const MF_COMPAT_SELOS = {
+    fora_do_ar: { classe: 'error', selo: 'Fora do ar' },
+    em_risco: { classe: 'neutral', selo: 'Atenção' },
+    ok: { classe: 'success', selo: 'Tudo certo' },
+};
+
+function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    // Falha de leitura NUNCA vira "não tem compatibilidade" (feedback_falha_nunca_vira_zero).
+    if (!veredito) {
+        el.innerHTML = `
+        <div class="ana-card">
+            <div class="ana-card-header">
+                <span class="ana-card-icon">🚗</span>
+                <span class="ana-card-title">Veículos compatíveis</span>
+            </div>
+            <p class="text-small">Não deu para consultar agora.
+                <button class="mf-conteudo-botao" onclick="window.mfCompatRecarregar()">Tentar de novo</button>
+            </p>
+        </div>`;
+        return;
+    }
+    if (!veredito.exige) { el.innerHTML = ''; return; }
+
+    const sel = MF_COMPAT_SELOS[veredito.situacao] || MF_COMPAT_SELOS.em_risco;
+    const universal = (veredito.remedios || []).find((r) => r.id === 'universal') || { pode: false };
+    const copiar = (veredito.remedios || []).find((r) => r.id === 'copiar') || { pode: false };
+
+    // "Fora do ar" com certeza de INDÍCIO não liga uma coisa na outra: o app não afirma
+    // causa que a ML não confirmou (COMPAT-SPEC §6).
+    const frase = veredito.situacao === 'fora_do_ar'
+        ? (veredito.certeza === 'moderacao'
+            ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
+            : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
+        : veredito.situacao === 'ok'
+            ? `${(veredito.ja_preenchido && veredito.ja_preenchido.total) || 0} veículos indicados.`
+            : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
+
+    const desde = veredito.desde ? ` <span class="text-small" style="color:var(--text-muted);">desde ${escapeHtml(veredito.desde)}</span>` : '';
+
+    // Texto do próprio ML, em bloco separado e marcado como dele — mesmo padrão da
+    // moderação (exibirModeracao). Quando NENHUM remédio está disponível, é só isto que
+    // aparece: nada de botão morto nem link chutado (o remédio `gerenciador_ml` ainda não
+    // existe no veredito — a URL não foi levantada, ver COMPAT-SPEC §10.6).
+    const blocoML = veredito.texto_ml && veredito.texto_ml.motivo ? `
+        <div style="padding:10px 12px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted); margin-top:10px;">
+            <div class="text-small"><strong>O que o Mercado Livre diz:</strong> ${escapeHtml(veredito.texto_ml.motivo)}</div>
+            ${veredito.texto_ml.como_resolver ? `<div class="text-small" style="margin-top:4px;">${escapeHtml(veredito.texto_ml.como_resolver)}</div>` : ''}
+        </div>` : '';
+
+    // A família aparece ANTES de qualquer botão: a escrita por user-product cai em todos
+    // os anúncios do grupo (COMPAT-SPEC §7.4). `itens` ainda vem `null` na Fase 1 — número
+    // que não foi medido não vira número, e não vira aviso vago também.
+    const famItens = veredito.afeta_familia && veredito.afeta_familia.itens;
+    const avisoFamilia = (typeof famItens === 'number' && famItens > 1)
+        ? `<div class="text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
+        : '';
+
+    const botaoUniversal = universal.pode
+        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" onclick="window.mfCompatUniversal()">Serve em qualquer veículo</button>`
+        : '';
+    const botaoCopiar = copiar.pode
+        ? `<button class="mf-conteudo-botao" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
+        : '';
+    const acoes = botaoUniversal + botaoCopiar;
+
+    // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem
+    // placar. Nunca inventar número aqui (amigavel-e-gamificacao: não custa honestidade).
+    const placar = veredito.placar_conta
+        ? `<span class="text-small" style="margin-left:auto; color:var(--text-muted);">${veredito.placar_conta.parados === 0 ? 'Nenhum anúncio parado 🎉' : `${veredito.placar_conta.resolvidos} de ${veredito.placar_conta.parados} resolvidos`}</span>`
+        : '';
+
+    el.innerHTML = `
+    <div class="ana-card">
+        <div class="ana-card-header">
+            <span class="ana-card-icon">🚗</span>
+            <span class="ana-card-title">Veículos compatíveis</span>
+            ${placar}
+        </div>
+        <span class="status-badge ${sel.classe}">${sel.selo}</span>${desde}
+        <p class="text-small" style="margin-top:8px;">${frase}</p>
+        ${blocoML}
+        ${avisoFamilia}
+        ${acoes ? `<div class="mf-chk-linha" style="margin-top:10px;">${acoes}</div>` : ''}
+        <div id="mf-rapido-erro-compat" class="mf-conteudo-erro" style="display:none;"></div>
+        <div id="mf-compat-candidatos" style="display:none; margin-top:10px;"></div>
+    </div>`;
+}
+
+window.mfCompatUniversal = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const btn = document.getElementById('mf-compat-universal');
+    const rotulo = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    // Categoria sem universal habilitado: descoberto só na resposta do POST (a régua de
+    // §5.3 do proxy olha só `ja_preenchido.total`, não a categoria). Tentar de novo dá o
+    // mesmo erro sempre — o botão não pode voltar como se fosse resolver.
+    let semRetentativa = false;
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/universal`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            if (dados.code === 'categoria_nao_aceita') semRetentativa = true;
+            return;
+        }
+        // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6).
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    } finally {
+        if (btn) {
+            if (semRetentativa) { btn.disabled = true; btn.style.display = 'none'; }
+            else { btn.disabled = false; btn.textContent = rotulo; }
+        }
+    }
+};
+
+window.mfCompatRecarregar = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+    exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+};
+
+/** Tela de conferência do remédio "copiar" — nunca copia sem o vendedor ver de onde vem (COMPAT-SPEC §7.1). */
+window.mfCompatAbrirCandidatos = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const box = document.getElementById('mf-compat-candidatos');
+    if (!box) return;
+    box.style.display = 'block';
+    box.innerHTML = '<p class="text-small">Buscando anúncios com veículos cadastrados...</p>';
+    try {
+        const dados = await fetchApiData(`${API_COMPAT_ENDPOINT}/candidatos?item_id=${encodeURIComponent(state.detail.id)}`, state.accessToken);
+        const candidatos = (dados && Array.isArray(dados.candidatos)) ? dados.candidatos : [];
+        if (!candidatos.length) {
+            box.innerHTML = '<p class="text-small">Nenhum outro anúncio seu tem veículos compatíveis para copiar agora.</p>';
+            return;
+        }
+        box.innerHTML = candidatos.map((c) => `
+            <div class="mf-chk-linha" style="margin-top:6px;">
+                <div class="mf-chk-texto text-small">${escapeHtml(c.titulo || c.item_id)} — <strong>${c.veiculos || 0} veículos</strong></div>
+                <button class="mf-conteudo-botao mf-conteudo-botao-rapido" onclick="window.mfCompatCopiar('${escapeHtml(c.item_id)}')">Copiar deste</button>
+            </div>`).join('');
+    } catch (e) {
+        box.innerHTML = '<p class="text-small">Não deu para buscar os candidatos agora.</p>';
+    }
+};
+
+window.mfCompatCopiar = async function (fonteId) {
+    const state = window.currentAnalysisState;
+    if (!state || !fonteId) return;
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/copiar`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id, fonte_item_id: fonteId }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            return;
+        }
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        await window.mfCompatRecarregar();
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    }
+};
 
 // End of Analyzer Logic
