@@ -237,6 +237,21 @@ async function main() {
     check('o botão convida a somar, não a começar do zero', /Adicionar mais ve[íi]culos/i.test(html), html.slice(0, 400));
   }
 
+  // Medido em 15/08/2026, e a doc de moderações confirma ("pode ser reativada realizando
+  // alterações NELA"): gravar a compatibilidade no user-product NÃO reativa. O anúncio
+  // ficou 20h parado com a lista pronta; voltou no segundo em que o item mudou (+1 no
+  // estoque). Sem essa frase o vendedor grava, não acontece nada e acha que quebrou.
+  console.log('\n== fora do ar com lista pronta: diz que falta mexer no anúncio ==');
+  {
+    const parcial = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    parcial.ja_preenchido = { total: 2, do_vendedor: 2, do_catalogo: 0 };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(parcial, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('conta o segundo passo', /altera[çc][ãa]o no an[úu]ncio/i.test(html), html.slice(0, 500));
+    check('dá um exemplo concreto de alteração', /estoque/i.test(html), html.slice(0, 500));
+  }
+
   // Contagem no singular: "1 veículos" é o tipo de detalhe que faz a tela parecer robô.
   console.log('\n== fora do ar com 1 veículo só ==');
   {
@@ -272,7 +287,10 @@ async function main() {
     const aviso = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
     check('avisa que foi ENVIADO, não que o anúncio foi reativado',
       /enviado/i.test(aviso.textContent) && !/reativado|resolvido/i.test(aviso.textContent), aviso.textContent);
-    check('diz que o ML leva um tempo', /leva um tempo/i.test(aviso.textContent), aviso.textContent);
+    // 15/08/2026: "leva um tempo" era falso — o ML não reprocessa sozinho. Ele espera o
+    // anúncio mudar. A mensagem tem que mandar o vendedor para o segundo passo.
+    check('manda o vendedor mexer no anúncio', /altera[çc][ãa]o no an[úu]ncio/i.test(aviso.textContent), aviso.textContent);
+    check('com exemplo concreto', /estoque/i.test(aviso.textContent), aviso.textContent);
     check('usa a caixa de aviso (info), não a de erro (vermelha)', /mf-conteudo-info/.test(aviso.className), aviso.className);
     check('recarrega o veredito depois de gravar', ctx.chamadas.some((x) => /\/api\/compatibilidades\?item_id=/.test(x.url)), JSON.stringify(ctx.chamadas.map((x) => x.url)));
   }

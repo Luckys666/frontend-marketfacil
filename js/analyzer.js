@@ -3552,7 +3552,7 @@ function MF_erroAtalho(chave, msg) {
 /**
  * Aviso do atalho, não erro (compatibilidades, 13/08/2026). Reusa a mesma caixa —
  * `.mf-conteudo-erro` — mas com a variante `.mf-conteudo-info` (azul), a mesma que a
- * sugestão de IA da descrição usa: sem isso, "Enviado, o ML leva um tempo para reativar"
+ * sugestão de IA da descrição usa: sem isso, o "Enviado, agora mexa no anúncio"
  * sairia vermelho, como se tivesse dado errado.
  */
 function MF_avisoAtalho(chave, msg) {
@@ -7256,6 +7256,14 @@ const MF_COMPAT_SELOS = {
     ok: { classe: 'success', selo: 'Tudo certo' },
 };
 
+// O passo que ninguém conta. Medido em conta real (15/08/2026) e confirmado na doc de
+// moderações da ML ("pode ser reativada realizando alterações NELA"): gravar a
+// compatibilidade não devolve o anúncio para o ar sozinho — a fila da ML só reavalia
+// quando a PUBLICAÇÃO muda. O anúncio de teste ficou 20h parado com a lista pronta e
+// voltou no segundo em que o estoque mudou. Sem esta frase, o vendedor grava, não
+// acontece nada, e conclui que o app não funciona.
+const MF_COMPAT_SEGUNDO_PASSO = 'Agora faça qualquer alteração no anúncio (mudar o estoque já serve): o Mercado Livre só reavalia depois que o anúncio muda.';
+
 function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -7293,7 +7301,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         ? (jaTem > 0
             // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
             // fato — a lista existe e o anúncio continua parado.
-            ? `Você já indicou ${contagem}, e o anúncio continua fora do ar: o Mercado Livre ainda não reavaliou. Pode adicionar outros veículos enquanto isso.`
+            ? `Você já indicou ${contagem}, e o anúncio continua fora do ar. ${MF_COMPAT_SEGUNDO_PASSO}`
             : veredito.certeza === 'moderacao'
                 ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
                 : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
@@ -7382,7 +7390,7 @@ window.mfCompatUniversal = async function () {
             return;
         }
         // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6).
-        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
         state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
         exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
     } catch (e) {
@@ -7448,7 +7456,7 @@ window.mfCompatCopiar = async function (fonteId) {
             MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
             return;
         }
-        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
         await window.mfCompatRecarregar();
     } catch (e) {
         MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
@@ -7706,7 +7714,7 @@ window.mfCompatGravarVeiculos = async function () {
         }
         // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6) — mesma
         // régua do botão universal, nunca "resolvido".
-        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
         esc.selecoes = [];
         state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
         exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
