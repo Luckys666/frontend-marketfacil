@@ -104,6 +104,15 @@ const stateEscada = {
       { brand_id: 45, brand_nome: 'Volkswagen', model_id: 504, model_nome: 'Polo Track Sense MSI', year_id: null, year_nome: null },
       { brand_id: 9, brand_nome: 'Chevrolet', model_id: 603, model_nome: 'Spin Activ7 Premier', year_id: 2022, year_nome: '2022' },
     ],
+    // Nota do vendedor (15/08): campo opcional que entra ENTRE as seleções e o aviso de
+    // alcance. Pior caso é a nota perto do teto de 500 caracteres — é ela que estica o
+    // painel e empurra o aviso para longe do botão de Gravar, que é o risco real no
+    // celular (ver o check de distância mais abaixo).
+    nota: 'Atenção: esta é uma peça INDUSTRIAL de rosca métrica M8 x 1,25 mm, não é peça '
+      + 'automotiva de reposição. O Mercado Livre exige o cadastro de veículos compatíveis '
+      + 'nesta categoria, mas a aplicação real é em máquinas e equipamentos. Confira a medida '
+      + 'da rosca e o comprimento total antes de comprar, e em caso de dúvida chame no chat '
+      + 'que a gente confere junto com você a ficha técnica do seu equipamento.',
     // Guarda §7.4: a lista de anúncios atingidos entra no MESMO painel, embaixo das 8
     // seleções. Títulos de anúncio da ML chegam com 60 caracteres — é o texto mais longo
     // e sem espaço para quebrar que a escada mostra, e em 375px é o candidato natural a
@@ -184,6 +193,18 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
           };
         });
       };
+      // Distância vertical entre o fim de um elemento e o começo de outro. Existe por causa
+      // da guarda §7.4: o aviso de quais anúncios serão atingidos só funciona se estiver
+      // À VISTA quando o dedo alcança o Gravar. Se algo (a nota, por exemplo) empurrar o
+      // aviso para cima, o vendedor lê a lista, rola, e clica sem ela na tela — a guarda
+      // continua "existindo" e para de guardar.
+      const distanciaEntre = (cardSel, selA, selB) => {
+        const card = document.querySelector(cardSel);
+        const a = card && card.querySelector(selA);
+        const b = card && card.querySelector(selB);
+        if (!a || !b) return null;
+        return Math.round(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom);
+      };
       // `.ana-wrapper button` põe TODO botão em caixa alta. Só a tela mostrou isso
       // (12/08): "ESCREVER DESCRIÇÃO" gritava dentro do checklist.
       const caixaAlta = (sel) => {
@@ -247,6 +268,13 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         // cortado, a guarda vira decoração — o vendedor grava sem ler a lista.
         alcanceCaixa: medirDentro('#card-escada', '.mf-compat-alcance'),
         alcanceLinhas: medirTodos('#card-escada', '.mf-compat-alcance .text-small'),
+
+        // Campo da nota do vendedor (15/08), com o texto perto do teto de 500 caracteres.
+        notaCampo: medirDentro('#card-escada', '#mf-compat-nota'),
+        notaContador: medirDentro('#card-escada', '#mf-compat-nota-contador'),
+        // Distância do aviso de alcance até o botão de Gravar: é a guarda §7.4 medida como
+        // proximidade, não só como presença.
+        avisoAteGravar: distanciaEntre('#card-escada', '.mf-compat-alcance', '#mf-compat-gravar-veiculos'),
       };
     });
 
@@ -349,6 +377,25 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     check(`${larg}px: nenhuma linha do aviso vaza`, m.alcanceLinhas.every(dentro0), JSON.stringify(m.alcanceLinhas));
     check(`${larg}px: nenhum título de anúncio fica cortado`,
       m.alcanceLinhas.every((x) => !x.cortado), JSON.stringify(m.alcanceLinhas));
+
+    // ── nota do vendedor (15/08) ──
+    // O campo entra entre as seleções e o aviso de alcance, com a nota perto do teto de
+    // 500 caracteres. Três coisas para medir, nesta ordem de importância.
+    check(`${larg}px: o campo da nota existe`, !!m.notaCampo, JSON.stringify(m.notaCampo));
+    check(`${larg}px: o campo da nota não vaza`, dentro0(m.notaCampo), JSON.stringify(m.notaCampo));
+    check(`${larg}px: o contador 0/500 não vaza`, dentro0(m.notaContador), JSON.stringify(m.notaContador));
+    check(`${larg}px: o contador não fica cortado`, m.notaContador && !m.notaContador.cortado, JSON.stringify(m.notaContador));
+    // A guarda §7.4 medida como PROXIMIDADE: o aviso tem que continuar acima do botão e
+    // perto dele. Ordem primeiro (distância não pode ser negativa: o aviso não pode cair
+    // depois do Gravar), depois a folga.
+    check(`${larg}px: o aviso de alcance continua ANTES do botão de Gravar`,
+      typeof m.avisoAteGravar === 'number' && m.avisoAteGravar >= 0, String(m.avisoAteGravar));
+    // Medido em 15/08 nas quatro larguras: 8px, sempre — a nota fica ACIMA do aviso, então
+    // não afasta nada. O teto de 40px não é folga arbitrária: o campo da nota mede 120px de
+    // altura, então qualquer reordenação que o jogue (ou a um bloco do mesmo porte) ENTRE o
+    // aviso e o botão estoura este número. É isso que o check existe pra pegar.
+    check(`${larg}px: e continua colado nele (nada de bloco novo separando os dois)`,
+      typeof m.avisoAteGravar === 'number' && m.avisoAteGravar <= 40, String(m.avisoAteGravar));
 
     // No celular os botões ganham a linha inteira; espremidos ao lado do contador, "Salvar
     // descrição" quebrava no meio da palavra.

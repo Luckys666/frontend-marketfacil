@@ -359,8 +359,11 @@ const API_COMPAT_ENDPOINT = `${BASE_URL_PROXY}/api/compatibilidades`;
 // onclick="fn('${...}')" fecha a string do JS assim que o browser decodifica o atributo, e o
 // que vier depois roda como código — a aspa dupla estar escapada não ajuda, porque não é ela
 // que delimita a string. O outro escapeHtml deste arquivo (o do MF_renderError) já escapava.
+// Ausência vira string vazia; o NÚMERO ZERO não. O `if (!str)` de antes engolia o zero, e
+// num app que conta veículo, anúncio e venda isso some com a informação justamente onde
+// zero É a informação ("0 veículos indicados" virava " veículos indicados").
 function escapeHtml(str) {
-    if (!str) return '';
+    if (str === null || str === undefined) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
@@ -7383,8 +7386,12 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         ? `<div class="mf-compat-aviso-familia text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
         : '';
 
+    // Mesma trava de estado da escada: o `disabled` posto no elemento morre em qualquer
+    // redesenho do card, e "hoje nada redesenha durante o voo" é garantia que não sobrevive
+    // ao próximo commit — foi assim que o duplo envio da escada nasceu.
+    const enviandoUniversal = !!(window.currentAnalysisState && window.currentAnalysisState.compatEnviandoUniversal);
     const botaoUniversal = universal.pode
-        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" onclick="window.mfCompatUniversal()">Serve em qualquer veículo</button>`
+        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" ${enviandoUniversal ? 'disabled' : ''} onclick="window.mfCompatUniversal()">${enviandoUniversal ? 'Enviando...' : 'Serve em qualquer veículo'}</button>`
         : '';
     const botaoCopiar = copiar.pode
         // `candidatos` deveria ser número (é o proxy que manda), mas quem escapa é quem
@@ -7429,6 +7436,10 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
 window.mfCompatUniversal = async function () {
     const state = window.currentAnalysisState;
     if (!state) return;
+    // Um envio de cada vez, com a trava no ESTADO — ver o comentário do botão em
+    // exibirCompatibilidades e a mesma decisão em mfCompatGravarVeiculos.
+    if (state.compatEnviandoUniversal) return;
+    state.compatEnviandoUniversal = true;
     const btn = document.getElementById('mf-compat-universal');
     const rotulo = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
@@ -7436,6 +7447,8 @@ window.mfCompatUniversal = async function () {
     // §5.3 do proxy olha só `ja_preenchido.total`, não a categoria). Tentar de novo dá o
     // mesmo erro sempre — o botão não pode voltar como se fosse resolver.
     let semRetentativa = false;
+    let gravou = false;
+    let vereditoNovo = null;
     try {
         const res = await fetch(`${API_COMPAT_ENDPOINT}/universal`, {
             method: 'POST',
@@ -7450,12 +7463,18 @@ window.mfCompatUniversal = async function () {
         }
         // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6).
         MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
-        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
-        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        gravou = true;
+        vereditoNovo = await fetchCompatibilidades(state.detail.id, state.accessToken);
     } catch (e) {
         MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
     } finally {
-        if (btn) {
+        // A trava sai ANTES do redesenho do card: com ela ainda de pé, o botão renasceria
+        // "Enviando..." e travado para sempre, porque nada mais redesenharia depois.
+        state.compatEnviandoUniversal = false;
+        if (gravou) {
+            state.compatData = vereditoNovo;
+            exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        } else if (btn) {
             if (semRetentativa) { btn.disabled = true; btn.style.display = 'none'; }
             else { btn.disabled = false; btn.textContent = rotulo; }
         }

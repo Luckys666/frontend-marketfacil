@@ -1133,6 +1133,56 @@ async function main() {
     check('e avisa que precisa nascer com teste', /nascer com teste/i.test(trecho), trecho.slice(0, 240));
   }
 
+  console.log('\n== "Serve em qualquer veículo" também trava enquanto envia ==');
+  {
+    // Mesma classe do duplo envio da escada. Hoje nada redesenha o card durante o voo, então
+    // o `disabled` do elemento aguenta — mas "aguenta porque nada redesenha" é garantia que
+    // morre no próximo commit, e foi exatamente assim que o defeito da escada nasceu. A
+    // trava vai para o estado, que sobrevive a qualquer redesenho.
+    const ctx = carregar();
+    const { sandbox } = ctx;
+    ctx.chamadas = [];
+    sandbox.fetch = async (url, opts = {}) => {
+      ctx.chamadas.push({ url: String(url), method: opts.method || 'GET' });
+      if (opts.method === 'POST') {
+        await new Promise((r) => setTimeout(r, 40));
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      }
+      return { ok: true, status: 200, json: async () => (VEREDITO_REAL) };
+    };
+    sandbox.currentAnalysisState = { detail: { id: 'MLB3869799637' }, accessToken: 'T', containerIdSuffix: '', compatData: VEREDITO_REAL };
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+
+    const envio = ctx.get('mfCompatUniversal')();          // 1º clique, fica em voo
+    await new Promise((r) => setTimeout(r, 0));
+    // Redesenhar o card no meio do voo é o que quebrava a trava antiga.
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    const card = sandbox.document.getElementById('compatibilidades');
+    check('depois de um redesenho, o botão continua travado',
+      /id="mf-compat-universal"[^>]*disabled/.test(card.innerHTML), card.innerHTML.slice(0, 900));
+    check('e avisa que está enviando', /Enviando/i.test(card.innerHTML), card.innerHTML.slice(0, 900));
+
+    await ctx.get('mfCompatUniversal')();                  // 2º clique
+    await envio;
+    await new Promise((r) => setTimeout(r, 60));
+    const posts = ctx.chamadas.filter((c) => c.method === 'POST');
+    check('só UM POST de universal saiu', posts.length === 1, `posts=${posts.length}`);
+  }
+
+  console.log('\n== escapeHtml não pode transformar o número zero em nada ==');
+  {
+    // `if (!str) return ''` engolia o zero. Num app que conta veículo, anúncio e venda, é
+    // um zero sumindo justamente onde zero É a informação ("0 veículos indicados" virava
+    // " veículos indicados"). Ausência continua sendo string vazia; zero é zero.
+    const { get } = carregar();
+    const esc = get('escapeHtml');
+    check('zero vira "0", não string vazia', esc(0) === '0', JSON.stringify(esc(0)));
+    check('null continua vazio', esc(null) === '', JSON.stringify(esc(null)));
+    check('undefined continua vazio', esc(undefined) === '', JSON.stringify(esc(undefined)));
+    check('string vazia continua vazia', esc('') === '', JSON.stringify(esc('')));
+    check('e o escape normal segue de pé', esc(`<b>'&"</b>`) === '&lt;b&gt;&#39;&amp;&quot;&lt;/b&gt;', JSON.stringify(esc(`<b>'&"</b>`)));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
