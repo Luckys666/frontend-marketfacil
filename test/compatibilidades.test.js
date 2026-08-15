@@ -774,6 +774,226 @@ async function main() {
     check('e o botão de gravar continua liberado', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(-600));
   }
 
+  /* =========================================================================
+     Revisão adversarial — 15/08/2026. Seis defeitos, cada um com o dano que causa.
+     ========================================================================= */
+
+  console.log('\n== 1. leitura sem confirmação NÃO pode sumir com o card ==');
+  {
+    // O proxy monta `{ exige: null, situacao: 'nao_deu_pra_consultar' }` de propósito para
+    // dizer "tem algo parado aqui e eu não confirmei o motivo" (utils/compatibilidades.js).
+    // `null` é falsy: o card sumia inteiro e o anúncio parado virava invisível — o vendedor
+    // não descobre nem que existe uma pergunta em aberto. É o feedback_falha_nunca_vira_zero
+    // na sua forma mais cara: some com o problema em vez de zerar o número.
+    const semConfirmacao = {
+      exige: null, situacao: 'nao_deu_pra_consultar', certeza: null, desde: null,
+      ja_preenchido: { total: null, do_vendedor: null, do_catalogo: null },
+      sugestoes_ml: { tem: false, quantas: null },
+      remedios: [], afeta_familia: null,
+      texto_ml: { motivo: null, como_resolver: null },
+    };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(semConfirmacao, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('o card NÃO some', html.trim().length > 0, JSON.stringify(html));
+    check('e diz que não deu para conferir', /n[ãa]o deu para/i.test(html), html.slice(0, 400));
+    check('sem afirmar que está tudo certo', !/tudo certo|nenhum problema/i.test(html), html.slice(0, 400));
+    check('sem inventar contagem de veículos', !/\b0 ve[íi]culos?\b/i.test(html), html.slice(0, 400));
+    check('e oferece tentar de novo', /tentar de novo/i.test(html), html.slice(0, 400));
+  }
+  {
+    // O outro caminho continua sumindo: não é autopeça, não há nada a dizer.
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')({ exige: false, situacao: 'nao_se_aplica' }, 'compat');
+    check('anúncio que não exige continua sem card', reg['compat'].innerHTML === '', reg['compat'].innerHTML);
+  }
+
+  console.log('\n== 2. resposta velha não pode pintar a escada do anúncio novo ==');
+  {
+    // Abrir a escada no anúncio A, trocar para o B, abrir a escada do B: a resposta de A
+    // chega atrasada e escreve no MESMO box (o id é fixo). A tela de confirmação passa a
+    // mostrar o alcance de A enquanto o Gravar manda os veículos de B — a guarda §7.4 vira
+    // desinformação, que é pior que não ter guarda.
+    const ctx = carregar();
+    const { sandbox } = ctx;
+    let liberarA = null;
+    sandbox.fetch = async (url) => {
+      const u = String(url);
+      if (/\/compatibilidades\/alcance/.test(u)) {
+        if (/item_id=MLB_A/.test(u)) {
+          await new Promise((r) => { liberarA = r; });
+          return { ok: true, status: 200, json: async () => ({ total: 9, itens: [{ id: 'MLB_A1', title: 'ANUNCIO ANTIGO A' }] }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ total: 2, itens: [{ id: 'MLB_B1', title: 'ANUNCIO NOVO B' }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ nivel: 'marca', opcoes: MARCAS }) };
+    };
+
+    const estadoA = { detail: { id: 'MLB_A' }, accessToken: 'T', containerIdSuffix: '' };
+    sandbox.currentAnalysisState = estadoA;
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+
+    // troca de anúncio: state novo, escada nova
+    const estadoB = { detail: { id: 'MLB_B' }, accessToken: 'T', containerIdSuffix: '' };
+    sandbox.currentAnalysisState = estadoB;
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    // No browser, redesenhar o card cria uma div #mf-compat-escada NOVA, já com
+    // display:none — por isso a escada do B abre. O harness devolve sempre o mesmo objeto
+    // por id, então o display:block que o A deixou sobrevive e o toggle fecharia em vez de
+    // abrir. Isto reproduz o elemento novo; o que o teste mede é a resposta atrasada.
+    sandbox.document.getElementById('mf-compat-escada').style.display = 'none';
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+
+    if (liberarA) liberarA();                       // a resposta de A chega agora, atrasada
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const html = sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('a escada mostra o anúncio NOVO', /ANUNCIO NOVO B/.test(html), html.slice(0, 700));
+    check('e a resposta velha não escreveu por cima', !/ANUNCIO ANTIGO A/.test(html), html.slice(0, 700));
+  }
+
+  console.log('\n== 3. clicar em Gravar duas vezes não pode mandar dois POST ==');
+  {
+    // O botão é desabilitado no clique, mas QUALQUER re-render o recria habilitado —
+    // Remover, Fechar, trocar, o select, o "Tentar de novo" do alcance. Clicar Gravar,
+    // remover um veículo no meio do voo e clicar de novo manda dois POST, com listas
+    // diferentes. Compatibilidade é aditiva na ML: é o dobro do que o vendedor mandou,
+    // num anúncio que pela /alcance pode nem ser só dele.
+    const ctx = carregar();
+    const { sandbox } = ctx;
+    ctx.chamadas = [];
+    sandbox.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      ctx.chamadas.push({ url: u, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+      if (opts.method === 'POST') {
+        await new Promise((r) => setTimeout(r, 40));   // voo real, curto
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      }
+      if (/\/compatibilidades\/alcance/.test(u)) return { ok: true, status: 200, json: async () => ({ total: 1, itens: [{ id: 'X', title: 'X' }] }) };
+      const params = {}; (u.split('?')[1] || '').split('&').filter(Boolean).forEach((p) => { const [k, v] = p.split('='); params[k] = decodeURIComponent(v || ''); });
+      return { ok: true, status: 200, json: async () => ({ nivel: params.nivel, opcoes: { marca: MARCAS, modelo: MODELOS_VW, ano: ANOS_TCROSS }[params.nivel] || [] }) };
+    };
+    sandbox.currentAnalysisState = { detail: { id: 'MLB3869799637' }, accessToken: 'T', containerIdSuffix: '' };
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('9');
+    await ctx.get('mfCompatEscolherOpcao')('501');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const box = sandbox.document.getElementById('mf-compat-escada');
+    const envio = ctx.get('mfCompatGravarVeiculos')();          // 1º clique, fica em voo
+    await new Promise((r) => setTimeout(r, 0));
+    check('durante o envio o botão fica travado', /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-500));
+    check('e o botão avisa que está enviando', /Enviando/i.test(box.innerHTML), box.innerHTML.slice(-500));
+
+    ctx.get('mfCompatRemoverSelecao')(0);                       // re-render no meio do voo
+    check('mesmo depois de um re-render, continua travado', /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-500));
+
+    await ctx.get('mfCompatGravarVeiculos')();                  // 2º clique
+    await envio;
+    await new Promise((r) => setTimeout(r, 60));
+    const posts = ctx.chamadas.filter((c) => c.method === 'POST');
+    check('só UM POST saiu', posts.length === 1, `posts=${posts.length} :: ` + JSON.stringify(posts.map((p) => p.body && p.body.familias && p.body.familias.length)));
+  }
+
+  console.log('\n== 4. total null é "não sei", nunca zero ==');
+  {
+    // Se a leitura da lista falhar no proxy, `ja_preenchido.total` vem null. Com `|| 0` um
+    // anúncio com 400 veículos aparecia como se não tivesse nenhum: a tela mandava
+    // "escolher os veículos" e convidava a começar do zero uma lista que já existe.
+    const semLeitura = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    semLeitura.situacao = 'em_risco'; semLeitura.certeza = 'tag'; semLeitura.desde = null;
+    semLeitura.ja_preenchido = { total: null, do_vendedor: null, do_catalogo: null };
+    semLeitura.texto_ml = { motivo: null, como_resolver: null };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(semLeitura, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('não escreve "0 veículos"', !/\b0 ve[íi]culos?\b/i.test(html), html.slice(0, 500));
+    check('não convida a começar do zero', !/Escolher os ve[íi]culos/i.test(html), html.slice(0, 600));
+    check('diz que não deu para conferir quantos', /n[ãa]o deu para conferir quantos/i.test(html), html.slice(0, 600));
+    check('e mesmo assim oferece o caminho manual', /mfCompatAbrirEscada/.test(html), html.slice(0, 600));
+  }
+  {
+    // total: 0 medido de verdade continua sendo zero — o conserto não pode apagar o caso
+    // que o card existe para resolver.
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(VEREDITO_REAL, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('total 0 de verdade continua pedindo os veículos', /indicar em quais ve[íi]culos/i.test(html), html.slice(0, 400));
+    check('e o botão continua sendo o de começar', /Escolher os ve[íi]culos/i.test(html), html.slice(0, 500));
+  }
+
+  console.log('\n== 5. escapeHtml fecha a aspa simples ==');
+  {
+    // Sem escapar aspa simples, valor interpolado dentro de onclick="fn('...')" fecha a
+    // string do JS depois que o browser decodifica a entidade, e o resto vira código. O
+    // caminho "copiar" faz exatamente isso. Não é alcançável hoje (o proxy nunca liga
+    // copiar.pode e as rotas nem existem), mas a função é a defesa de TODA a tela.
+    const { get } = carregar();
+    const esc = get('escapeHtml');
+    check('escapa aspa simples', esc("');alert(1);//").includes('&#39;') && !esc("');alert(1);//").includes("'"), JSON.stringify(esc("');alert(1);//")));
+    check('continua escapando o resto', esc('<b>&"</b>') === '&lt;b&gt;&amp;&quot;&lt;/b&gt;', JSON.stringify(esc('<b>&"</b>')));
+  }
+
+  console.log('\n== 6. a nota do vendedor chega até a ML ==');
+  {
+    // O caso real que originou a task: ponteira rotular industrial M8x1.25 que o ML
+    // classificou como peça de direção. O vendedor é obrigado a listar veículos que a peça
+    // não serve de verdade, e a nota é o que impede um comprador de carro de levar a peça
+    // errada. O proxy aceita e valida `note` desde 14/08 — o front nunca mandava.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+    check('o campo da nota aparece na escada', /id="mf-compat-nota"/.test(box.innerHTML), box.innerHTML.slice(-900));
+    check('com pergunta amigável, sem jargão', /comprador precisa saber/i.test(box.innerHTML) && !/\bnote\b|observa[çc][ãa]o t[ée]cnica/i.test(box.textContent), box.textContent.slice(-400));
+    check('e diz que é opcional', /opcional/i.test(box.innerHTML), box.innerHTML.slice(-900));
+    check('tem contador de caracteres', /id="mf-compat-nota-contador"/.test(box.innerHTML) && /0\/500/.test(box.innerHTML), box.innerHTML.slice(-900));
+
+    const mudarNota = ctx.get('mfCompatMudarNota');
+    check('existe o handler da nota', typeof mudarNota === 'function', typeof mudarNota);
+    if (typeof mudarNota === 'function') {
+      mudarNota('  Peça industrial M8x1.25 — confira a rosca antes de comprar.  ');
+      const contador = ctx.sandbox.document.getElementById('mf-compat-nota-contador');
+      check('o contador acompanha o que foi digitado', /\/500/.test(contador.textContent) && !/^0\//.test(contador.textContent), contador.textContent);
+
+      await ctx.get('mfCompatGravarVeiculos')();
+      const grava = ctx.chamadas.find((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url));
+      check('a nota vai no corpo do POST', grava && typeof grava.body.note === 'string', JSON.stringify(grava && grava.body));
+      check('e vai trimada', grava && grava.body.note === 'Peça industrial M8x1.25 — confira a rosca antes de comprar.', JSON.stringify(grava && grava.body.note));
+    }
+  }
+  {
+    // Sem nota digitada, o campo `note` não pode viajar vazio — pro proxy, nota vazia e
+    // nota ausente são a mesma coisa, e mandar '' é ruído no corpo.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+    const grava = ctx.chamadas.find((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url));
+    check('sem nota digitada, o corpo não leva note', grava && !('note' in grava.body), JSON.stringify(grava && grava.body));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
