@@ -4050,9 +4050,16 @@ const API_GPT_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/gpt-descricao`;
 // Compatibilidades de autopeças (13/08/2026). Veredito pronto — nenhum limiar mora aqui.
 const API_COMPAT_ENDPOINT = `${BASE_URL_PROXY}/api/compatibilidades`;
 
+// A aspa SIMPLES também é escapada. Sem ela, um valor interpolado dentro de
+// onclick="fn('${...}')" fecha a string do JS assim que o browser decodifica o atributo, e o
+// que vier depois roda como código — a aspa dupla estar escapada não ajuda, porque não é ela
+// que delimita a string. O outro escapeHtml deste arquivo (o do MF_renderError) já escapava.
+// Ausência vira string vazia; o NÚMERO ZERO não. O `if (!str)` de antes engolia o zero, e
+// num app que conta veículo, anúncio e venda isso some com a informação justamente onde
+// zero É a informação ("0 veículos indicados" virava " veículos indicados").
 function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function deveIgnorarAtributoPorNome(nome) {
@@ -10806,6 +10813,18 @@ const MF_COMPAT_ERROS = {
     ml_recusou: 'O Mercado Livre não aceitou.',
 };
 
+/**
+ * Traduz o `code` do proxy sem alcançar o protótipo do objeto. `MF_COMPAT_ERROS[code]` com
+ * `code: "toString"` devolvia a função herdada e a tela mostrava
+ * "function toString() { [native code] }" para o vendedor — medido em 15/08/2026. O `code`
+ * vem da rede, então a consulta passa por hasOwnProperty; é a mesma régua da lista literal
+ * que o proxy adotou no guard de `nivel`.
+ */
+function MF_compatMensagemErro(code, padrao) {
+    const conhecido = typeof code === 'string' && Object.prototype.hasOwnProperty.call(MF_COMPAT_ERROS, code);
+    return conhecido ? MF_COMPAT_ERROS[code] : (padrao || MF_COMPAT_ERROS.ml_recusou);
+}
+
 // Classes existentes de .status-badge (success/error/neutral/muted) — 'neutral' já é o
 // amarelo de "atenção" usado em "Pausado" (linha ~1769), não existe .warning no CSS.
 const MF_COMPAT_SELOS = {
@@ -10840,6 +10859,26 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         </div>`;
         return;
     }
+    // O proxy manda `situacao: 'nao_deu_pra_consultar'` (com `exige: null`) quando o anúncio
+    // está parado e ele NÃO conseguiu confirmar o motivo. `null` é falsy, então isso caía no
+    // `!veredito.exige` logo abaixo e o card sumia inteiro — o anúncio parado ficava
+    // invisível e o vendedor não descobria nem que havia uma pergunta em aberto. Ausência de
+    // resposta não vira ausência de problema (feedback_falha_nunca_vira_zero).
+    if (veredito.situacao === 'nao_deu_pra_consultar') {
+        el.innerHTML = `
+        <div class="ana-card">
+            <div class="ana-card-header">
+                <span class="ana-card-icon">🚗</span>
+                <span class="ana-card-title">Veículos compatíveis</span>
+            </div>
+            <p class="text-small">Não deu para conferir os veículos compatíveis deste anúncio agora.
+                <button class="mf-conteudo-botao" onclick="window.mfCompatRecarregar()">Tentar de novo</button>
+            </p>
+        </div>`;
+        return;
+    }
+    // `exige: false` é resposta, não falha: o anúncio não é de autopeça e o card não tem o
+    // que dizer. Este é o único caso que continua sumindo.
     if (!veredito.exige) { el.innerHTML = ''; return; }
 
     const sel = MF_COMPAT_SELOS[veredito.situacao] || MF_COMPAT_SELOS.em_risco;
@@ -10852,22 +10891,38 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     // em 15/08/2026 no MLB3869799637: 2 veículos gravados e a ML seguia com o anúncio
     // parado — o card mandava "indicar os veículos" como se o vendedor não tivesse feito
     // nada. Pedir de novo o que já foi feito é o oposto de dizer o que fazer agora.
-    const jaTem = (veredito.ja_preenchido && veredito.ja_preenchido.total) || 0;
-    const contagem = `${jaTem} ${jaTem === 1 ? 'veículo' : 'veículos'}`;
+    // `total` vem `null` quando a leitura da lista falhou no proxy, e `null` é "não sei" —
+    // nunca zero. Com o `|| 0` de antes, um anúncio com 400 veículos aparecia como se não
+    // tivesse nenhum: a tela pedia o que já estava feito e o botão convidava a começar do
+    // zero uma lista que já existe.
+    const totalLido = veredito.ja_preenchido ? veredito.ja_preenchido.total : null;
+    const jaTem = typeof totalLido === 'number' ? totalLido : null;
+    const naoSeiQuantos = jaTem === null;
+    const contagem = naoSeiQuantos ? null : `${jaTem} ${jaTem === 1 ? 'veículo' : 'veículos'}`;
 
-    const frase = veredito.situacao === 'fora_do_ar'
-        ? (jaTem > 0
-            // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
-            // fato — a lista existe e o anúncio continua parado.
-            ? `Você já indicou ${contagem}, e o anúncio continua fora do ar. ${MF_COMPAT_SEGUNDO_PASSO}`
-            : veredito.certeza === 'moderacao'
-                ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
-                : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
-        : veredito.situacao === 'ok'
-            ? `${contagem} indicado${jaTem === 1 ? '' : 's'}.`
-            : jaTem > 0
-                ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. Enquanto isso, o anúncio pode sair do ar.`
-                : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
+    const frase = naoSeiQuantos
+        // Sem saber quantos já existem, a tela não afirma que falta nem que está completo:
+        // diz só o que a situação garante, e assume o que não conseguiu ler.
+        ? `${veredito.situacao === 'fora_do_ar'
+            ? (veredito.certeza === 'moderacao'
+                ? 'O Mercado Livre tirou este anúncio do ar por causa dos veículos compatíveis.'
+                : 'Este anúncio está fora do ar esperando correção, e o Mercado Livre marca os veículos compatíveis como incompletos.')
+            : veredito.situacao === 'ok'
+                ? 'Os veículos compatíveis deste anúncio já estão indicados.'
+                : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.'} Não deu para conferir quantos já estão indicados.`
+        : veredito.situacao === 'fora_do_ar'
+            ? (jaTem > 0
+                // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
+                // fato — a lista existe e o anúncio continua parado.
+                ? `Você já indicou ${contagem}, e o anúncio continua fora do ar. ${MF_COMPAT_SEGUNDO_PASSO}`
+                : veredito.certeza === 'moderacao'
+                    ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
+                    : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
+            : veredito.situacao === 'ok'
+                ? `${contagem} indicado${jaTem === 1 ? '' : 's'}.`
+                : jaTem > 0
+                    ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. Enquanto isso, o anúncio pode sair do ar.`
+                    : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
 
     const desde = veredito.desde ? ` <span class="text-small" style="color:var(--text-muted);">desde ${escapeHtml(veredito.desde)}</span>` : '';
 
@@ -10889,22 +10944,33 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         ? `<div class="mf-compat-aviso-familia text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
         : '';
 
+    // Mesma trava de estado da escada: o `disabled` posto no elemento morre em qualquer
+    // redesenho do card, e "hoje nada redesenha durante o voo" é garantia que não sobrevive
+    // ao próximo commit — foi assim que o duplo envio da escada nasceu.
+    const enviandoUniversal = !!(window.currentAnalysisState && window.currentAnalysisState.compatEnviandoUniversal);
     const botaoUniversal = universal.pode
-        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" onclick="window.mfCompatUniversal()">Serve em qualquer veículo</button>`
+        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" ${enviandoUniversal ? 'disabled' : ''} onclick="window.mfCompatUniversal()">${enviandoUniversal ? 'Enviando...' : 'Serve em qualquer veículo'}</button>`
         : '';
     const botaoCopiar = copiar.pode
-        ? `<button class="mf-conteudo-botao" id="mf-compat-copiar" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
+        // `candidatos` deveria ser número (é o proxy que manda), mas quem escapa é quem
+        // desenha: a tela não pode depender de invariante do outro lado pra não injetar HTML.
+        ? `<button class="mf-conteudo-botao" id="mf-compat-copiar" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${escapeHtml(String(copiar.candidatos))})</button>`
         : '';
     // Ao contrário de universal/copiar, este remédio não depende de `pode` do proxy — é o
     // caminho manual, sempre disponível quando o ML exige compatibilidade (fecha o fluxo:
     // até 14/08 o card só diagnosticava, sem jeito de resolver pelo app).
-    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">${jaTem > 0 ? 'Adicionar mais veículos' : 'Escolher os veículos'}</button>`;
+    // Sem saber quantos já existem, o rótulo não promete nem "começar" nem "somar" —
+    // "Escolher os veículos" afirmaria que a lista está vazia.
+    const rotuloEscada = naoSeiQuantos ? 'Indicar os veículos'
+        : (jaTem > 0 ? 'Adicionar mais veículos' : 'Escolher os veículos');
+    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">${rotuloEscada}</button>`;
     const acoes = botaoUniversal + botaoCopiar + botaoEscada;
 
     // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem
     // placar. Nunca inventar número aqui (amigavel-e-gamificacao: não custa honestidade).
     const placar = veredito.placar_conta
-        ? `<span class="text-small" style="margin-left:auto; color:var(--text-muted);">${veredito.placar_conta.parados === 0 ? 'Nenhum anúncio parado 🎉' : `${veredito.placar_conta.resolvidos} de ${veredito.placar_conta.parados} resolvidos`}</span>`
+        // mesmo motivo do contador de candidatos acima: número vindo da rede também escapa.
+        ? `<span class="text-small" style="margin-left:auto; color:var(--text-muted);">${veredito.placar_conta.parados === 0 ? 'Nenhum anúncio parado 🎉' : `${escapeHtml(String(veredito.placar_conta.resolvidos))} de ${escapeHtml(String(veredito.placar_conta.parados))} resolvidos`}</span>`
         : '';
 
     el.innerHTML = `
@@ -10928,6 +10994,10 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
 window.mfCompatUniversal = async function () {
     const state = window.currentAnalysisState;
     if (!state) return;
+    // Um envio de cada vez, com a trava no ESTADO — ver o comentário do botão em
+    // exibirCompatibilidades e a mesma decisão em mfCompatGravarVeiculos.
+    if (state.compatEnviandoUniversal) return;
+    state.compatEnviandoUniversal = true;
     const btn = document.getElementById('mf-compat-universal');
     const rotulo = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
@@ -10935,6 +11005,8 @@ window.mfCompatUniversal = async function () {
     // §5.3 do proxy olha só `ja_preenchido.total`, não a categoria). Tentar de novo dá o
     // mesmo erro sempre — o botão não pode voltar como se fosse resolver.
     let semRetentativa = false;
+    let gravou = false;
+    let vereditoNovo = null;
     try {
         const res = await fetch(`${API_COMPAT_ENDPOINT}/universal`, {
             method: 'POST',
@@ -10943,18 +11015,24 @@ window.mfCompatUniversal = async function () {
         });
         const dados = await res.json().catch(() => ({}));
         if (!res.ok || !dados.ok) {
-            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            MF_erroAtalho('compat', MF_compatMensagemErro(dados.code));
             if (dados.code === 'categoria_nao_aceita') semRetentativa = true;
             return;
         }
         // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6).
         MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
-        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
-        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        gravou = true;
+        vereditoNovo = await fetchCompatibilidades(state.detail.id, state.accessToken);
     } catch (e) {
         MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
     } finally {
-        if (btn) {
+        // A trava sai ANTES do redesenho do card: com ela ainda de pé, o botão renasceria
+        // "Enviando..." e travado para sempre, porque nada mais redesenharia depois.
+        state.compatEnviandoUniversal = false;
+        if (gravou) {
+            state.compatData = vereditoNovo;
+            exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        } else if (btn) {
             if (semRetentativa) { btn.disabled = true; btn.style.display = 'none'; }
             else { btn.disabled = false; btn.textContent = rotulo; }
         }
@@ -10973,6 +11051,14 @@ window.mfCompatRecarregar = async function () {
  * (COMPAT-SPEC §7.1). `GET /api/compatibilidades/candidatos` ainda não existe no proxy
  * (decisão deliberada da Fase 1 — sem anúncio-fonte na conta medida); `copiar.pode` só
  * fica `true` quando o proxy tiver candidatos de verdade, então este caminho não roda hoje.
+ *
+ * ⚠️ Registro da auditoria de 15/08/2026: esta rota e a `POST .../copiar` logo abaixo são as
+ * ÚNICAS do fluxo que apontam para endereços inexistentes no proxy — hoje elas dariam 404,
+ * e o que as mantém inalcançáveis é uma decisão do OUTRO lado (`copiar.pode` sempre false),
+ * não uma trava daqui. Ficam no código porque a fase "copiar" está no COMPAT-SPEC e nada sai
+ * do Analisador sem o Lucas mandar. Quem for construir o par no proxy: elas precisam
+ * nascer com teste, inclusive o caminho de escrita — nenhum teste as exercita hoje,
+ * justamente porque não têm o outro lado.
  */
 window.mfCompatAbrirCandidatos = async function () {
     const state = window.currentAnalysisState;
@@ -11011,7 +11097,7 @@ window.mfCompatCopiar = async function (fonteId) {
         });
         const dados = await res.json().catch(() => ({}));
         if (!res.ok || !dados.ok) {
-            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            MF_erroAtalho('compat', MF_compatMensagemErro(dados.code));
             return;
         }
         MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
@@ -11085,8 +11171,10 @@ async function MF_compatCarregarNivel(state, nivel, params) {
     }
 
     // O painel pode ter trocado de nível de novo (ou fechado) enquanto a chamada estava em
-    // voo — não pisar num estado mais novo com uma resposta velha.
-    if (state.escadaCompat !== esc || esc.nivel !== nivel) return;
+    // voo — não pisar num estado mais novo com uma resposta velha. `currentAnalysisState`
+    // entrou junto com a mesma guarda de MF_compatCarregarAlcance: trocar de ANÚNCIO cria um
+    // state novo, e sem esta comparação a resposta do anúncio anterior pintava o box do novo.
+    if (window.currentAnalysisState !== state || state.escadaCompat !== esc || esc.nivel !== nivel) return;
     esc.carregando = false;
     if (resultado.erro) { esc.erro = resultado.code; esc.opcoes = []; }
     else { esc.opcoes = resultado.opcoes; }
@@ -11129,7 +11217,7 @@ function MF_renderEscadaCompat(state) {
         // Erro nunca vira lista vazia silenciosa: o vendedor precisa saber que foi uma
         // falha de busca, não "essa marca não tem modelo nenhum".
         corpoNivel = `
-            <p class="text-small">${escapeHtml(MF_COMPAT_ERROS[esc.erro] || MF_COMPAT_ERROS.nao_deu_pra_consultar)}
+            <p class="text-small">${escapeHtml(MF_compatMensagemErro(esc.erro, MF_COMPAT_ERROS.nao_deu_pra_consultar))}
                 <button class="mf-conteudo-botao" onclick="window.mfCompatTentarNivelDeNovo()">Tentar de novo</button>
             </p>`;
     } else if (!esc.opcoes.length) {
@@ -11162,14 +11250,38 @@ function MF_renderEscadaCompat(state) {
     const quantosAtinge = escopoConhecido ? (typeof alc.total === 'number' ? alc.total : alc.itens.length) : 0;
     const varios = escopoConhecido && quantosAtinge > 1;
     const restantes = escopoConhecido ? quantosAtinge - alc.itens.length : 0;
+    // Escopo desconhecido: degradar a AFIRMAÇÃO, não a capacidade. Travar não empata com um
+    // risco que já existe — no Gerenciador da ML o escopo é visível por construção, então
+    // travar aqui criaria um risco que a ML não tem. Só que "Gravar mesmo assim" sozinho pede
+    // consentimento para um desconhecido, e isso não é consentimento: o que o vendedor não
+    // sabe é justamente o tamanho da própria ação.
+    // `user_product_id` já veio no veredito e responde metade da pergunta de graça: se
+    // existe, a escrita sai por user-product e pega a família inteira — só não sabemos
+    // QUANTOS anúncios. Se é `null`, sai por /items e atinge só este, e aí não há surpresa
+    // possível nem o que avisar. Um estado ambíguo vira dois honestos, sem chamada nova.
+    const upDaFamilia = (state.compatData && state.compatData.afeta_familia)
+        ? state.compatData.afeta_familia.user_product_id : undefined;
+    const soEsteAnuncio = upDaFamilia === null;
+
     const blocoAlcance = !alc || alc.carregando
         ? `<p class="text-small" style="margin-top:10px; color:var(--text-muted);">Conferindo quais anúncios isto vai atingir…</p>`
         : alc.erro
             // Falha de leitura não trava o vendedor: ele faz o mesmo pelo Gerenciador da ML.
             // Vira double check, mesma régua do alerta de renomear variação (avisar > travar).
-            ? `<p class="text-small" style="margin-top:10px;">Não deu para conferir quais anúncios isto atinge.
-                   <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
-               </p>`
+            ? (soEsteAnuncio
+                // O proxy afirmou que não há família: a escrita atinge só este anúncio.
+                // Alarme que toca sempre para de ser lido — aqui não há o que avisar.
+                ? ''
+                : upDaFamilia
+                    ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
+                           <p class="text-small">Não deu para conferir quantos anúncios isto atinge. Este anúncio faz parte de um grupo de variações, então vai valer para todos eles.
+                               <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
+                           </p>
+                       </div>`
+                    // Nem o escopo nem a família são conhecidos: assume a ignorância inteira.
+                    : `<p class="text-small" style="margin-top:10px;">Não deu para conferir quantos anúncios isto atinge.
+                           <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
+                       </p>`)
             : varios
                 ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
                        <p class="text-small" style="font-weight:600;">⚠️ Isto vale para ${quantosAtinge} anúncios:</p>
@@ -11192,20 +11304,65 @@ function MF_renderEscadaCompat(state) {
             ${acimaDoLimite ? `<p class="text-small" style="color:var(--red); margin-top:6px;">São ${esc.selecoes.length} veículos — o máximo por vez é 200. Remova alguns antes de gravar.</p>` : ''}
         </div>` : `<p class="text-small" style="margin-top:12px; color:var(--text-muted);">Nada escolhido ainda.</p>`;
 
+    // O caso real que originou a task (14/08/2026): ponteira rotular industrial M8x1.25 que
+    // o ML classificou como peça de direção. O vendedor é obrigado a listar veículos em que
+    // a peça não serve de verdade só pra satisfazer a exigência — e é esta frase que impede
+    // um comprador de carro de chegar pelo filtro e levar a peça errada. Pergunta em
+    // português, do ponto de vista do comprador: a tela nunca escreve "note" nem "nota
+    // técnica". Só aparece quando já há o que gravar.
+    const nota = typeof esc.nota === 'string' ? esc.nota : '';
+    const blocoNota = esc.selecoes.length ? `
+        <label class="mf-conteudo-label" style="display:block; margin-top:12px;">O que o comprador precisa saber antes de comprar (opcional)
+            <textarea class="mf-conteudo-textarea" id="mf-compat-nota" rows="2" maxlength="${MF_COMPAT_NOTA_MAX}"
+                placeholder="Ex.: peça industrial — confira a medida da rosca antes de comprar."
+                oninput="window.mfCompatMudarNota(this.value)">${escapeHtml(nota)}</textarea>
+            <span class="text-small" id="mf-compat-nota-contador" style="color:var(--text-muted);">${nota.length}/${MF_COMPAT_NOTA_MAX}</span>
+        </label>` : '';
+
+    // `esc.gravando` sobrevive ao re-render; o `disabled` que a função punha no botão não.
+    // Qualquer coisa que redesenhe a escada no meio do envio (Remover, Fechar, trocar, o
+    // select, o "Tentar de novo" do alcance) recriava o botão HABILITADO, e um segundo
+    // clique virava um segundo POST — com uma lista diferente da que já estava em voo.
+    const gravando = !!esc.gravando;
+    const travado = gravando || esc.selecoes.length === 0 || acimaDoLimite || (!alc || alc.carregando);
+    // "Gravar mesmo assim" só quando há mesmo um "assim" desconhecido. Quando o proxy já
+    // disse que não há família, o escopo não é incógnita nenhuma e o botão é só Gravar.
+    const semConferirOEscopo = !!(alc && alc.erro) && !soEsteAnuncio;
+    const rotuloGravar = gravando ? 'Enviando...'
+        : `${semConferirOEscopo ? 'Gravar mesmo assim' : 'Gravar'}${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}`;
+
     box.innerHTML = `
         <div class="mf-conteudo-box">
             ${blocoTrilha}
             ${corpoNivel}
             ${listaSelecoes}
+            ${blocoNota}
             ${blocoAlcance}
             <div class="mf-conteudo-rodape">
                 <button class="mf-conteudo-botao" onclick="window.mfCompatAbrirEscada()">Fechar</button>
                 <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-gravar-veiculos"
-                    ${(esc.selecoes.length === 0 || acimaDoLimite || (!alc || alc.carregando)) ? 'disabled' : ''}
-                    onclick="window.mfCompatGravarVeiculos()">${alc && alc.erro ? 'Gravar mesmo assim' : 'Gravar'}${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}</button>
+                    ${travado ? 'disabled' : ''}
+                    onclick="window.mfCompatGravarVeiculos()">${rotuloGravar}</button>
             </div>
         </div>`;
 }
+
+// Teto do próprio Mercado Livre ("A nota não pode exceder 500 caracteres"), o mesmo que o
+// proxy valida. Avisar antes é melhor que levar erro da ML depois de escolher tudo.
+const MF_COMPAT_NOTA_MAX = 500;
+
+/**
+ * Guarda o que foi digitado sem redesenhar a escada: um re-render a cada tecla mataria o
+ * campo e o cursor junto. Só o contador é atualizado na mão.
+ */
+window.mfCompatMudarNota = function (valor) {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    const esc = state.escadaCompat;
+    esc.nota = String(valor == null ? '' : valor).slice(0, MF_COMPAT_NOTA_MAX);
+    const contador = document.getElementById('mf-compat-nota-contador');
+    if (contador) contador.textContent = `${esc.nota.length}/${MF_COMPAT_NOTA_MAX}`;
+};
 
 window.mfCompatAbrirEscada = async function () {
     const state = window.currentAnalysisState;
@@ -11237,29 +11394,44 @@ window.mfCompatAbrirEscada = async function () {
  */
 async function MF_compatCarregarAlcance(state) {
     const esc = state.escadaCompat;
-    if (!esc || (esc.alcance && !esc.alcance.erro && !esc.alcance.carregando)) return;
+    // Três estados, três decisões. `carregando` entrou em 15/08: o guard antigo só saía
+    // cedo quando a pergunta já tinha TERMINADO, então fechar e reabrir o painel com a
+    // resposta ainda em voo disparava outra chamada — uma ida à ML por toggle, e quem fica
+    // abrindo e fechando para reler o card enfileira várias (`_regras/escala-mil-anuncios`).
+    //  - já respondeu com sucesso → serve do estado, não pergunta de novo
+    //  - ainda em voo          → espera a que já está lá
+    //  - falhou                → pergunta de novo (retry legítimo; "nunca mais tenta" seria
+    //                            pior que a chamada extra)
+    if (!esc || (esc.alcance && (esc.alcance.carregando || !esc.alcance.erro))) return;
     esc.alcance = { carregando: true, erro: null, itens: null };
     MF_renderEscadaCompat(state);
+    let resultado;
     try {
         const res = await fetch(`${API_COMPAT_ENDPOINT}/alcance?item_id=${encodeURIComponent(state.detail.id)}`, {
             headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {},
         });
         const dados = await res.json().catch(() => ({}));
-        if (!res.ok || !Array.isArray(dados.itens)) {
-            esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
-        } else {
+        resultado = (!res.ok || !Array.isArray(dados.itens))
+            ? { carregando: false, erro: 'nao_deu_pra_consultar', itens: null }
             // `total` e `parcial` vêm do proxy e NÃO podem ser recalculados a partir da
             // lista: numa família maior que a página da ML a lista é um pedaço, e é o total
             // que diz quantos anúncios a gravação atinge de verdade.
-            esc.alcance = {
+            : {
                 carregando: false, erro: null, itens: dados.itens,
                 total: typeof dados.total === 'number' ? dados.total : dados.itens.length,
                 parcial: !!dados.parcial,
             };
-        }
     } catch (e) {
-        esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
+        resultado = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
     }
+    // Resposta velha não pinta escada nova. O box tem id fixo: quem abriu a escada no
+    // anúncio A, trocou para o B e abriu a de B recebia o alcance de A escrito por cima —
+    // a tela de confirmação mostrava os anúncios de A enquanto o Gravar mandava os veículos
+    // de B. Guarda de "ainda sou eu?" nas duas dimensões: o state pode ter sido trocado
+    // (análise nova) ou só a escada pode ter sido recriada dentro do mesmo state. É a mesma
+    // guarda que MF_compatCarregarNivel já tinha, e que aqui faltava.
+    if (window.currentAnalysisState !== state || state.escadaCompat !== esc) return;
+    esc.alcance = resultado;
     MF_renderEscadaCompat(state);
 }
 
@@ -11319,13 +11491,22 @@ window.mfCompatGravarVeiculos = async function () {
     const state = window.currentAnalysisState;
     if (!state || !state.escadaCompat) return;
     const esc = state.escadaCompat;
-    // Defensivo: o botão já vem `disabled` nesses dois casos (ver MF_renderEscadaCompat),
-    // mas um clique/chamada direta não pode gravar lista vazia nem estourar o limite.
+    // Um envio de cada vez. A trava mora no ESTADO, não no botão: o `disabled` que a gente
+    // punha no elemento morria no primeiro re-render (Remover, Fechar, trocar, o select,
+    // o "Tentar de novo" do alcance), e o segundo clique virava um segundo POST com uma
+    // lista diferente da que estava em voo. Compatibilidade é aditiva na ML — seria o dobro
+    // do que o vendedor mandou, num anúncio que pela /alcance pode nem ser só dele.
+    if (esc.gravando) return;
+    // Defensivo: o botão já vem `disabled` nestes casos (ver MF_renderEscadaCompat), mas um
+    // clique/chamada direta não pode gravar lista vazia, estourar o limite, nem gravar antes
+    // do escopo chegar — esta última é a guarda §7.4 do COMPAT-SPEC, que só existia no
+    // desenho do botão. `alcance.erro` continua liberando: aí é o "Gravar mesmo assim".
     if (!esc.selecoes.length || esc.selecoes.length > 200) return;
+    if (!esc.alcance || esc.alcance.carregando) return;
 
-    const btn = document.getElementById('mf-compat-gravar-veiculos');
-    const rotulo = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    esc.gravando = true;
+    MF_renderEscadaCompat(state);
+    let gravou = false;
     try {
         // Ids como STRING, não número — é o que o proxy pediu explicitamente.
         const familias = esc.selecoes.map((s) => {
@@ -11333,26 +11514,37 @@ window.mfCompatGravarVeiculos = async function () {
             if (s.year_id) f.year_id = String(s.year_id);
             return f;
         });
+        // Nota em branco é o mesmo que nota ausente (é o que o proxy também entende): não
+        // viaja `note: ''` no corpo.
+        const corpo = { item_id: state.detail.id, familias };
+        const nota = typeof esc.nota === 'string' ? esc.nota.trim() : '';
+        if (nota) corpo.note = nota;
         const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item_id: state.detail.id, familias }),
+            body: JSON.stringify(corpo),
         });
         const dados = await res.json().catch(() => ({}));
         if (!res.ok || !dados.ok) {
-            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            MF_erroAtalho('compat', MF_compatMensagemErro(dados.code));
             return;
         }
         // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6) — mesma
         // régua do botão universal, nunca "resolvido".
+        gravou = true;
         MF_avisoAtalho('compat', `Enviado. ${MF_COMPAT_SEGUNDO_PASSO}`);
         esc.selecoes = [];
+        esc.nota = '';
         state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
         exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
     } catch (e) {
         MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = rotulo; }
+        esc.gravando = false;
+        // No sucesso o card inteiro já foi redesenhado (e a escada fechou junto); redesenhar
+        // aqui só encheria um box escondido. No erro, o botão precisa voltar ao normal com a
+        // seleção intacta, que é o que o vendedor vai tentar de novo.
+        if (!gravou) MF_renderEscadaCompat(state);
     }
 };
 
