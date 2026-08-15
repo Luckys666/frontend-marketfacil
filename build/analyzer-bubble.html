@@ -11157,7 +11157,11 @@ function MF_renderEscadaCompat(state) {
     // surpresa em anúncio que vende. O escopo é perguntado ao proxy quando a escada abre.
     const alc = esc.alcance;
     const escopoConhecido = !!(alc && !alc.carregando && !alc.erro && Array.isArray(alc.itens));
-    const varios = escopoConhecido && alc.itens.length > 1;
+    // A contagem vem do `total` do proxy, não do tamanho da lista: numa família maior que a
+    // página da ML a lista é um pedaço, e é o total que diz a verdade.
+    const quantosAtinge = escopoConhecido ? (typeof alc.total === 'number' ? alc.total : alc.itens.length) : 0;
+    const varios = escopoConhecido && quantosAtinge > 1;
+    const restantes = escopoConhecido ? quantosAtinge - alc.itens.length : 0;
     const blocoAlcance = !alc || alc.carregando
         ? `<p class="text-small" style="margin-top:10px; color:var(--text-muted);">Conferindo quais anúncios isto vai atingir…</p>`
         : alc.erro
@@ -11168,8 +11172,9 @@ function MF_renderEscadaCompat(state) {
                </p>`
             : varios
                 ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
-                       <p class="text-small" style="font-weight:600;">⚠️ Isto vale para ${alc.itens.length} anúncios:</p>
+                       <p class="text-small" style="font-weight:600;">⚠️ Isto vale para ${quantosAtinge} anúncios:</p>
                        ${alc.itens.map((i) => `<div class="text-small">• ${escapeHtml(i.title || i.id || '')}</div>`).join('')}
+                       ${restantes > 0 ? `<div class="text-small" style="color:var(--text-muted);">e mais ${restantes} que não couberam nesta lista.</div>` : ''}
                    </div>`
                 : '';
 
@@ -11243,7 +11248,14 @@ async function MF_compatCarregarAlcance(state) {
         if (!res.ok || !Array.isArray(dados.itens)) {
             esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
         } else {
-            esc.alcance = { carregando: false, erro: null, itens: dados.itens };
+            // `total` e `parcial` vêm do proxy e NÃO podem ser recalculados a partir da
+            // lista: numa família maior que a página da ML a lista é um pedaço, e é o total
+            // que diz quantos anúncios a gravação atinge de verdade.
+            esc.alcance = {
+                carregando: false, erro: null, itens: dados.itens,
+                total: typeof dados.total === 'number' ? dados.total : dados.itens.length,
+                parcial: !!dados.parcial,
+            };
         }
     } catch (e) {
         esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };

@@ -388,6 +388,25 @@ async function main() {
     check('sem jargão de user-product na tela', !/user.?product|MLBU/i.test(html), html.slice(0, 900));
   }
 
+  // Corte silencioso vira "está tudo aqui". Se a família for maior que a página que a ML
+  // devolve, a tela tem que contar o total real E dizer que a lista é um pedaço.
+  console.log('\n== escada: lista parcial se declara parcial ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS,
+      alcance: { ok: true, status: 200, dados: { total: 137, parcial: true, itens: [
+        { id: 'MLB1', title: 'Primeiro anúncio' },
+        { id: 'MLB2', title: 'Segundo anúncio' },
+      ] } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('conta o total real, não o tamanho da lista', /vale para 137 an[úu]ncios/i.test(html), html.slice(0, 900));
+    check('e avisa que faltam os outros 135', /mais 135/.test(html), html.slice(0, 900));
+  }
+
   console.log('\n== escada: um anúncio só não vira alarme falso ==');
   {
     const ctx = ambienteVeiculos({ marcas: MARCAS });
