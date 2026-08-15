@@ -7836,7 +7836,15 @@ window.mfCompatAbrirEscada = async function () {
  */
 async function MF_compatCarregarAlcance(state) {
     const esc = state.escadaCompat;
-    if (!esc || (esc.alcance && !esc.alcance.erro && !esc.alcance.carregando)) return;
+    // Três estados, três decisões. `carregando` entrou em 15/08: o guard antigo só saía
+    // cedo quando a pergunta já tinha TERMINADO, então fechar e reabrir o painel com a
+    // resposta ainda em voo disparava outra chamada — uma ida à ML por toggle, e quem fica
+    // abrindo e fechando para reler o card enfileira várias (`_regras/escala-mil-anuncios`).
+    //  - já respondeu com sucesso → serve do estado, não pergunta de novo
+    //  - ainda em voo          → espera a que já está lá
+    //  - falhou                → pergunta de novo (retry legítimo; "nunca mais tenta" seria
+    //                            pior que a chamada extra)
+    if (!esc || (esc.alcance && (esc.alcance.carregando || !esc.alcance.erro))) return;
     esc.alcance = { carregando: true, erro: null, itens: null };
     MF_renderEscadaCompat(state);
     let resultado;

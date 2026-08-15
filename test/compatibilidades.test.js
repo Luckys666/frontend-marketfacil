@@ -1183,6 +1183,57 @@ async function main() {
     check('e o escape normal segue de pé', esc(`<b>'&"</b>`) === '&lt;b&gt;&#39;&amp;&quot;&lt;/b&gt;', JSON.stringify(esc(`<b>'&"</b>`)));
   }
 
+  console.log('\n== fechar e reabrir com o escopo EM VOO não repergunta ==');
+  {
+    // O guard de MF_compatCarregarAlcance só saía cedo quando o escopo já tinha TERMINADO.
+    // Com a resposta ainda em voo ele caía e disparava outra chamada — uma ida à ML por
+    // toggle do painel, e o vendedor que fica abrindo e fechando para reler o card gera uma
+    // fila delas. `_regras/escala-mil-anuncios.md`: contar chamada antes de escrever.
+    // Erro continua repergunatando (é retry legítimo), sucesso continua servindo do estado.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, alcanceTrava: true });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    const depoisDeAbrir = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    check('abrir pergunta o escopo uma vez', depoisDeAbrir === 1, `alcance=${depoisDeAbrir}`);
+
+    ctx.get('mfCompatAbrirEscada')();            // fecha, com a resposta ainda pendurada
+    await ctx.get('mfCompatAbrirEscada')();      // reabre
+    await new Promise((r) => setTimeout(r, 0));
+    const depoisDeReabrir = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    check('reabrir com a resposta em voo NÃO gera chamada nova', depoisDeReabrir === 1, `alcance: ${depoisDeAbrir} -> ${depoisDeReabrir}`);
+    check('e a escada continua dizendo que está conferindo',
+      /conferindo/i.test(ctx.sandbox.document.getElementById('mf-compat-escada').textContent),
+      ctx.sandbox.document.getElementById('mf-compat-escada').textContent.slice(0, 200));
+  }
+  {
+    // Contraprova: depois de uma FALHA, reabrir tem que perguntar de novo — senão o
+    // conserto viraria "nunca mais tenta", que é pior que a chamada extra.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, alcance: { ok: false, status: 500, dados: {} } });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const depoisDeFalhar = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    ctx.get('mfCompatAbrirEscada')();            // fecha
+    await ctx.get('mfCompatAbrirEscada')();      // reabre
+    await new Promise((r) => setTimeout(r, 0));
+    const depoisDeReabrir = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    check('depois de falhar, reabrir tenta de novo', depoisDeReabrir > depoisDeFalhar, `alcance: ${depoisDeFalhar} -> ${depoisDeReabrir}`);
+  }
+  {
+    // E o caminho de sucesso continua servindo do estado, sem reperguntar (já era assim;
+    // fica travado para o conserto não mexer nisso sem querer).
+    const ctx = ambienteVeiculos({ marcas: MARCAS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const depoisDoSucesso = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const depoisDeReabrir = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    check('escopo já conferido continua vindo do estado', depoisDeReabrir === depoisDoSucesso, `alcance: ${depoisDoSucesso} -> ${depoisDeReabrir}`);
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
