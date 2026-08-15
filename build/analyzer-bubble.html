@@ -2700,6 +2700,268 @@
     color: var(--red);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Descrição e garantia editáveis pelo Checklist (12/08/2026)
+
+   Classes próprias, sem reaproveitar .attr-edit-*: aquelas são de uma caixa `row` com
+   botões quadrados de 28px, e herdar isso pra um textarea de 9 linhas foi exatamente o
+   caminho que estourou o alerta de renomear pra fora do card em 10/08. `box-sizing` vem
+   escrito em cada campo de largura 100% — sem ele, padding + borda somam por fora e o
+   overflow do wrapper corta a borda direita.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* `.ana-wrapper button` deixa TODO botão em CAIXA ALTA com letter-spacing. "ESCREVER
+   DESCRIÇÃO" gritando dentro de um card de checklist não combina com o resto da tela — os
+   botões de período já desligam isso inline. Aqui vem por classe: (0,2,0) contra (0,1,1)
+   ganha sem depender da ordem do arquivo. Só a tela mostrou isso; o teste de layout agora
+   mede o textTransform pra não voltar. */
+.ana-wrapper .mf-conteudo-botao {
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ana-wrapper .mf-conteudo-botao:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--blue-light);
+}
+/* Linha do Checklist Rápido. Era estilo inline até 13/08, quando ganhou dois botões de
+   rótulo comprido ("Usar Garantia do vendedor por 7 dias" + "Informar garantia") e passou a
+   vazar 145px pra fora do card em 375px — com overflow escondido, o botão manual sumia sem
+   deixar rastro. Virou classe pra media query alcançar. */
+.ana-wrapper .mf-chk-linha {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--red-light);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--red);
+}
+.ana-wrapper .mf-chk-linha.mf-chk-ok {
+  background: var(--green-light);
+  border-left-color: var(--green);
+}
+/* `min-width: 0` é o que deixa o texto encolher em vez de empurrar os botões pra fora:
+   item de flex tem min-width auto por padrão e se recusa a ficar menor que o conteúdo. */
+.ana-wrapper .mf-chk-texto { flex: 1 1 160px; min-width: 0; }
+
+/* No celular os botões descem pra linha própria e dividem a largura. Espremidos ao lado do
+   texto eles ou vazam ou ficam com 20px de área de toque. */
+@media (max-width: 620px) {
+  .ana-wrapper .mf-chk-texto { flex: 1 1 100%; }
+  .ana-wrapper .mf-chk-linha .mf-conteudo-botao {
+    flex: 1 1 auto;
+    min-height: 34px;
+    white-space: normal;
+  }
+}
+
+/* Atalho de 1 clique: é o caminho que resolve na hora, então é ele que tem cor. O botão
+   manual ao lado continua neutro — dois botões sólidos lado a lado brigariam e o vendedor
+   pararia pra escolher, que é justo o que este atalho existe pra evitar.
+   (0,2,0) como o irmão, mas escrito DEPOIS: mesma especificidade, ganha por ordem. Onde
+   isso importa de verdade (o alerta de renomear) a regra é escopada; aqui a ordem basta
+   porque as duas classes vivem no mesmo arquivo, uma embaixo da outra. */
+.ana-wrapper .mf-conteudo-botao-rapido {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+.ana-wrapper .mf-conteudo-botao-rapido:hover {
+  background: var(--blue-dark, #0052cc);
+  border-color: var(--blue-dark, #0052cc);
+  color: #fff;
+}
+.ana-wrapper .mf-conteudo-botao-rapido:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* O erro do atalho reusa `.mf-conteudo-erro`, que já existe mais abaixo neste arquivo
+   (com border-box e tudo). Escrever uma segunda regra com o mesmo seletor aqui seria
+   perder por ordem e depurar isso de novo — só o espaçamento é próprio. */
+.ana-wrapper .mf-conteudo-erro[id^="mf-rapido-erro-"] {
+  margin: 4px 0 2px;
+  overflow-wrap: anywhere;
+}
+.ana-wrapper .mf-conteudo-editor { margin: 6px 0 2px; }
+.ana-wrapper .mf-conteudo-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-card);
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-conteudo-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 120px;
+}
+.ana-wrapper .mf-conteudo-textarea:focus,
+.ana-wrapper .mf-conteudo-input:focus,
+.ana-wrapper .mf-conteudo-select:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+.ana-wrapper .mf-conteudo-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ana-wrapper .mf-conteudo-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.ana-wrapper .mf-btn-primario,
+.ana-wrapper .mf-btn-secundario {
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-btn-primario {
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+.ana-wrapper .mf-btn-secundario {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.ana-wrapper .mf-btn-primario:disabled,
+.ana-wrapper .mf-btn-secundario:disabled { opacity: 0.6; cursor: default; }
+.ana-wrapper .mf-conteudo-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ana-wrapper .mf-conteudo-input,
+.ana-wrapper .mf-conteudo-select {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-garantia-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ana-wrapper .mf-garantia-prazo { display: flex; gap: 6px; }
+.ana-wrapper .mf-garantia-prazo .mf-conteudo-input { width: 80px; }
+.ana-wrapper .mf-conteudo-aviso,
+.ana-wrapper .mf-conteudo-dica {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  box-sizing: border-box;
+}
+.ana-wrapper .mf-conteudo-aviso {
+  padding: 7px 10px;
+  border-left: 3px solid var(--yellow, #f59e0b);
+  border-radius: 4px;
+  background: var(--yellow-light, #fef3c7);
+  color: var(--text);
+}
+.ana-wrapper .mf-conteudo-erro {
+  padding: 7px 10px;
+  border-left: 3px solid var(--red);
+  border-radius: 4px;
+  background: var(--red-light);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  box-sizing: border-box;
+}
+/* Mesma caixa, outro recado: a sugestão da IA não é erro. */
+.ana-wrapper .mf-conteudo-erro.mf-conteudo-info {
+  border-left-color: var(--blue);
+  background: var(--blue-light);
+}
+.ana-wrapper .mf-link-acao {
+  border: none;
+  background: none;
+  padding: 0 0 0 4px;
+  color: var(--blue);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  /* No celular os botões ficam em linha própria: espremidos ao lado do contador, "Salvar
+     descrição" quebrava no meio da palavra. */
+  .ana-wrapper .mf-conteudo-acoes { margin-left: 0; width: 100%; }
+  .ana-wrapper .mf-conteudo-acoes .mf-btn-primario,
+  .ana-wrapper .mf-conteudo-acoes .mf-btn-secundario { flex: 1 1 auto; text-align: center; }
+  .ana-wrapper .mf-garantia-linha { flex-direction: column; gap: 8px; }
+}
+
+/* Marcações do ML: veredito primeiro, lista atrás de um clique (Lucas, 12/08).
+   `<details>` nativo de propósito — não depende de listener pendurado depois do innerHTML,
+   que no Bubble já mordeu antes. */
+.ana-wrapper .mf-tags-detalhe { margin-top: 10px; }
+.ana-wrapper .mf-tags-detalhe > summary {
+  cursor: pointer;
+  padding: 6px 2px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ana-wrapper .mf-tags-detalhe > summary::-webkit-details-marker { display: none; }
+.ana-wrapper .mf-tags-detalhe > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  color: var(--text-muted);
+}
+.ana-wrapper .mf-tags-detalhe[open] > summary::before { content: '▾ '; }
+.ana-wrapper .mf-tags-detalhe > summary:hover { color: var(--blue); }
+
 
 /* ============================================================
  * Painel Seletor de Anúncios — CSS (port F4 do protótipo)
@@ -3363,6 +3625,7 @@
       <button type="button" class="btn-filters-toggle" id="filtersToggle" aria-expanded="false">Filtrar e ordenar ▾</button>
       <div class="filters-more">
       <select class="sel" id="orderSelect">
+        <option value="sold_desc">Ordenar: mais vendidos</option>
         <option value="last_updated_desc">Ordenar: atualizados recentemente</option>
         <option value="price_asc">Ordenar: preço menor</option>
         <option value="price_desc">Ordenar: preço maior</option>
@@ -3589,6 +3852,51 @@ function mfRenomeiaVariacao(catAttr, detail) {
     if (!detail?.user_product_id && !temVariacoes) return false;   // item solto: título é do vendedor
     return mfAtributoPreenchido(detail, catAttr.id);
 }
+// Comparação de texto tolerante: sem acento, sem caixa e sem separador. A ML escreve
+// "180ml" no título para um valor gravado como "180 mL" — comparando cru, o campo passaria
+// batido justamente onde ele MUDA o link.
+function MF_chaveTexto(s) {
+    return String(s || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+/**
+ * Mexer neste campo muda o LINK do anúncio?
+ *
+ * Todo CHILD_PK dá nome à variação, mas nem todo nome de variação entra no título — e é o
+ * título que gera o permalink. Medido em conta real (10/08/2026, com reversão):
+ *   - MLB6695198754, COLOR "Rosa"→"Coral": o valor aparece no título e o permalink mudou
+ *     NO MESMO INSTANTE (…-rosa-rosa-36-_JM → …-rosa-coral-36-_JM), e seguiu mudado por 30 min.
+ *   - MLB2177029901, UNITS_PER_PACKAGE "1"→"2": fora do título, permalink intacto o tempo todo.
+ * Na mesma conta, 137 CHILD_PK têm o valor no título e 467 não têm. Alertar nos 604 treinava
+ * o vendedor a ignorar aviso vermelho — que é o mesmo que não ter aviso.
+ *
+ * ⚠️ Isto governa só o ALERTA. A flag `confirm_rename_variation` continua saindo em todo
+ * CHILD_PK (mfRenomeiaVariacao): o proxy recusa sem ela, e front mais estreito que servidor
+ * é recusa permanente na mão do vendedor — foi o erro de 10/08.
+ *
+ * Na dúvida, avisa: sem título, sem valor, ou com valor curto demais pra casar com segurança,
+ * volta ao comportamento conservador.
+ */
+function mfMudaOLink(catAttr, detail) {
+    if (!mfRenomeiaVariacao(catAttr, detail)) return false;
+    const titulo = detail?.title;
+    const attr = (detail?.attributes || []).find((x) => x && x.id === catAttr.id);
+    const valor = (attr?.value_name && String(attr.value_name).trim())
+        || (Array.isArray(attr?.values) ? (attr.values.find((v) => v && v.name) || {}).name : null);
+    if (!titulo || !valor) return true;
+    const chave = MF_chaveTexto(valor);
+    if (!chave) return true;
+    // Valor de 1 caractere ("P" de tamanho, "1" de unidades) casaria como substring com
+    // quase qualquer título — inclusive o "1" que eu MEDI não mudar o link. Aí a régua é
+    // palavra inteira: "Camiseta P" casa, "Camiseta Preta" não.
+    if (chave.length < 2) {
+        return String(titulo).split(/\s+/).some((palavra) => MF_chaveTexto(palavra) === chave);
+    }
+    // 2+ caracteres: substring sem separadores, porque a ML reescreve o valor no título
+    // ("180 mL" vira "180ml") e a comparação por palavra perderia justo esses.
+    return MF_chaveTexto(titulo).includes(chave);
+}
 // O item já tem valor gravado nesse atributo?
 function mfAtributoPreenchido(detail, attrId) {
     const a = (detail?.attributes || []).find((x) => x && x.id === attrId);
@@ -3612,8 +3920,90 @@ function MF_textoCampoBloqueado(catAttr, motivo) {
     return `${nome} não pode ser editado por aqui.`;
 }
 // Obrigatório para o ML (o resto é extra — vale ponto, mas ninguém é reprovado por ele)
-function mfCampoObrigatorio(catAttr) {
+function mfCampoObrigatorio(catAttr, obrigatoriosML) {
+    // Quando o próprio ML diz quais são os obrigatórios deste anúncio, é ele que manda:
+    // `tags.required` é da CATEGORIA e não sabe nada do domínio nem do catálogo do item.
+    if (obrigatoriosML instanceof Set && obrigatoriosML.size > 0) {
+        return obrigatoriosML.has(catAttr && catAttr.id);
+    }
     return !!(catAttr && catAttr.tags && (catAttr.tags.required || catAttr.tags.catalog_required));
+}
+/**
+ * Os obrigatórios segundo a própria ML, de `adoption_status.required` do catalog_quality.
+ *
+ * Estrutura medida em conta real (10/08/2026): `attributes` são os que o anúncio JÁ tem e
+ * `missing_attributes` os que faltam — a lista de obrigatórios é a união dos dois.
+ *
+ * ⚠️ Nem sempre vem: em 11 anúncios ativos da conta, 9 traziam a lista e 2 vinham com os
+ * dois campos `null`. E a API só responde em anúncio ATIVO (400 em pausado e em catálogo).
+ * Por isso devolve null quando não sabe, em vez de um Set vazio — Set vazio esvaziaria a
+ * etapa "Obrigatórios" e o vendedor perderia a informação que ele já tinha pelas tags.
+ */
+/**
+ * Termos repetidos no título — o caso "Sapatilha … Melissa Rosa **Rosa** 36" (conta real)
+ * e "Kit Jogo 3 Panelas … Vaquinha **Vaquinha**".
+ *
+ * Acontece porque a ML monta o título como `family_name` + valores das variações: se o
+ * vendedor já pôs a cor no family_name, ela sai duas vezes. Come caracteres que valiam
+ * palavra-chave e fica com cara de erro.
+ *
+ * ⚠️ DIAGNÓSTICO, SEM BOTÃO. As duas correções possíveis (mexer no family_name ou no nome
+ * da variação) resetam o anúncio pelo mecanismo do permalink — medido em 10/08/2026. Este
+ * sinal aponta; quem decide corrigir é o vendedor, sabendo o preço.
+ */
+function MF_termosRepetidosNoTitulo(titulo, termosDaVariacao) {
+    if (!titulo || typeof titulo !== 'string') return [];
+    const contagem = new Map();
+    const original = new Map();
+    for (const bruto of titulo.split(/\s+/)) {
+        const chave = MF_chaveTexto(bruto);
+        // Palavra de 1-2 letras ("e", "de") repete por gramática, não por erro.
+        if (chave.length < 3) continue;
+        contagem.set(chave, (contagem.get(chave) || 0) + 1);
+        if (!original.has(chave)) original.set(chave, bruto);
+    }
+    let repetidos = [...contagem.entries()].filter(([, n]) => n > 1);
+
+    // Sem o recorte abaixo o sinal acusa repetição legítima: "Kit Máscara Cílios 4d +
+    // Máscara Cílios Incolor" é um kit de dois produtos, e o vendedor escreveu assim de
+    // propósito (caso real da conta). O que interessa é o family_name já conter a palavra
+    // que a ML vai acrescentar de novo como nome da variação — aí sim é desperdício.
+    if (Array.isArray(termosDaVariacao) && termosDaVariacao.length) {
+        const daVariacao = new Set();
+        for (const valor of termosDaVariacao) {
+            for (const palavra of String(valor || '').split(/\s+/)) {
+                const chave = MF_chaveTexto(palavra);
+                if (chave.length >= 3) daVariacao.add(chave);
+            }
+        }
+        repetidos = repetidos.filter(([chave]) => daVariacao.has(chave));
+    }
+
+    return repetidos.map(([chave, n]) => ({ termo: original.get(chave), vezes: n }));
+}
+/** Valores que dão nome à variação deste anúncio (é o que a ML cola no fim do título). */
+function MF_valoresDaVariacao(detail, categoryAttributes) {
+    const valores = [];
+    if (Array.isArray(detail?.attribute_combinations)) {
+        for (const a of detail.attribute_combinations) if (a?.value_name) valores.push(a.value_name);
+    }
+    const hier = {};
+    for (const c of (Array.isArray(categoryAttributes) ? categoryAttributes : [])) {
+        if (c && c.id) hier[c.id] = c.hierarchy;
+    }
+    for (const a of (Array.isArray(detail?.attributes) ? detail.attributes : [])) {
+        if (a && hier[a.id] === 'CHILD_PK' && a.value_name) valores.push(a.value_name);
+    }
+    return valores;
+}
+function mfObrigatoriosDoML(qualidadeFichaData) {
+    const req = qualidadeFichaData?.adoption_status?.required;
+    if (!req) return null;
+    const ids = [
+        ...(Array.isArray(req.attributes) ? req.attributes : []),
+        ...(Array.isArray(req.missing_attributes) ? req.missing_attributes : [])
+    ].filter(Boolean);
+    return ids.length ? new Set(ids) : null;
 }
 const VALORES_IGNORADOS_PENALIDADE = new Set(['isento', 'não aplicável', 'na']);
 
@@ -3630,10 +4020,17 @@ const tagSignificados = {
     "catalog_product_candidate": "Este anúncio é um candidato a usar o catálogo do Mercado Livre.",
     "moderation_penalty": "Penalidade por moderação. Violação de regra detectada.",
     "free_shipping": "O anúncio oferece frete grátis.",
+    // Compatibilidades de autopeças (13/08/2026) — deixam de ser a string crua em
+    // inglês no meio das tags neutras (COMPAT-SPEC §6).
+    "incomplete_compatibilities": "O Mercado Livre pede os veículos em que esta peça serve.",
+    "pending_compatibilities": "O Mercado Livre sugeriu veículos para este anúncio.",
 };
 const TAGS_NEGATIVAS = new Set([
     "poor_quality_picture", "poor_quality_thumbnail",
-    "incomplete_technical_specs", "moderation_penalty"
+    "incomplete_technical_specs", "moderation_penalty",
+    // `pending_compatibilities` fica DE FORA de propósito: pelo COMPAT-SPEC §3 ela é sinal
+    // informativo (há sugestões do ML esperando), não penalidade — não "consertar" isso.
+    "incomplete_compatibilities"
 ]);
 
 const BASE_URL_PROXY = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
@@ -3644,6 +4041,14 @@ const API_PERFORMANCE_ENDPOINT = `${BASE_URL_PROXY}/api/performance`;
 const API_VISITS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-visits`; // Rota no backend para visitas
 const API_REVIEWS_ENDPOINT = `${BASE_URL_PROXY}/api/fetch-reviews`; // Rota no backend para reviews
 const API_ADS_METRICS_ENDPOINT = `${BASE_URL_PROXY}/api/ads-metrics`; // Rota para métricas de Product Ads
+// Escrita de descrição e garantia (12/08/2026). O que vale como descrição e o que é uma
+// garantia válida é decidido no proxy — daqui só sai o que o vendedor digitou.
+const API_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/description`;
+const API_GARANTIA_ENDPOINT = `${BASE_URL_PROXY}/api/warranty`;
+const API_GARANTIA_VALORES_ENDPOINT = `${BASE_URL_PROXY}/api/warranty-values`;
+const API_GPT_DESCRICAO_ENDPOINT = `${BASE_URL_PROXY}/api/gpt-descricao`;
+// Compatibilidades de autopeças (13/08/2026). Veredito pronto — nenhum limiar mora aqui.
+const API_COMPAT_ENDPOINT = `${BASE_URL_PROXY}/api/compatibilidades`;
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -3965,7 +4370,11 @@ function MF_getAttrPlaceholder(catAttr) {
 // evolução do score e mudanças desde a última visita do vendedor.
 // Sem persistir em DB do app — só no browser do user.
 // ============================================================
-const MF_SNAP_KEY = (id) => `mf_analyze_snap_v1_${id}`;
+// v2: os snapshots gravados em 11/08/2026 têm 60 dias de visitas dentro de um campo
+// chamado `visits30`. Comparar aqueles com os de agora mostraria "📉 Visitas -50%" pra
+// todo anúncio já analisado — queda que nunca aconteceu. Trocar a chave descarta a base
+// velha: a primeira análise volta a ser "sem comparação", que é a verdade.
+const MF_SNAP_KEY = (id) => `mf_analyze_snap_v2_${id}`;
 
 function MF_loadSnap(itemId) {
     if (!itemId) return null;
@@ -3980,8 +4389,28 @@ function MF_saveSnap(itemId, snap) {
     try { localStorage.setItem(MF_SNAP_KEY(itemId), JSON.stringify(snap)); } catch (e) {}
 }
 
+/**
+ * Recorta a série de visitas nos últimos N dias.
+ *
+ * A chamada de visitas pede 60 dias porque o card "Desempenho do Anúncio" compara 30 dias
+ * com os 30 anteriores. Todo o resto da tela fala em 30 — e somar os 60 num lugar que
+ * escreve "em 30d" não é detalhe de rótulo: no card de oportunidades isso dobrava o
+ * "+R$ X/mês" e cortava a conversão pela metade (11/08/2026). Quem precisa dos 60 dias
+ * pede a série inteira; quem fala em 30 passa por aqui.
+ */
+function MF_visitasDosUltimos(results, dias = 30) {
+    if (!Array.isArray(results)) return [];
+    return results.filter((v) => {
+        const iso = String(v && v.date || '').slice(0, 10);
+        if (!iso) return false;
+        const t = new Date(iso + 'T12:00:00').getTime();
+        if (isNaN(t)) return false;
+        return (Date.now() - t) / 86400000 < dias;
+    });
+}
+
 function MF_buildSnap(detail, visitsData, adsData, score) {
-    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    const visits30 = MF_visitasDosUltimos(visitsData?.results, 30).reduce((s, v) => s + (v.total || 0), 0);
     let sales30 = 0;
     let adsActive = false;
     let adsLevel = null;
@@ -4145,7 +4574,10 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
     const _cfg = (typeof window !== 'undefined' && window.MF_getSiteConfig) ? window.MF_getSiteConfig(_site) : { locale: 'pt-BR', currency: 'BRL' };
     const fmtMoney = (n) => new Intl.NumberFormat(_cfg.locale, { style: 'currency', currency: _cfg.currency }).format(n || 0);
     const price = detail?.price || 0;
-    const visits30 = (visitsData?.results || []).reduce((s, v) => s + (v.total || 0), 0);
+    // 30 dias de verdade: a série chega com 60 (ver MF_visitasDosUltimos) e os textos
+    // daqui prometem "em 30d" — e viram reais no bolso do vendedor.
+    const visitas30d = MF_visitasDosUltimos(visitsData?.results, 30);
+    const visits30 = visitas30d.reduce((s, v) => s + (v.total || 0), 0);
     const soldQuantityLifetime = detail?.sold_quantity || 0;
     const availableQty = detail?.available_quantity || 0;
     const itemId = detail?.id || '';
@@ -4211,8 +4643,11 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
 
         let visitsTrend = null;
         let visitsRatio = 1;
-        if (Array.isArray(visitsData?.results) && visitsData.results.length >= 4) {
-            const visitsSplit = _mfSplitByDate(visitsData.results);
+        // Metade de 30 dias é 15 — que é o que a frase abaixo promete. Com a série de 60
+        // o "recente vs anterior" virava 30 × 30 enquanto as vendas seguiam 15 × 15, e a
+        // projeção de quando o estoque acaba misturava duas escalas.
+        if (visitas30d.length >= 4) {
+            const visitsSplit = _mfSplitByDate(visitas30d);
             const visitsOlder = visitsSplit.older.reduce((s, v) => s + (v.total || 0), 0);
             const visitsRecent = visitsSplit.recent.reduce((s, v) => s + (v.total || 0), 0);
             visitsTrend = _mfTrend(visitsOlder, visitsRecent);
@@ -4682,7 +5117,10 @@ window.openAttrEditor = function (attrId) {
 
     // Renomear variação é caro e não tem desfazer: o alerta vem ANTES do campo, e quem
     // confirma tem que passar por cima do botão de cancelar, que é o destaque.
-    const renomeia = mfRenomeiaVariacao(catAttr, state.detail);
+    // Só entra quando o valor REALMENTE está no título (mfMudaOLink) — todo CHILD_PK
+    // renomeia a variação, mas só o que aparece no título muda o link. Ver a medição de
+    // 10/08 no comentário de mfMudaOLink. A flag do proxy continua saindo em todos.
+    const renomeia = mfMudaOLink(catAttr, state.detail);
     wrapper.innerHTML = renomeia ? `
         <div class="attr-edit-box mf-attr-perigo">
             <div class="mf-alerta-renomear">
@@ -4816,6 +5254,12 @@ window.saveAttr = async function (attrId) {
             if (idx >= 0) state.detail.attributes[idx] = merged;
             else (state.detail.attributes = state.detail.attributes || []).push(merged);
         }
+        // A lista da ML é do carregamento e ela atualiza periodicamente: a linha vai
+        // continuar pedindo este campo. Marcar aqui é o que evita o vendedor achar que o
+        // salvamento não pegou e fazer tudo de novo pelo Mercado Livre.
+        MF_marcaResolvidoNoML(state, attrId);
+        exibirPerformance(state.performanceData, `performanceTexto${state.containerIdSuffix || ''}`);
+
         // Re-render the category card with fresh values
         const containerId = `categoryAttributes${state.containerIdSuffix || ''}`;
         exibirAtributosCategoria(state.categoryAttributes, state.detail.attributes, containerId);
@@ -4828,15 +5272,23 @@ window.saveAttr = async function (attrId) {
 
 function reRenderAnalysisView() {
     if (!window.currentAnalysisState) return;
-    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData } = window.currentAnalysisState;
+    const { detail, descriptionData, usedFallback, containerIdSuffix, categoryAttributes, visitsData, reviewsData, adsData, performanceData, compatData } = window.currentAnalysisState;
 
     // Update dependent components
     processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
     exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
+    // Checklist junto: descrição e garantia agora se resolvem por ele, e um "❌ Não
+    // preenchida" que sobrevive ao próprio salvamento faz o vendedor salvar de novo.
+    exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`);
+    // Compatibilidades também acompanha o resto — mantém o card em dia com o estado.
+    exibirCompatibilidades(compatData, `compatibilidades${containerIdSuffix}`);
 
     // Re-render score WITH analysisData so improvements panel persists
     const analysisData = { title: detail.title, detail, descriptionData, categoryAttributes, visitsData, reviewsData, adsData };
-    exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes), usedFallback, `scoreCircle${containerIdSuffix}`, analysisData, `scoreChecklist${containerIdSuffix}`);
+    // performanceData vai junto: sem ele o card "O que Melhorar" perdia a seção "Ações
+    // Recomendadas pelo ML" no primeiro atributo que o vendedor salvasse — as recomendações
+    // sumiam sozinhas e não voltavam sem recarregar a página (achado em 10/08/2026).
+    exibirPontuacao(calcularPontuacaoQualidade(detail, descriptionData, usedFallback, categoryAttributes), usedFallback, `scoreCircle${containerIdSuffix}`, analysisData, `scoreChecklist${containerIdSuffix}`, performanceData);
 }
 
 function getPalavrasUnicas(texto) {
@@ -4960,6 +5412,27 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
             <button type="button" onclick="window.MF_copiarId && window.MF_copiarId('${escapeHtml(String(valor))}', this)" title="Copiar" style="background:none; border:none; padding:0; cursor:pointer; color:var(--text-muted); display:inline-flex;">${copiaSvg}</button>
         </span>`;
 
+    // Sinal de termo repetido. Fica no card do título porque é do título que se trata, e
+    // vem SEM ação: corrigir passa por family_name ou nome de variação, e os dois resetam
+    // o anúncio (medido em 10/08). Dizer "arrume aqui" seria empurrar o vendedor pro dano.
+    const _repetidos = MF_termosRepetidosNoTitulo(
+        titulo,
+        MF_valoresDaVariacao(detail, window.currentAnalysisState?.categoryAttributes)
+    );
+    const repetidoHtml = _repetidos.length ? `
+        <div style="margin-top:10px; padding:8px 12px; background:var(--yellow-light,#fef3c7); border-radius:var(--radius-sm); border-left:3px solid var(--yellow,#f59e0b);">
+            <span class="text-small" style="color:#92400e;">
+                <b>${_repetidos.map(r => escapeHtml(r.termo)).join(', ')}</b>
+                ${_repetidos.length > 1 ? 'aparecem' : 'aparece'} duas vezes no título.
+                Costuma ser o nome da variação repetindo uma palavra que já está no nome do produto —
+                gasta caracteres que podiam ser palavra de busca.
+            </span>
+            <span class="text-small" style="display:block; margin-top:4px; color:var(--text-muted);">
+                Só um aviso: arrumar isso muda o título e o link do anúncio, e ele perde a exposição que já tem.
+                Vale mais em anúncio novo do que em anúncio que já vende.
+            </span>
+        </div>` : '';
+
     // Variation info section
     let varHtml = '';
     if (hasVariation || variacaoId) {
@@ -5038,6 +5511,7 @@ function exibirTitulo(titulo, isMlbu = false, containerId = "tituloTexto", detai
 
                     ${idsHtml}
 
+                    ${repetidoHtml}
                     ${varHtml}
 
                     ${state !== 'good' && !hasVariation && (detail?.sold_quantity || 0) === 0 ? `
@@ -5095,6 +5569,22 @@ function exibirDescricaoIndicator(descriptionData, containerId = "descricaoIndic
     `;
 }
 
+/**
+ * Este atributo sobrou de uma categoria ANTERIOR do anúncio?
+ *
+ * Quando o vendedor muda a categoria, a ML **não apaga** os atributos da categoria antiga —
+ * eles seguem gravados no item. A Ficha Técnica lista o que está no item, então esses
+ * órfãos entravam como se fossem da ficha atual: um "Kit Válvula de Segurança" aparecia
+ * com "Tipo de manômetro" e "Tipo de preenchimento líquido" (caso real, MLB3084958679).
+ *
+ * Sem a lista da categoria (rede falhou, MLBU, catálogo) devolve false: marcar tudo como
+ * "de outra categoria" seria acusar sem saber — chamada que falhou não vira veredito.
+ */
+function mfDeOutraCategoria(attrId) {
+    const cats = window.currentAnalysisState && window.currentAnalysisState.categoryAttributes;
+    if (!Array.isArray(cats) || !cats.length) return false;
+    return !cats.some((c) => c && c.id === attrId);
+}
 function processarAtributos(fichaTecnica, titulo, usedFallback = false, containerId = "fichaTecnicaTexto") {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -5102,7 +5592,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
     if (!Array.isArray(fichaTecnica) || fichaTecnica.length === 0) {
         el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.2s;">
-            <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Ficha Técnica</span></div>
+            <div class="ana-card-header"><span class="ana-card-icon">📋</span><span class="ana-card-title">Otimização de Palavras da Ficha Técnica</span></div>
             <p class="text-small">Nenhuma ficha técnica disponível.</p>
         </div>`;
         return;
@@ -5166,9 +5656,9 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
         }
 
         if (issues.length > 0) {
-            problemAttrs.push({ id: attr.id, name: nome, value: valor, issues });
+            problemAttrs.push({ id: attr.id, name: nome, value: valor, issues, deOutraCategoria: mfDeOutraCategoria(attr.id) });
         } else {
-            okAttrs.push({ id: attr.id, name: nome, value: valor });
+            okAttrs.push({ id: attr.id, name: nome, value: valor, deOutraCategoria: mfDeOutraCategoria(attr.id) });
         }
     });
 
@@ -5181,7 +5671,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
             <div class="attribute-item ${isProblem ? 'problem' : ''}" style="min-width:0; ${ignored ? 'opacity:0.5; filter:grayscale(1);' : ''}">
                 <div style="flex-grow:1; min-width:0; overflow:hidden;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-label" style="margin-bottom:2px;">${escapeHtml(item.name)}</span>
+                        <span class="text-label" style="margin-bottom:2px;">${escapeHtml(item.name)}${item.deOutraCategoria ? '<span style="margin-left:6px; font-size:0.65rem; font-weight:600; padding:1px 6px; border-radius:999px; background:var(--bg-subtle,#f1f5f9); color:var(--text-muted); white-space:nowrap;" title="Este campo ficou de uma categoria anterior deste anúncio. Ele não faz parte da ficha da categoria atual e o Mercado Livre não o considera mais — some quando você salvar o anúncio de novo.">de outra categoria</span>' : ''}</span>
                         <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                             ${!isProblem && !ignored ? '<span style="color:var(--green); font-weight:bold;">✔</span>' : ''}
                             ${ignored ? '<span style="color:gray; font-size:0.75rem;">Ignorado</span>' : ''}
@@ -5201,7 +5691,7 @@ function processarAtributos(fichaTecnica, titulo, usedFallback = false, containe
         <div class="ana-card" style="animation-delay: 0.2s;">
             <div class="ana-card-header">
                 <span class="ana-card-icon">📋</span>
-                <span class="ana-card-title">Ficha Técnica</span>
+                <span class="ana-card-title">Otimização de Palavras da Ficha Técnica</span>
                 <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${problemAttrs.length + okAttrs.length} atributos</span>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
@@ -5240,12 +5730,14 @@ const MF_TAG_CATALOG = {
     poor_quality_thumbnail:      { sev: 'neg', label: 'Thumb ruim' },
     incomplete_technical_specs:  { sev: 'neg', label: 'Specs incompletas' },
     moderation_penalty:          { sev: 'neg', label: 'Punição mod.' },
+    incomplete_compatibilities:  { sev: 'neg', label: 'Faltam veículos compatíveis' },
     low_health:                  { sev: 'neg', label: 'Saúde baixa' },
     manufacturing_time:          { sev: 'neg', label: 'Sob encomenda' },
     forbidden:                   { sev: 'neg', label: 'Proibido' },
     // Neutras / informacionais (cinza)
     catalog_listing:             { sev: 'info', label: 'Catálogo' },
     dragged_bids_and_visits:     { sev: 'info', label: 'Histórico migrado' },
+    pending_compatibilities:     { sev: 'info', label: 'Veículos sugeridos pelo ML' },
     // Ignoradas (técnicas)
     user_product_listing:        { sev: 'ignore' },
     variations_migration_uptin:  { sev: 'ignore' },
@@ -6092,8 +6584,13 @@ function MF_renderVariationField(catAttr, currentAttr, itemId) {
 
     // Mesmo double check da ficha: aqui o campo é inline, então o alerta é uma linha
     // vermelha acima do input e o ✓ vira texto — ninguém renomeia no automático.
-    const renomeia = mfRenomeiaVariacao(catAttr, {
+    // O título vem do overview da família: sem ele mfMudaOLink não consegue afirmar nada e
+    // cai no conservador (avisa), que é o lado certo pra errar.
+    const _tituloVariacao = (window.__mfFamilyOverview?.variations || [])
+        .find(v => v.item_id === itemId)?.summary?.title;
+    const renomeia = mfMudaOLink(catAttr, {
         user_product_id: 'familia',
+        title: _tituloVariacao,
         attributes: currentAttr ? [currentAttr] : []
     });
     const salvar = `window.MF_saveVariationAttr('${escapeHtml(itemId)}', '${escapeHtml(id)}', '${inputId}', '${errorId}')`;
@@ -6265,7 +6762,9 @@ function exibirAtributosCategoria(categoryAttributes, adAttributes, containerId 
         // Duas etapas: primeiro o que o ML EXIGE, depois os extras. O vendedor resolve
         // os obrigatórios e só então investe tempo nos opcionais — e a nota só cobra
         // o que ele consegue mexer (mfCampoEditavel).
-        const obrigatorio = (x) => mfCampoObrigatorio(x.catAttr);
+        // Régua de obrigatoriedade: a da ML quando ela diz, a da categoria quando não diz.
+        const _obrigatoriosML = mfObrigatoriosDoML(window.currentAnalysisState?.qualidadeFichaData);
+        const obrigatorio = (x) => mfCampoObrigatorio(x.catAttr, _obrigatoriosML);
         const grupos = {
             obrFalta: missingAttrs.filter(obrigatorio),
             obrOk: filledAttrs.filter(obrigatorio),
@@ -6374,7 +6873,14 @@ function exibirInformacaoGarantia(detail, containerId = "warrantyInfo") {
     `;
 }
 
-function exibirChecklistRapido(detail, descriptionData, containerId = "quickChecklist", performanceData = null) {
+// performanceData saiu da assinatura em 10/08/2026: as recomendações da ML Quality API
+// ficam SÓ no card "O que Melhorar" (exibirPontuacao). Antes apareciam nos dois — aqui as
+// 3 primeiras como "Prioridades ML", lá a lista inteira —, então as 3 primeiras saíam
+// duas vezes na mesma tela, mesmo texto e ícone diferente. Só duplicava em anúncio ativo
+// com pendência, daí parecer "em algumas contas": em pausado e em catálogo a /performance
+// não responde e as duas seções somem juntas. Este card é sobre descrição, garantia e
+// imagens — recomendação do ML nunca foi dele.
+function exibirChecklistRapido(detail, descriptionData, containerId = "quickChecklist") {
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -6411,52 +6917,65 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
         imageDetail = imageOk ? `${imageCount} fotos` : `Mínimo 3 fotos (tem ${imageCount})`;
     }
 
+    // `source` só aparece quando o ITEM não tem descrição própria e a gente foi buscar a
+    // herdada. Ou seja: descrição herdada É o caso que este botão resolve — o rótulo muda
+    // de "Editar" para "Escrever a sua" porque são coisas diferentes pro vendedor.
+    const descHerdada = hasDesc && !!descSource;
+
+    /*
+     * ATALHOS DE 1 CLIQUE (Lucas, 13/08/2026) — "só pra ele não precisar escolher".
+     *
+     * A régua saiu da frase que fechou o assunto: "descrição se não tiver preenchida ainda
+     * pode gravar direto". Vale para os dois botões — o atalho grava sozinho apenas onde
+     * NÃO há trabalho do vendedor em risco. Campo vazio não tem o que destruir; campo
+     * preenchido (inclusive descrição HERDADA, que já aparece no anúncio) volta a pedir
+     * a passagem pela tela.
+     *
+     * O padrão de garantia vem do proxy em `state.garantiaPadrao`: `undefined` = ainda não
+     * perguntamos, `null` = a categoria não aceita o nosso padrão, objeto = pode oferecer.
+     * Qual é o nosso padrão não se decide aqui.
+     */
+    const padraoGar = window.currentAnalysisState && window.currentAnalysisState.garantiaPadrao;
     const items = [
-        { ok: hasDesc, label: 'Descrição em texto', detail: hasDesc ? descSourceLabel : 'Não preenchida' },
-        { ok: hasWarranty, label: 'Garantia', detail: hasWarranty ? warrantyText : 'Não informada' },
-        { ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
+        {
+            chave: 'descricao',
+            ok: hasDesc,
+            label: 'Descrição em texto',
+            detail: hasDesc ? descSourceLabel : 'Não preenchida',
+            acao: hasDesc ? (descHerdada ? 'Escrever a sua' : 'Editar') : 'Escrever descrição',
+            acaoRapida: hasDesc ? null : { rotulo: 'Escrever com IA', fn: 'mfDescricaoIAUmClique' },
+        },
+        {
+            chave: 'garantia',
+            ok: hasWarranty,
+            label: 'Garantia',
+            detail: hasWarranty ? warrantyText : 'Não informada',
+            acao: hasWarranty ? 'Alterar' : 'Informar garantia',
+            acaoRapida: (!hasWarranty && padraoGar)
+                ? { rotulo: `Usar ${padraoGar.rotulo || 'o padrão'}`, fn: 'mfGarantiaPadraoUmClique' }
+                : null,
+        },
+        // Imagem tem tela própria (o redimensionador) — botão aqui só levaria a lugar nenhum.
+        { chave: 'imagens', ok: imageOk, label: `Imagens${variations.length > 0 ? ` (${variations.length} variações)` : ''}`, detail: imageDetail },
     ];
 
+    // A linha é CLASSE, não estilo inline: com os dois atalhos de 13/08 ela passou a ter
+    // dois botões de rótulo comprido, e em 375px eles saíam 145px pra fora do card — que
+    // tem overflow escondido, ou seja, o botão manual sumia sem deixar rastro. Media query
+    // não alcança estilo inline (foi o mesmo tropeço do grid de métricas em 08/08).
     const renderItem = (item) => `
-        <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:${item.ok ? 'var(--green-light)' : 'var(--red-light)'}; border-radius:var(--radius-sm); border-left:3px solid ${item.ok ? 'var(--green)' : 'var(--red)'};">
+        <div class="mf-chk-linha${item.ok ? ' mf-chk-ok' : ''}">
             <span style="font-size:1.1rem; flex-shrink:0;">${item.ok ? '✅' : '❌'}</span>
-            <div style="flex:1;">
+            <div class="mf-chk-texto">
                 <span style="font-weight:600; font-size:0.88rem; color:var(--text);">${item.label}</span>
                 <span class="text-small" style="display:block; margin-top:1px;">${item.detail}</span>
             </div>
-        </div>`;
+            ${item.acaoRapida ? `<button type="button" class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-rapido-${item.chave}" onclick="window.${item.acaoRapida.fn}()">${item.acaoRapida.rotulo}</button>` : ''}
+            ${item.acao ? `<button type="button" class="mf-conteudo-botao" onclick="window.mfAbrirEditorConteudo('${item.chave}')">${item.acao}</button>` : ''}
+        </div>
+        ${item.acao ? `<div id="mf-rapido-erro-${item.chave}" class="mf-conteudo-erro" style="display:none;"></div>` : ''}
+        ${item.acao ? `<div id="mf-editor-${item.chave}" class="mf-conteudo-editor" style="display:none;"></div>` : ''}`;
 
-    // Seção adicional: top 3 pendências da ML Quality API (quando disponível)
-    const mlQuality = extractMLQualityItems(performanceData);
-    let mlExtraHtml = '';
-    if (mlQuality && mlQuality.pending.length > 0) {
-        const top = mlQuality.pending.slice(0, 3);
-        const moreLabel = mlQuality.pending.length > 3 ? `<div class="text-small" style="text-align:center; margin-top:4px; color:var(--text-muted); font-size:0.7rem;">+${mlQuality.pending.length - 3} em "Qualidade do Anúncio"</div>` : '';
-        const renderMLRow = (p) => {
-            const isWarn = p.mode === 'WARNING';
-            const bg = isWarn ? 'var(--red-light)' : 'var(--yellow-light,#fef3c7)';
-            const bd = isWarn ? 'var(--red)' : 'var(--yellow,#f59e0b)';
-            const icon = isWarn ? '⚠️' : '💡';
-            const linkHtml = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.68rem; white-space:nowrap; flex-shrink:0;">${escapeHtml(p.label || 'Ver')} →</a>` : '';
-            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:${bg};border-radius:var(--radius-sm);border-left:3px solid ${bd};">
-                <span style="flex-shrink:0;">${icon}</span>
-                <span class="text-small" style="color:var(--text); flex:1; line-height:1.3;">${escapeHtml(p.text)}</span>
-                ${linkHtml}
-            </div>`;
-        };
-        mlExtraHtml = `
-            <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
-                    <span style="font-size:0.85rem;">⚡</span>
-                    <span style="font-weight:700; font-size:0.75rem; color:var(--text); text-transform:uppercase; letter-spacing:0.03em;">Prioridades ML</span>
-                    <span class="text-small" style="margin-left:auto; color:var(--text-muted); font-size:0.68rem;">${mlQuality.pending.length} pendências</span>
-                </div>
-                <div style="display:flex; flex-direction:column; gap:4px;">
-                    ${top.map(renderMLRow).join('')}
-                    ${moreLabel}
-                </div>
-            </div>`;
-    }
 
     el.innerHTML = `
         <div class="ana-card">
@@ -6467,9 +6986,567 @@ function exibirChecklistRapido(detail, descriptionData, containerId = "quickChec
             <div style="display:flex; flex-direction:column; gap:8px;">
                 ${items.map(renderItem).join('')}
             </div>
-            ${mlExtraHtml}
         </div>
     `;
+
+    // Só perguntamos o padrão quando ele teria uso: anúncio SEM garantia. Anúncio que já
+    // tem não gasta chamada nenhuma. A resposta redesenha este card quando chega.
+    if (!hasWarranty) MF_carregaPadraoGarantia(window.currentAnalysisState);
+}
+
+/* =========================================================================
+   Descrição e garantia: resolver pela tela (12/08/2026, pedido do Lucas de 11/08)
+
+   Até aqui o Checklist só apontava "Não preenchida" e "Não informada". Diagnóstico sem
+   caminho de saída é o tipo de tela que o vendedor lê, concorda e fecha.
+
+   Onde mora cada coisa:
+   - O que vale como descrição (a ML só aceita texto simples) e o que é uma garantia
+     válida são decisões do PROXY. Daqui sai o que o vendedor digitou; a recusa volta
+     pronta, com a posição do problema, e esta tela só desenha.
+   - Garantia é `sale_terms` (WARRANTY_TYPE + WARRANTY_TIME), nunca `attributes`.
+
+   Vale para o ANÚNCIO ABERTO, não para a família (decisão do Lucas em 12/08): salvar aqui
+   não mexe nos irmãos de variação, e a tela diz isso em vez de deixar o vendedor supor.
+   ========================================================================= */
+
+// Qual editor está aberto. Um por vez: dois campos grandes abertos ao mesmo tempo empurram
+// a página e o vendedor perde de vista o que estava fazendo.
+window.MF_editorAberto = null;
+
+function MF_ehFamilia(detail) {
+    return !!(detail && detail.family_id);
+}
+
+/** Texto atual da descrição — inclusive a herdada, que serve de ponto de partida. */
+function MF_descricaoAtual(state) {
+    const d = state && state.descriptionData;
+    if (!d) return '';
+    return String(d.plain_text || d.text || '').trim();
+}
+
+/** Lê a garantia gravada e devolve as partes, pra reabrir o editor no que já está lá. */
+function MF_garantiaAtual(detail) {
+    const termos = Array.isArray(detail && detail.sale_terms) ? detail.sale_terms : [];
+    const tipoNome = (termos.find((t) => t && t.id === 'WARRANTY_TYPE') || {}).value_name || '';
+    const prazo = (termos.find((t) => t && t.id === 'WARRANTY_TIME') || {}).value_name || '';
+    const tipo = /fábrica|fabrica/i.test(tipoNome) ? 'fabrica'
+        : (/sem garantia/i.test(tipoNome) ? 'sem' : (tipoNome ? 'vendedor' : ''));
+    const m = String(prazo).match(/^(\d+)\s*(dia|dias|m[êe]s|meses|ano|anos)$/i);
+    const unidade = m ? ({ dia: 'dias', dias: 'dias', mes: 'meses', 'mês': 'meses', meses: 'meses', ano: 'anos', anos: 'anos' })[m[2].toLowerCase()] : '';
+    return { tipo, tempo: m ? m[1] : '', unidade: unidade || 'meses', prazoLiteral: prazo };
+}
+
+window.mfFecharEditorConteudo = function () {
+    const anterior = window.MF_editorAberto;
+    window.MF_editorAberto = null;
+    if (!anterior) return;
+    const el = document.getElementById(`mf-editor-${anterior}`);
+    if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+};
+
+window.mfAbrirEditorConteudo = function (qual) {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    if (window.MF_editorAberto === qual) return window.mfFecharEditorConteudo();
+    window.mfFecharEditorConteudo();
+
+    const el = document.getElementById(`mf-editor-${qual}`);
+    if (!el) return;
+    window.MF_editorAberto = qual;
+    el.style.display = 'block';
+    el.innerHTML = qual === 'descricao' ? MF_editorDescricaoHtml(state) : MF_editorGarantiaHtml(state);
+
+    if (qual === 'descricao') {
+        const ta = document.getElementById('mf-desc-input');
+        if (ta) {
+            ta.focus();
+            ta.addEventListener('input', () => MF_atualizaContadorDescricao());
+            MF_atualizaContadorDescricao();
+        }
+    } else {
+        MF_ligaEditorGarantia();
+        MF_carregarValoresGarantia(state);
+    }
+};
+
+function MF_avisoFamiliaHtml(detail) {
+    if (!MF_ehFamilia(detail)) return '';
+    return `<div class="mf-conteudo-aviso">Vale só para este anúncio. As outras variações do grupo seguem com o que já tinham.</div>`;
+}
+
+function MF_editorDescricaoHtml(state) {
+    const atual = MF_descricaoAtual(state);
+    const herdada = !!(state.descriptionData && state.descriptionData.source);
+    const origem = herdada
+        ? `<div class="mf-conteudo-aviso">O texto abaixo veio ${state.descriptionData.source === 'catalog' ? 'da ficha do catálogo' : 'do seu produto (MLBU)'}. Salvando, ele passa a ser a descrição deste anúncio.</div>`
+        : '';
+    return `
+        <div class="mf-conteudo-box">
+            ${origem}
+            ${MF_avisoFamiliaHtml(state.detail)}
+            <textarea id="mf-desc-input" class="mf-conteudo-textarea" rows="9"
+                placeholder="Conte o que o comprador ainda não sabe: medidas, material, o que vem na caixa, como usar.">${escapeHtml(atual)}</textarea>
+            <div class="mf-conteudo-rodape">
+                <span id="mf-desc-contador" class="text-small"></span>
+                <div class="mf-conteudo-acoes">
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfSugerirDescricao()" id="mf-desc-sugerir">Sugerir com IA</button>
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfFecharEditorConteudo()">Cancelar</button>
+                    <button type="button" class="mf-btn-primario" onclick="window.mfSalvarDescricao()" id="mf-desc-salvar">Salvar descrição</button>
+                </div>
+            </div>
+            <div id="mf-desc-erro" class="mf-conteudo-erro" style="display:none;"></div>
+            <div class="mf-conteudo-dica">O Mercado Livre aceita só texto simples aqui — sem emoji e sem HTML.</div>
+        </div>`;
+}
+
+function MF_atualizaContadorDescricao() {
+    const ta = document.getElementById('mf-desc-input');
+    const cont = document.getElementById('mf-desc-contador');
+    if (!ta || !cont) return;
+    const n = (ta.value || '').trim().length;
+    const loc = (window.MF_getSiteConfig && window.MF_currentSiteId)
+        ? window.MF_getSiteConfig(window.MF_currentSiteId()).locale : 'pt-BR';
+    // Placar honesto: diz onde está, sem inventar meta. O piso de 400 é o que a sugestão
+    // da IA persegue; abaixo disso o texto costuma não responder nada ao comprador.
+    cont.textContent = n === 0 ? 'Nada escrito ainda'
+        : (n < 400 ? `${n.toLocaleString(loc)} caracteres — dá pra detalhar mais` : `${n.toLocaleString(loc)} caracteres`);
+    cont.style.color = n > 0 && n < 400 ? 'var(--text-muted)' : 'var(--text-secondary)';
+}
+
+function MF_erroConteudo(id, msg, extraHtml = '') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = `${escapeHtml(msg)}${extraHtml}`;
+    el.style.display = 'block';
+}
+
+window.mfSalvarDescricao = async function () {
+    const state = window.currentAnalysisState;
+    const ta = document.getElementById('mf-desc-input');
+    const btn = document.getElementById('mf-desc-salvar');
+    const erroEl = document.getElementById('mf-desc-erro');
+    if (!state || !ta) return;
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+
+    const texto = (ta.value || '').trim();
+    if (!texto) return MF_erroConteudo('mf-desc-erro', 'Escreva a descrição antes de salvar.');
+
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroConteudo('mf-desc-erro', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    try {
+        const res = await fetch(`${API_DESCRICAO_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plain_text: texto }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // O proxy manda o texto sem emoji junto da recusa: em vez de mandar o vendedor
+            // procurar o caractere no meio de mil, a tela oferece o ajuste em um clique.
+            const oferta = dados.texto_limpo
+                ? ` <button type="button" class="mf-link-acao" onclick="window.mfAplicarTextoLimpo()">Tirar e continuar</button>`
+                : '';
+            if (dados.texto_limpo) window.MF_textoLimpoSugerido = dados.texto_limpo;
+            return MF_erroConteudo('mf-desc-erro', dados.error || `Não deu para salvar (erro ${res.status}).`, oferta);
+        }
+
+        // Passou a ser descrição PRÓPRIA do anúncio: o `source` da herdada sai junto, senão
+        // o checklist continuaria dizendo "Herdada do catálogo" depois de salvar.
+        state.descriptionData = { plain_text: dados.plain_text || texto, text: dados.plain_text || texto };
+        window.mfFecharEditorConteudo();
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroConteudo('mf-desc-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Salvar descrição'; }
+    }
+};
+
+window.mfAplicarTextoLimpo = function () {
+    const ta = document.getElementById('mf-desc-input');
+    if (!ta || !window.MF_textoLimpoSugerido) return;
+    ta.value = window.MF_textoLimpoSugerido;
+    window.MF_textoLimpoSugerido = null;
+    const erroEl = document.getElementById('mf-desc-erro');
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+    MF_atualizaContadorDescricao();
+    ta.focus();
+};
+
+window.mfSugerirDescricao = async function () {
+    const state = window.currentAnalysisState;
+    const ta = document.getElementById('mf-desc-input');
+    const btn = document.getElementById('mf-desc-sugerir');
+    if (!state || !ta) return;
+
+    // Texto escrito não é sobrescrito sem aviso: a sugestão é ajuda, não substituição.
+    if ((ta.value || '').trim() && !window.confirm('Isto substitui o texto que está no campo. Continuar?')) return;
+
+    const detail = state.detail || {};
+    const atributos = (detail.attributes || [])
+        .filter((a) => a && a.value_name && a.name)
+        .map((a) => ({ name: a.name, value: a.value_name }));
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Escrevendo…'; }
+    try {
+        let uid = state.userId;
+        if (!uid) { uid = await fetchUserIdForScraping(); if (uid) state.userId = uid; }
+        if (!uid) return MF_erroConteudo('mf-desc-erro', 'Sessão expirada. Recarregue a página.');
+
+        const res = await fetch(API_GPT_DESCRICAO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${uid}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                titulo: detail.title || '',
+                categoria: (state.categoryName || ''),
+                atributos,
+                garantia: getWarrantyText(detail) || '',
+                site_id: (typeof window.MF_currentSiteId === 'function' ? window.MF_currentSiteId() : 'MLB'),
+            }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroConteudo('mf-desc-erro', dados.error || 'Não foi possível gerar a sugestão agora.');
+
+        ta.value = dados.plain_text || '';
+        MF_atualizaContadorDescricao();
+        ta.focus();
+        // Nada foi pro Mercado Livre: o texto está no campo e quem salva é o vendedor.
+        MF_erroConteudo('mf-desc-erro', 'Sugestão pronta no campo. Leia, ajuste o que quiser e salve — nada foi enviado ainda.');
+        const el = document.getElementById('mf-desc-erro');
+        if (el) el.className = 'mf-conteudo-erro mf-conteudo-info';
+    } catch (e) {
+        MF_erroConteudo('mf-desc-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Sugerir com IA'; }
+    }
+};
+
+/* -------------------------------------------------------------------------
+   Atalhos de 1 clique (Lucas, 13/08/2026)
+
+   Os dois gravam direto, e só existem onde o campo está VAZIO — a régua que ele deu:
+   "descrição se não tiver preenchida ainda pode gravar direto". Onde há texto do vendedor
+   (ou garantia já escolhida), o caminho continua sendo o editor.
+
+   Nenhum dos dois inventa conteúdo: o padrão da garantia vem do proxy e o texto da
+   descrição vem da IA pelo proxy. Aqui só se aperta o botão.
+   ------------------------------------------------------------------------- */
+
+/** Erro do atalho aparece na própria linha do checklist, onde o vendedor está olhando. */
+function MF_erroAtalho(chave, msg) {
+    const el = document.getElementById(`mf-rapido-erro-${chave}`);
+    if (!el) return;
+    el.style.display = 'block';
+    el.textContent = msg;
+}
+
+/**
+ * Aviso do atalho, não erro (compatibilidades, 13/08/2026). Reusa a mesma caixa —
+ * `.mf-conteudo-erro` — mas com a variante `.mf-conteudo-info` (azul), a mesma que a
+ * sugestão de IA da descrição usa: sem isso, "Enviado, o ML leva um tempo para reativar"
+ * sairia vermelho, como se tivesse dado errado.
+ */
+function MF_avisoAtalho(chave, msg) {
+    const el = document.getElementById(`mf-rapido-erro-${chave}`);
+    if (!el) return;
+    el.style.display = 'block';
+    el.textContent = msg;
+    el.className = 'mf-conteudo-erro mf-conteudo-info';
+}
+
+/**
+ * Busca o padrão de garantia da categoria e, se existir, redesenha o checklist com o botão.
+ * `state.garantiaPadrao` fica `null` quando a categoria não aceita — e `null` é resposta,
+ * não "ainda não perguntei", então não repetimos a chamada.
+ */
+/**
+ * Cache por CATEGORIA: quem varre a conta analisa vários anúncios da mesma categoria em
+ * sequência, e o que cada uma aceita não muda no meio da sessão. Sem isso, o atalho
+ * custaria uma chamada por anúncio aberto.
+ */
+window.MF_padraoGarantiaPorCategoria = window.MF_padraoGarantiaPorCategoria || {};
+
+async function MF_carregaPadraoGarantia(state) {
+    if (!state || state.garantiaPadrao !== undefined) return;
+    // O checklist é redesenhado a cada salvamento; sem a trava de "em voo", duas
+    // renderizações antes da resposta viram duas chamadas pro proxy.
+    if (state._garantiaPadraoEmVoo) return;
+    const cat = state.detail && state.detail.category_id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!cat || !token) return;
+
+    if (Object.prototype.hasOwnProperty.call(window.MF_padraoGarantiaPorCategoria, cat)) {
+        state.garantiaPadrao = window.MF_padraoGarantiaPorCategoria[cat];
+        if (state.garantiaPadrao) MF_reRenderConteudo(state);
+        return;
+    }
+
+    state._garantiaPadraoEmVoo = true;
+    try {
+        const res = await fetch(`${API_GARANTIA_VALORES_ENDPOINT}/${encodeURIComponent(cat)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const dados = await res.json().catch(() => ({}));
+        // Proxy antigo (sem o campo) não pode virar "categoria não aceita": sem resposta
+        // sobre o padrão, o certo é não oferecer atalho E não fingir que perguntamos.
+        if (!res.ok || !Object.prototype.hasOwnProperty.call(dados, 'padrao_sugerido')) return;
+        state.garantiaPadrao = dados.padrao_sugerido || null;
+        window.MF_padraoGarantiaPorCategoria[cat] = state.garantiaPadrao;
+        if (state.garantiaPadrao) MF_reRenderConteudo(state);
+    } catch (_) {
+        // Silencioso de propósito: é oferta de atalho, não diagnóstico. O caminho manual
+        // está na tela do lado.
+    } finally {
+        state._garantiaPadraoEmVoo = false;
+    }
+}
+
+window.mfGarantiaPadraoUmClique = async function () {
+    const state = window.currentAnalysisState;
+    const padrao = state && state.garantiaPadrao;
+    if (!state || !padrao) return;
+
+    const btn = document.getElementById('mf-rapido-garantia');
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroAtalho('garantia', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Gravando…'; }
+    try {
+        // O corpo é o que o PROXY mandou, repassado inteiro. Montar aqui um "vendedor/7/dias"
+        // por conta própria seria a regra de negócio voltando pro front pela porta dos fundos
+        // — e quebraria a categoria de lista fechada, que precisa de valor_literal.
+        const corpo = padrao.valor_literal
+            ? { tipo: padrao.tipo, valor_literal: padrao.valor_literal }
+            : { tipo: padrao.tipo, tempo: padrao.tempo, unidade: padrao.unidade };
+        const res = await fetch(`${API_GARANTIA_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroAtalho('garantia', dados.error || `Não deu para gravar (erro ${res.status}).`);
+
+        // O state acompanha o que foi gravado: um "❌ Não informada" que sobrevive ao
+        // próprio salvamento faz o vendedor gravar de novo.
+        const gravados = Array.isArray(dados.sale_terms) ? dados.sale_terms : [];
+        const outros = (state.detail.sale_terms || []).filter((t) => t && t.id !== 'WARRANTY_TYPE' && t.id !== 'WARRANTY_TIME');
+        state.detail.sale_terms = outros.concat(gravados.length ? gravados : [
+            { id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' },
+            { id: 'WARRANTY_TIME', value_name: padrao.valor_literal || `${padrao.tempo} ${padrao.unidade}` },
+        ]);
+        // Campo LEGADO: `getWarrantyText` prefere ele, e a tela mostraria a garantia velha
+        // logo depois de gravar a nova.
+        state.detail.warranty = null;
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroAtalho('garantia', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = `Usar ${padrao.rotulo || 'o padrão'}`; }
+    }
+};
+
+window.mfDescricaoIAUmClique = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+
+    const btn = document.getElementById('mf-rapido-descricao');
+    const detail = state.detail || {};
+    const itemId = detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroAtalho('descricao', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Escrevendo…'; }
+    try {
+        let uid = state.userId;
+        if (!uid) { uid = await fetchUserIdForScraping(); if (uid) state.userId = uid; }
+        if (!uid) return MF_erroAtalho('descricao', 'Sessão expirada. Recarregue a página.');
+
+        const atributos = (detail.attributes || [])
+            .filter((a) => a && a.value_name && a.name)
+            .map((a) => ({ name: a.name, value: a.value_name }));
+
+        const gerada = await fetch(API_GPT_DESCRICAO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${uid}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                titulo: detail.title || '',
+                categoria: (state.categoryName || ''),
+                atributos,
+                garantia: getWarrantyText(detail) || '',
+                site_id: (typeof window.MF_currentSiteId === 'function' ? window.MF_currentSiteId() : 'MLB'),
+            }),
+        });
+        const dadosIA = await gerada.json().catch(() => ({}));
+        if (!gerada.ok) return MF_erroAtalho('descricao', dadosIA.error || 'A IA não respondeu agora. Tente de novo em instantes.');
+
+        const texto = String(dadosIA.plain_text || '').trim();
+        // IA sem conteúdo NÃO vira gravação. Descrição vazia no ML é pior que descrição
+        // faltando: some o diagnóstico e o vendedor acha que resolveu.
+        if (!texto) {
+            if (btn) { btn.textContent = 'Escrever com IA'; }
+            return MF_erroAtalho('descricao', 'A IA não devolveu texto desta vez. Tente de novo, ou escreva pelo botão ao lado.');
+        }
+
+        if (btn) btn.textContent = 'Gravando…';
+        const res = await fetch(`${API_DESCRICAO_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plain_text: texto }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            // Aqui o "Tirar e continuar" do editor não serve: não há campo aberto pra
+            // aplicar o texto limpo. Mandamos pro editor com o texto já dentro.
+            window.MF_textoIAPendente = texto;
+            return MF_erroAtalho('descricao', `${dados.error || `Não deu para gravar (erro ${res.status}).`} Abra "Escrever descrição" para ajustar o texto.`);
+        }
+
+        state.descriptionData = { plain_text: dados.plain_text || texto, text: dados.plain_text || texto };
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroAtalho('descricao', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; if (btn.textContent !== 'Escrever com IA') btn.textContent = 'Escrever com IA'; }
+    }
+};
+
+function MF_editorGarantiaHtml(state) {
+    const atual = MF_garantiaAtual(state.detail);
+    const opt = (v, rotulo, sel) => `<option value="${v}"${sel === v ? ' selected' : ''}>${rotulo}</option>`;
+    return `
+        <div class="mf-conteudo-box">
+            ${MF_avisoFamiliaHtml(state.detail)}
+            <div class="mf-garantia-linha">
+                <label class="mf-conteudo-label">Tipo
+                    <select id="mf-gar-tipo" class="mf-conteudo-select">
+                        ${opt('vendedor', 'Garantia do vendedor', atual.tipo || 'vendedor')}
+                        ${opt('fabrica', 'Garantia de fábrica', atual.tipo)}
+                        ${opt('sem', 'Sem garantia', atual.tipo)}
+                    </select>
+                </label>
+                <label class="mf-conteudo-label" id="mf-gar-prazo-campo">Prazo
+                    <span class="mf-garantia-prazo">
+                        <input type="number" id="mf-gar-tempo" class="mf-conteudo-input" min="1" step="1" value="${escapeHtml(atual.tempo || '')}" placeholder="3" inputmode="numeric" />
+                        <select id="mf-gar-unidade" class="mf-conteudo-select">
+                            ${opt('dias', 'dias', atual.unidade)}
+                            ${opt('meses', 'meses', atual.unidade)}
+                            ${opt('anos', 'anos', atual.unidade)}
+                        </select>
+                    </span>
+                </label>
+            </div>
+            <div id="mf-gar-fechada" style="display:none;"></div>
+            <div class="mf-conteudo-rodape">
+                <span id="mf-gar-fonte" class="text-small"></span>
+                <div class="mf-conteudo-acoes">
+                    <button type="button" class="mf-btn-secundario" onclick="window.mfFecharEditorConteudo()">Cancelar</button>
+                    <button type="button" class="mf-btn-primario" onclick="window.mfSalvarGarantia()" id="mf-gar-salvar">Salvar garantia</button>
+                </div>
+            </div>
+            <div id="mf-gar-erro" class="mf-conteudo-erro" style="display:none;"></div>
+        </div>`;
+}
+
+/** "Sem garantia" não tem prazo — o campo some em vez de ficar lá pedindo número à toa. */
+function MF_ligaEditorGarantia() {
+    const tipo = document.getElementById('mf-gar-tipo');
+    const campo = document.getElementById('mf-gar-prazo-campo');
+    if (!tipo || !campo) return;
+    const ajusta = () => { campo.style.display = tipo.value === 'sem' ? 'none' : ''; };
+    tipo.addEventListener('change', ajusta);
+    ajusta();
+}
+
+/**
+ * Pergunta ao proxy o que ESTA categoria aceita. É conveniência: se não vier, o vendedor
+ * ainda escolhe tipo e prazo normalmente — por isso a falha aqui não mostra erro.
+ */
+async function MF_carregarValoresGarantia(state) {
+    const catId = state.detail && state.detail.category_id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!catId || !token) return;
+    try {
+        const res = await fetch(`${API_GARANTIA_VALORES_ENDPOINT}/${encodeURIComponent(catId)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const dados = await res.json();
+        const fonteEl = document.getElementById('mf-gar-fonte');
+        if (fonteEl && dados.obrigatoria) fonteEl.textContent = 'Esta categoria pede garantia.';
+
+        // Categoria de lista fechada: o vendedor escolhe um prazo que a ML já publicou, em
+        // vez de digitar um número que ela vai recusar depois.
+        if (Array.isArray(dados.valores_fechados) && dados.valores_fechados.length) {
+            const caixa = document.getElementById('mf-gar-fechada');
+            const campoLivre = document.getElementById('mf-gar-prazo-campo');
+            if (!caixa) return;
+            caixa.style.display = 'block';
+            caixa.innerHTML = `<label class="mf-conteudo-label">Prazo
+                <select id="mf-gar-literal" class="mf-conteudo-select">
+                    ${dados.valores_fechados.map((v) => `<option value="${escapeHtml(v.nome)}">${escapeHtml(v.nome)}</option>`).join('')}
+                </select>
+            </label>`;
+            if (campoLivre) campoLivre.style.display = 'none';
+        }
+    } catch (e) { /* conveniência: sem lista, o editor segue funcionando */ }
+}
+
+window.mfSalvarGarantia = async function () {
+    const state = window.currentAnalysisState;
+    const btn = document.getElementById('mf-gar-salvar');
+    const erroEl = document.getElementById('mf-gar-erro');
+    if (!state) return;
+    if (erroEl) { erroEl.style.display = 'none'; erroEl.innerHTML = ''; }
+
+    const tipo = (document.getElementById('mf-gar-tipo') || {}).value || '';
+    const literalEl = document.getElementById('mf-gar-literal');
+    const corpo = literalEl && literalEl.value && tipo !== 'sem'
+        ? { tipo, valor_literal: literalEl.value }
+        : {
+            tipo,
+            tempo: Number((document.getElementById('mf-gar-tempo') || {}).value || 0),
+            unidade: (document.getElementById('mf-gar-unidade') || {}).value || 'meses',
+        };
+
+    const itemId = state.detail && state.detail.id;
+    const token = state.accessToken || window._adsAccessToken;
+    if (!itemId || !token) return MF_erroConteudo('mf-gar-erro', 'Sessão expirada. Recarregue a página.');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    try {
+        const res = await fetch(`${API_GARANTIA_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return MF_erroConteudo('mf-gar-erro', dados.error || `Não deu para salvar (erro ${res.status}).`);
+
+        // Espelha o que foi gravado.
+        const outros = (state.detail.sale_terms || []).filter((t) => t && t.id !== 'WARRANTY_TYPE' && t.id !== 'WARRANTY_TIME');
+        state.detail.sale_terms = outros.concat(dados.sale_terms || []);
+        // `warranty` é o campo LEGADO e getWarrantyText prefere ele. Deixá-lo de pé faria a
+        // tela mostrar a garantia velha logo depois de gravar a nova — o vendedor salvaria
+        // de novo achando que não pegou. Quem manda agora é o sale_terms que acabou de ir.
+        state.detail.warranty = null;
+        window.mfFecharEditorConteudo();
+        MF_reRenderConteudo(state);
+    } catch (e) {
+        MF_erroConteudo('mf-gar-erro', e.message || 'Falha de rede.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Salvar garantia'; }
+    }
+};
+
+/** Redesenha o que depende de descrição e garantia — inclusive a nota, que muda com eles. */
+function MF_reRenderConteudo(state) {
+    // O checklist entrou no reRenderAnalysisView: chamar aqui também desenharia duas vezes.
+    reRenderAnalysisView();
 }
 
 function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
@@ -6510,18 +7587,40 @@ function verificarTags(tags, usedFallback = false, containerId = "tagsTexto") {
             </div>`;
     };
 
+    // Veredito ANTES do detalhe (Lucas, 12/08): quem abre a análise quer saber se tem
+    // problema, não ler 14 etiquetas técnicas pra descobrir. A lista continua inteira —
+    // atrás de um clique, pra quem quiser conferir.
+    const problemas = alertTags.length;
+    const tudoCerto = problemas === 0;
+    const veredito = tudoCerto
+        ? { icone: '✅', titulo: 'Tudo certo por aqui', cor: 'var(--green)', fundo: 'var(--green-light)',
+            frase: 'O Mercado Livre não marcou nada que atrapalhe este anúncio.' }
+        : { icone: '⚠️', titulo: `${problemas} ${problemas === 1 ? 'ponto de atenção' : 'pontos de atenção'}`,
+            cor: 'var(--red)', fundo: 'var(--red-light)',
+            frase: 'O Mercado Livre marcou este anúncio. Abra para ver o que é.' };
+
     el.innerHTML = `
          <div class="ana-card">
             <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">🏷️</span>
-                <span class="ana-card-title">Tags Ativas</span>
-                <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${tags.length} tags</span>
+                <span class="ana-card-title">Situação no Mercado Livre</span>
+                <span class="text-small" style="margin-left:auto; color:var(--text-muted);">${tags.length} ${tags.length === 1 ? 'marcação' : 'marcações'}</span>
             </div>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px;">
-                ${renderCol('Boas Práticas', '✅', 'var(--green)', goodTags)}
-                ${renderCol('Atenção', '⚠️', 'var(--red)', alertTags)}
-                ${renderCol('Neutras', 'ℹ️', 'var(--text-muted)', neutralTags)}
+            <div style="display:flex; align-items:center; gap:10px; padding:12px 14px; background:${veredito.fundo}; border-left:3px solid ${veredito.cor}; border-radius:var(--radius-sm);">
+                <span style="font-size:1.3rem; flex-shrink:0;">${veredito.icone}</span>
+                <div style="flex:1; min-width:0;">
+                    <span style="font-weight:700; font-size:0.9rem; color:var(--text);">${veredito.titulo}</span>
+                    <span class="text-small" style="display:block; margin-top:1px;">${veredito.frase}</span>
+                </div>
             </div>
+            <details class="mf-tags-detalhe"${tudoCerto ? '' : ' open'}>
+                <summary>Ver todas as marcações</summary>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-top:12px;">
+                    ${renderCol('Boas Práticas', '✅', 'var(--green)', goodTags)}
+                    ${renderCol('Atenção', '⚠️', 'var(--red)', alertTags)}
+                    ${renderCol('Neutras', 'ℹ️', 'var(--text-muted)', neutralTags)}
+                </div>
+            </details>
         </div>
     `;
 }
@@ -6547,6 +7646,17 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
     const perfEl = document.getElementById(containerId);
     if (!perfEl) return;
 
+    // Falha NOSSA não pode virar recado da ML: dizer "eles não calcularam" quando quem não
+    // conseguiu perguntar fomos nós manda o vendedor procurar problema no lugar errado.
+    if (performanceData && performanceData._falhou) {
+        perfEl.innerHTML = `
+            <div class="ana-card" style="animation-delay: 0.3s;">
+                <div class="ana-card-header"><span class="ana-card-icon">⚡</span><span class="ana-card-title">Qualidade do Anúncio (Mercado Livre)</span></div>
+                <p class="text-small" style="color:var(--text-muted);">Não deu para consultar o Mercado Livre agora. O dado existe — só não chegou nesta tentativa.</p>
+                <button type="button" class="mf-conteudo-botao" onclick="window.mfRecarregarQualidadeML()" style="align-self:flex-start; margin-top:8px;">Tentar de novo</button>
+            </div>`;
+        return;
+    }
     if (!performanceData || typeof performanceData !== 'object' || !performanceData.buckets) {
         perfEl.innerHTML = `
             <div class="ana-card" style="animation-delay: 0.3s;">
@@ -6608,6 +7718,8 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
             </div>`;
     };
 
+    const resolvidosNoML = (window.currentAnalysisState && window.currentAnalysisState.resolvidosNoML) || new Set();
+
     const renderBucket = (bucket) => {
         const bScore = bucket.score !== undefined ? Math.round(bucket.score) : 0;
         const bLevel = bScore >= 85 ? 'good' : (bScore < 50 ? 'bad' : 'neutral');
@@ -6627,16 +7739,50 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
             const icon = isCompleted ? '✓' : '○';
             const vScore = v.score !== undefined ? Math.round(v.score) : null;
             let rulesHtml = '';
+            let acaoNaLinha = '';
             if (!isCompleted && Array.isArray(v.rules)) {
-                v.rules.filter(r => r.status !== 'COMPLETED').forEach(r => { rulesHtml += renderRule(r, vColor); });
+                const pendentes = v.rules.filter(r => r.status !== 'COMPLETED');
+                // A ML manda MUITAS regras com o texto idêntico ao título da variável logo
+                // acima — medido em 11/08/2026: 18 de 36 linhas em 11 anúncios, metade do
+                // card. Desenhar as duas fazia a mesma frase sair duas vezes seguidas, que
+                // é a "informação repetida" que os vendedores reclamaram.
+                //
+                // A regra ainda agrega uma coisa que a variável não tem: o LINK da ação.
+                // Então some o texto duplicado, não a regra: o link sobe pra linha da
+                // variável e a frase aparece uma vez só.
+                const tituloVar = MF_chaveTexto(v.title || v.key || '');
+                pendentes.forEach((r) => {
+                    const tituloRegra = MF_chaveTexto((r.wordings && r.wordings.title) || r.key || '');
+                    if (tituloRegra && tituloRegra === tituloVar) {
+                        const link = r.wordings && r.wordings.link;
+                        if (link && !acaoNaLinha) {
+                            const rotulo = (r.wordings && r.wordings.label) || 'Resolver';
+                            acaoNaLinha = `<a href="${escapeHtml(link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.75rem; white-space:nowrap;">${escapeHtml(rotulo)} →</a>`;
+                        }
+                        return;   // texto já está no título da variável
+                    }
+                    rulesHtml += renderRule(r, vColor);
+                });
             }
+            // "na visão do mercado livre ainda tem mensagem falando pra preencher no
+            // mercado livre mesmo a gente já tendo ajustado os campos" (Lucas, 13/08).
+            // Esta lista é a do CARREGAMENTO da página, e a /performance da ML atualiza
+            // periodicamente — então a linha realmente continua lá depois de salvar.
+            // Sumir com ela seria mentir na outra direção: não sabemos se a ML aceitou.
+            // Fica, marcada, sem prometer prazo que não controlamos.
+            const resolvidoAgora = !isCompleted && resolvidosNoML.has(v.key);
+            const selo = resolvidoAgora
+                ? `<div style="margin:6px 0 0 22px; padding:6px 9px; background:var(--blue-light); border-left:3px solid var(--blue); border-radius:4px; font-size:0.74rem; color:var(--text); line-height:1.35;">✏️ Você resolveu isso agora pelo app. O Mercado Livre leva um tempo para atualizar esta lista.</div>`
+                : '';
             varsHtml += `
                 <div style="padding:10px 0; border-bottom:1px solid var(--border,#e5e7eb);">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="color:${vColor}; font-weight:700; font-size:0.95rem;">${icon}</span>
                         <span style="flex:1; font-size:0.85rem; font-weight:600; color:var(--text);">${escapeHtml(v.title || v.key || '')}</span>
+                        ${acaoNaLinha}
                         ${vScore !== null ? `<span style="font-family:var(--font-mono, 'DM Mono',monospace); font-size:0.75rem; color:${vColor}; font-weight:700;">${vScore}%</span>` : ''}
                     </div>
+                    ${selo}
                     ${rulesHtml}
                 </div>`;
         });
@@ -7012,9 +8158,25 @@ function extractMLQualityItems(performanceData) {
             }
         });
     });
+    // Uma `variable` com várias `rules` pendentes gera uma linha por regra, mas quando a
+    // regra não traz `wordings.title` todas caem no mesmo fallback (o título da variable)
+    // e o vendedor vê a mesma frase repetida. Some por texto, mantendo a primeira — e
+    // preferindo a que tem link, que é a única acionável.
+    const dedup = (lista) => {
+        const porTexto = new Map();
+        for (const p of lista) {
+            const chave = (p.text || '').trim().toLowerCase();
+            if (!chave) continue;
+            const jaTem = porTexto.get(chave);
+            if (!jaTem) { porTexto.set(chave, p); continue; }
+            if (!jaTem.link && p.link) porTexto.set(chave, p);
+        }
+        return [...porTexto.values()];
+    };
+
     return {
-        pending,
-        completed,
+        pending: dedup(pending),
+        completed: dedup(completed),
         score: Math.round(performanceData.score || 0),
         level: (performanceData.level || '').toLowerCase(),
         level_wording: performanceData.level_wording || null
@@ -7104,7 +8266,10 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         }
         // Visit trend + ghost ad detection
         if (d.visitsData && d.visitsData.results && !d.visitsData.error) {
-            const results = d.visitsData.results || [];
+            // 30 dias de verdade: a série chega com 60 e as duas frases daqui dizem
+            // "em 30 dias". Sem o recorte, o total saía dobrado e "Sem visitas nos últimos
+            // 30 dias" parava de acusar quem teve visita só no mês retrasado.
+            const results = MF_visitasDosUltimos(d.visitsData.results, 30);
             results.sort((a, b) => new Date(a.date) - new Date(b.date));
             const len = results.length;
             const sumV = arr => arr.reduce((a, c) => a + (c.total || 0), 0);
@@ -7209,40 +8374,19 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
         MF_saveSnap(_itemIdForSnap, _currSnap);
     }
 
-    // Checklist card — heurístico original + seção ML ADICIONAL (quando disponível)
+    // Checklist card — só os checks heurísticos NOSSOS.
+    //
+    // A seção "Ações Recomendadas pelo ML" saiu daqui em 13/08/2026. Ela renderizava a
+    // mesma `mlQuality.pending`, com os mesmos deep links, que o card "Qualidade do Anúncio
+    // (Mercado Livre)" já mostra — agrupada por bloco, com % e com as concluídas. Na tela a
+    // recomendação saía duas vezes ("Preencha as características principais", "Ofereça
+    // frete grátis…", "Participe de uma promoção…" em MLB3264800533).
+    //
+    // É o mesmo defeito de 11/08 pelo par que sobrou: lá o duplicado era Checklist Rápido ×
+    // este card. Decisão do Lucas: fica só no card dedicado. As duas fontes eram o MESMO
+    // `performanceData`, então nada some sozinho — sem dado da ML o card dedicado já diz
+    // "Qualidade ainda não calculada" e aqui não havia o que mostrar.
     if (checkEl) {
-        // Seção ML extra: pendências reais do ML com deep links (além dos heurísticos)
-        let mlSectionHtml = '';
-        if (mlQuality && (mlQuality.pending.length > 0 || mlQuality.completed.length > 0)) {
-            const renderMLRow = (p) => {
-                const mode = p.mode || 'OPPORTUNITY';
-                const isWarn = mode === 'WARNING';
-                const cColor = isWarn ? 'var(--red)' : 'var(--yellow,#f59e0b)';
-                const cBg = isWarn ? 'var(--red-light)' : 'var(--yellow-light,#fef3c7)';
-                const icon = isWarn ? '⚠' : '○';
-                const linkHtml = p.link ? `<a href="${escapeHtml(p.link)}" target="_blank" rel="noopener" style="color:var(--blue); text-decoration:none; font-weight:600; font-size:0.7rem; white-space:nowrap; flex-shrink:0;">${escapeHtml(p.label || 'Resolver')} →</a>` : '';
-                return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:${cBg};border-radius:var(--radius-sm);border-left:3px solid ${cColor};">
-                    <span style="color:${cColor};font-weight:bold;flex-shrink:0;">${icon}</span>
-                    <span class="text-small" style="color:var(--text); flex:1; line-height:1.3;">${escapeHtml(p.text)}</span>
-                    ${linkHtml}
-                </div>`;
-            };
-            const summaryHtml = mlQuality.pending.length === 0
-                ? `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--green-light);border-radius:var(--radius-sm);border-left:3px solid var(--green);"><span style="color:var(--green);font-weight:bold;">🎉</span><span class="text-small" style="color:var(--green-dark);">Todos os ${mlQuality.completed.length} critérios ML concluídos!</span></div>`
-                : mlQuality.pending.map(renderMLRow).join('');
-            mlSectionHtml = `
-                <div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
-                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
-                        <span style="font-size:0.85rem;">⚡</span>
-                        <span style="font-weight:700; font-size:0.78rem; color:var(--text); text-transform:uppercase; letter-spacing:0.03em;">Ações Recomendadas pelo ML</span>
-                        <span class="text-small" style="margin-left:auto; color:var(--text-muted); font-size:0.68rem;">${mlQuality.pending.length}/${mlQuality.pending.length + mlQuality.completed.length}</span>
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:4px;">
-                        ${summaryHtml}
-                    </div>
-                </div>`;
-        }
-
         checkEl.innerHTML = `
             <div class="ana-card" style="height:100%;">
                 <div class="ana-card-header" style="padding-bottom:10px; margin-bottom:10px;">
@@ -7253,7 +8397,6 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
                     ${failedChecks.map((c, i) => `<div class="check-fail-animate" style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--red-light);border-radius:var(--radius-sm);border-left:3px solid var(--red);animation-delay:${i*0.08}s;"><span style="color:var(--red);font-weight:bold;flex-shrink:0;">✖</span><span class="text-small" style="color:var(--red-dark);">${c.text}</span></div>`).join('')}
                     ${passedChecks.map(c => `<div style="display:flex;align-items:center;gap:8px;padding:3px 10px;background:var(--green-light);border-radius:var(--radius-sm);border-left:3px solid var(--green);"><span style="color:var(--green);font-weight:bold;flex-shrink:0;">✔</span><span class="text-small" style="color:var(--green-dark);">${c.text}</span></div>`).join('')}
                 </div>
-                ${mlSectionHtml}
             </div>
         `;
     }
@@ -7404,7 +8547,58 @@ async function fetchInheritedDescription(detail, accessToken) {
     return null;
 }
 
-async function fetchPerformanceData(itemId, accessToken) { return fetchApiData(`${API_PERFORMANCE_ENDPOINT}?item_id=${itemId}`, accessToken); }
+/**
+ * Qualidade do anúncio pelos olhos da ML.
+ *
+ * Não usa `fetchApiData` porque ele devolve `null` para QUALQUER erro, e aqui `null` tem
+ * significado próprio: "a ML não calcula qualidade pra este anúncio". Em 13/08/2026 a tela
+ * dizia "Qualidade ainda não calculada pelo ML" num anúncio cuja rota respondia 200 com
+ * score 58 — a chamada tinha falhado uma vez e o card falou pela ML.
+ *
+ * 400 continua virando `null` de propósito: é a resposta dela em anúncio pausado e em
+ * catálogo, onde a ausência é real.
+ */
+async function fetchPerformanceData(itemId, accessToken) {
+    try {
+        const res = await fetch(`${API_PERFORMANCE_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, {
+            headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
+        });
+        if (res.ok) return await res.json();
+        if (res.status === 400) return null;
+        return { _falhou: true, _status: res.status };
+    } catch (e) {
+        return { _falhou: true, _motivo: 'rede' };
+    }
+}
+
+/**
+ * Chaves que a ML usa nas linhas de qualidade, para o que o app resolve.
+ * Sem a de descrição e a de garantia porque a ML não lista essas duas (medido na conta em
+ * 13/08: as 11 variables de um anúncio ativo são UP_TITLE, UP_PICTURES, UP_GTIN,
+ * UP_TECHNICAL_SPECIFICATIONS_MAIN, UP_PRICE, UP_FREE_SHIPPING, UP_PROMOTIONS, UP_SHORTS,
+ * UP_FINANCING e as de estoque).
+ */
+const MF_ATTR_PARA_LINHA_ML = { GTIN: 'UP_GTIN', EAN: 'UP_GTIN', UPC: 'UP_GTIN' };
+
+/**
+ * Registra que o vendedor resolveu isto AGORA, pelo app. A lista da ML é do carregamento
+ * da página e a /performance dela atualiza periodicamente, então a linha continua lá —
+ * marcada, para ele não achar que o salvamento não pegou.
+ */
+function MF_marcaResolvidoNoML(state, attrId) {
+    if (!state) return;
+    if (!state.resolvidosNoML) state.resolvidosNoML = new Set();
+    state.resolvidosNoML.add(MF_ATTR_PARA_LINHA_ML[attrId] || 'UP_TECHNICAL_SPECIFICATIONS_MAIN');
+}
+
+window.mfRecarregarQualidadeML = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.detail) return;
+    const alvo = document.getElementById(`performanceTexto${state.containerIdSuffix || ''}`);
+    if (alvo) alvo.innerHTML = '<div class="ana-card"><p class="text-small">Consultando o Mercado Livre…</p></div>';
+    state.performanceData = await fetchPerformanceData(state.detail.id, state.accessToken || window._adsAccessToken);
+    exibirPerformance(state.performanceData, `performanceTexto${state.containerIdSuffix || ''}`);
+};
 async function fetchPurchaseExperience(itemId, accessToken) {
     const raw = await fetchApiData(`${BASE_URL_PROXY}/api/purchase-experience?item_id=${itemId}`, accessToken);
     // Proxy retorna { [itemId]: {...} } — desembrulha
@@ -7450,7 +8644,12 @@ async function fetchQualidadeFicha(itemId, accessToken) {
         preenchidos: Array.isArray(ft.attributes) ? ft.attributes : [],
         fichaCompleta: ft.complete === true,
         semIdentificador: pi.complete === false,
-        identificadoresFaltando: Array.isArray(pi.missing_attributes) ? pi.missing_attributes : []
+        identificadoresFaltando: Array.isArray(pi.missing_attributes) ? pi.missing_attributes : [],
+        // O bloco cru vai junto: `required` é a régua de obrigatoriedade da ML pra ESTE
+        // anúncio (mfObrigatoriosDoML). Extrair só `ft` e `pi` fazia a etapa "Obrigatórios"
+        // cair no fallback das tags da categoria em 100% dos casos, sem nunca dizer que
+        // estava fazendo isso — a feature parecia ligada e nunca rodava.
+        adoption_status: raw.adoption_status || null
     };
 }
 
@@ -7484,13 +8683,16 @@ async function fetchVisits(itemId, accessToken) {
     if (window.MarketFacilCore && typeof window.MarketFacilCore.getVisits === 'function') {
         try {
             console.log('Utilizando MarketFacilCore.getVisits...');
-            return await window.MarketFacilCore.getVisits(itemId, '30'); // '30' dias como string para garantir compatibilidade
+            return await window.MarketFacilCore.getVisits(itemId, '60'); // 60 dias: ver comentário abaixo
         } catch (e) {
             console.warn('Falha no Core, tentando rota direta...', e);
         }
     }
-    // Busca visitas dos últimos 30 dias para cálculo de tendência via rota direta usando last=30 e unit=day (padrão do backend)
-    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=30&unit=day`, accessToken);
+    // 60 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
+    // com uma janela de 30 esse período anterior vinha vazio — ou a variação sumia, ou
+    // saía um "+5840%" que só dizia que o denominador era zero. Mesma chamada, só o
+    // parâmetro muda. O gráfico continua desenhando os últimos 30.
+    return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=60&unit=day`, accessToken);
 }
 
 async function fetchReviews(itemId, accessToken) {
@@ -7521,6 +8723,67 @@ window.reloadAdsMetrics = async function(days) {
         if (el) el.innerHTML = '<div class="ana-card"><p class="text-small error-message">Erro: ' + e.message + '</p></div>';
     }
 };
+
+/**
+ * Cruza o daily de Ads com as visitas NO PERÍODO QUE OS DOIS COBREM.
+ *
+ * As duas fontes têm janelas próprias e independentes: as visitas vêm de 60 dias fixos
+ * (o card de visitas precisa disso pra comparar 30 dias com os 30 anteriores) e o daily
+ * de Ads vem do período escolhido nos botões 7/15/30/60/90. Somar uma contra a outra foi
+ * o bug de 11/08/2026 — com 60 dias de visitas e 30 de cliques, o que sobrava como
+ * "orgânico" carregava 30 dias que o Ads nem cobriu, e no sentido oposto (90d de Ads
+ * contra 60 de visitas) os cliques passavam as visitas e a linha do orgânico zerava.
+ *
+ * A janela aqui é a INTERSEÇÃO real das duas, e `dias` é o que a tela deve anunciar:
+ * escrever "90 dias" num número que cobriu 60 é a mesma mentira, só que por extenso.
+ * Sem dia em comum devolve null — a seção some, não inventa.
+ */
+function MF_janelaCanais(daily, visitResults) {
+    const datasDe = (arr) => (arr || [])
+        .map((x) => String(x && x.date || '').slice(0, 10))
+        .filter(Boolean)
+        .sort();
+    const dAds = datasDe(daily);
+    const dVis = datasDe(visitResults);
+    if (!dAds.length || !dVis.length) return null;
+
+    // ISO (AAAA-MM-DD) compara certo como string — sem fuso pra errar no meio do caminho.
+    const ini = dAds[0] > dVis[0] ? dAds[0] : dVis[0];
+    const fim = dAds[dAds.length - 1] < dVis[dVis.length - 1] ? dAds[dAds.length - 1] : dVis[dVis.length - 1];
+    if (ini > fim) return null;
+    const dentro = (d) => d >= ini && d <= fim;
+
+    const cliquesPorDia = {};
+    let vendasAds = 0, vendasOrganicas = 0;
+    for (const a of (daily || [])) {
+        const d = String(a && a.date || '').slice(0, 10);
+        if (!d || !dentro(d)) continue;
+        cliquesPorDia[d] = (cliquesPorDia[d] || 0) + (a.clicks || 0);
+        vendasAds += a.units_quantity || 0;
+        vendasOrganicas += a.organic_units_quantity || 0;
+    }
+
+    let visitasTotal = 0, visitasAds = 0;
+    for (const v of (visitResults || [])) {
+        const d = String(v && v.date || '').slice(0, 10);
+        if (!d || !dentro(d)) continue;
+        const total = v.total || 0;
+        // Clique não pode passar a visita do dia. O ML conta as duas coisas por caminhos
+        // diferentes; sem esse teto um dia desencontrado viraria orgânico negativo.
+        visitasTotal += total;
+        visitasAds += Math.min(total, cliquesPorDia[d] || 0);
+    }
+
+    const dias = Math.round(
+        (new Date(fim + 'T12:00:00').getTime() - new Date(ini + 'T12:00:00').getTime()) / 86400000
+    ) + 1;
+
+    return {
+        ini, fim, dias, dentro,
+        visitasTotal, visitasAds, visitasOrganicas: Math.max(0, visitasTotal - visitasAds),
+        vendasAds, vendasOrganicas, vendasTotal: vendasAds + vendasOrganicas,
+    };
+}
 
 function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, visitsData = null) {
     const el = document.getElementById(containerId);
@@ -7563,6 +8826,18 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const convRate = totalClicks > 0 ? ((totalOrders / totalClicks) * 100).toFixed(2) : '0.00';
     const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0;
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
+
+    // Visitas: o parâmetro é a fonte, o estado da análise é o resgate. Antes a tabela de
+    // canal lia o parâmetro e o gráfico lia o estado — bastava um vir vazio pra metade do
+    // card falar de um período e a outra metade de outro.
+    const visitsFonte = (visitsData && Array.isArray(visitsData.results) && !visitsData.error)
+        ? visitsData
+        : ((window.currentAnalysisState && window.currentAnalysisState.visitsData) || null);
+    const visitsResults = (visitsFonte && Array.isArray(visitsFonte.results) && !visitsFonte.error)
+        ? visitsFonte.results : [];
+    // Uma régua só para tudo que mistura visita com Ads: tabela de canal, barra de
+    // composição e o gráfico diário. Três contas separadas foi como elas divergiram.
+    const canais = MF_janelaCanais(daily, visitsResults);
 
     // --- 2. Calculate trends: last half vs first half ---
     const sortedDaily = [...daily].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -7679,15 +8954,14 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             ${metricCard('Conversão Ads', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
         </div>
         ${(() => {
-            // Breakdown Ads × Orgânico × Total — só faz sentido com visitsData válido
-            if (!visitsData || !Array.isArray(visitsData.results) || visitsData.error) return '';
-            const visitResults = visitsData.results || [];
-            const totalVisits = visitResults.reduce((s, v) => s + (v.total || 0), 0);
-            const adsVisits = totalClicks;
-            const organicVisits = Math.max(0, totalVisits - adsVisits);
-            const adsSales = totalOrders;
-            const organicSales = totalOrganic;
-            const totalSales = adsSales + organicSales;
+            // Breakdown Ads × Orgânico × Total — só existe com dia em comum entre visitas e Ads
+            if (!canais || canais.visitasTotal <= 0) return '';
+            const totalVisits = canais.visitasTotal;
+            const adsVisits = canais.visitasAds;
+            const organicVisits = canais.visitasOrganicas;
+            const adsSales = canais.vendasAds;
+            const organicSales = canais.vendasOrganicas;
+            const totalSales = canais.vendasTotal;
             const cvr = (sales, vis) => vis > 0 ? ((sales / vis) * 100) : 0;
             const adsCvr = cvr(adsSales, adsVisits);
             const orgCvr = cvr(organicSales, organicVisits);
@@ -7711,7 +8985,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             })() : '';
             return `
             <div style="margin-bottom:16px;">
-                <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${activeDays} dias)</div>
+                <div class="text-small" style="font-weight:600; color:var(--text); margin-bottom:6px;">Conversão por canal (últimos ${canais.dias} dias)</div>
                 <div style="border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
                     <div class="ana-channel-row" style="padding:6px 10px; background:var(--row-alt); font-size:0.7rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.04em;">
                         <span>Canal</span><span style="text-align:right;">Visitas</span><span style="text-align:right;">Vendas</span><span style="text-align:right;">Conversão</span>
@@ -7769,24 +9043,41 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const acosCanvasId = 'acosChart_' + Date.now();
     let _acosChartData = null;
     if (sortedDaily.length > 0) {
-        const dailyAcosValues = sortedDaily.map(d => {
-            const rev = d.total_amount || 0;
-            return rev > 0 ? parseFloat(((d.cost || 0) / rev * 100).toFixed(1)) : 0;
-        });
+        // Dia que teve custo e NÃO teve venda não é "0% de ACOS" — é o pior dia possível.
+        // A conta antiga (`rev > 0 ? ... : 0`) desenhava barra no chão justamente nos dias
+        // em que o vendedor só gastou, que é o oposto do que aconteceu. Sem receita a razão
+        // não existe: vira buraco no gráfico, e o tooltip diz o que foi gasto.
+        const razaoDiaria = (custo, receita) => {
+            if (receita > 0) return parseFloat((custo / receita * 100).toFixed(1));
+            return custo > 0 ? null : 0; // null = sem venda no dia (buraco), 0 = dia parado
+        };
+        const dailyAcosValues = sortedDaily.map(d => razaoDiaria(d.cost || 0, d.total_amount || 0));
+        // TACOS = custo sobre o faturamento TOTAL (ads + orgânico). É a métrica que manda:
+        // ACOS alto com TACOS baixo é anúncio que vende sozinho e usa Ads de empurrão.
+        const dailyTacosValues = sortedDaily.map(d =>
+            razaoDiaria(d.cost || 0, (d.total_amount || 0) + (d.organic_units_amount || 0)));
+        const dailyCosts = sortedDaily.map(d => d.cost || 0);
         const acosLabels = sortedDaily.map(d => d.date ? new Date(d.date).toLocaleDateString(_cfg ? _cfg.locale : 'pt-BR', { day: '2-digit', month: '2-digit' }) : '');
-        const acosColors = dailyAcosValues.map(v => v > 30 ? '#ff3b5c' : (v > 15 ? '#f59e0b' : '#00d68f'));
+        const acosColors = dailyAcosValues.map(v => v === null ? 'rgba(148,163,184,0.25)' : (v > 30 ? '#ff3b5c' : (v > 15 ? '#f59e0b' : '#00d68f')));
 
-        _acosChartData = { labels: acosLabels, values: dailyAcosValues, colors: acosColors, target: campaignAcosTarget };
+        _acosChartData = {
+            labels: acosLabels, values: dailyAcosValues, colors: acosColors,
+            tacos: dailyTacosValues, custos: dailyCosts, target: campaignAcosTarget
+        };
 
         acosChartHtml = `
             <div class="chart-card">
                 <div class="chart-card-header">
                     <span class="chart-card-icon">📊</span>
-                    <span class="chart-card-label">ACOS Diário</span>
+                    <span class="chart-card-label">ACOS e TACOS por dia</span>
                 </div>
                 <div class="chart-card-body" style="height:200px;position:relative;">
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
+                <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
+                    Barras: quanto do faturamento <b>vindo de Ads</b> foi para o anúncio.
+                    Linha: quanto do faturamento <b>total</b> (Ads + orgânico) foi para Ads.
+                </p>
             </div>`;
     }
 
@@ -7794,7 +9085,6 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     let visitsAdsChartHtml = '';
     const visitsCanvasId = 'visitsAdsChart_' + Date.now();
     let _visitsChartData = null;
-    const visitsResults = window.currentAnalysisState?.visitsData?.results || [];
     if (sortedDaily.length > 0) {
         // Build maps by date
         const adsClicksByDate = {};
@@ -7807,9 +9097,12 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             }
         });
 
-        // Match visits with ads per day
-        const sortedVisits = visitsResults.length > 0
-            ? [...visitsResults].sort((a, b) => new Date(a.date) - new Date(b.date))
+        // Match visits with ads per day — só nos dias que Ads e visitas cobrem juntos.
+        // Desenhar os 60 dias das visitas com o Ads de 30 pintava metade do gráfico como
+        // 100% orgânico, quando na verdade o Ads nem foi consultado naqueles dias.
+        const visitasNaJanela = canais ? visitsResults.filter(v => canais.dentro(String(v && v.date || '').slice(0, 10))) : [];
+        const sortedVisits = visitasNaJanela.length > 0
+            ? [...visitasNaJanela].sort((a, b) => new Date(a.date) - new Date(b.date))
             : sortedDaily.map(d => ({ date: d.date, total: d.clicks || 0 }));
 
         const entries = sortedVisits.map(v => {
@@ -7845,7 +9138,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
             </div>
             <div style="margin-top:10px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                    <span style="font-size:0.68rem;color:var(--text-muted);">Composição do tráfego (${activeDays}d)</span>
+                    <span style="font-size:0.68rem;color:var(--text-muted);">Composição do tráfego (${canais ? canais.dias : activeDays}d)</span>
                     <span style="font-size:0.68rem;color:var(--text-muted);">${fmt(totalAdsSum)} ads / ${fmt(totalVisitsSum)} total</span>
                 </div>
                 <div style="height:12px;border-radius:6px;background:var(--border);overflow:hidden;display:flex;">
@@ -7930,7 +9223,24 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                             borderRadius: 3,
                             borderSkipped: false,
                             barPercentage: 0.85,
-                            categoryPercentage: 0.9
+                            categoryPercentage: 0.9,
+                            order: 2
+                        }, {
+                            // TACOS por cima das barras: é a métrica que manda na leitura
+                            // (feedback_product_ads_rules), e lado a lado com o ACOS mostra
+                            // o quanto do faturamento é orgânico — a distância entre as duas
+                            // linhas É a venda que não veio de Ads.
+                            label: 'TACOS %',
+                            data: _acosChartData.tacos,
+                            type: 'line',
+                            borderColor: '#0066ff',
+                            backgroundColor: '#0066ff',
+                            borderWidth: 2,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            tension: 0.3,
+                            spanGaps: false, // dia sem venda vira buraco, não linha reta mentirosa
+                            order: 1
                         }]
                     },
                     options: {
@@ -7952,7 +9262,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                         },
                         plugins: {
                             title: { display: false },
-                            legend: { display: false },
+                            // Duas séries agora: sem legenda o vendedor não sabe qual é qual.
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                align: 'end',
+                                labels: {
+                                    boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'circle',
+                                    font: { size: 10, family: "'DM Sans', sans-serif" }, color: '#94a3b8', padding: 12
+                                }
+                            },
                             tooltip: {
                                 backgroundColor: '#0f172a',
                                 titleColor: '#fff',
@@ -7963,7 +9282,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                                 cornerRadius: 8,
                                 displayColors: true,
                                 callbacks: {
-                                    label: function(ctx) { return 'ACOS: ' + ctx.parsed.y + '%'; }
+                                    label: function(ctx) {
+                                        const nome = ctx.dataset.label === 'TACOS %' ? 'TACOS' : 'ACOS';
+                                        // null = teve custo e nenhuma venda. Dizer "0%" aqui seria
+                                        // elogiar o pior dia do período.
+                                        if (ctx.parsed.y === null || ctx.parsed.y === undefined) {
+                                            const custo = (_acosChartData.custos || [])[ctx.dataIndex] || 0;
+                                            return nome + ': sem venda no dia' + (custo > 0 ? ' (gastou ' + fmtMoney(custo) + ')' : '');
+                                        }
+                                        return nome + ': ' + ctx.parsed.y + '%';
+                                    }
                                 }
                             },
                             annotation: _acosChartData.target ? {
@@ -8100,7 +9428,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
 
 // AI image analysis section removed
 
-function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
+function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData = null) {
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -8113,7 +9441,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
             <div class="ana-card" style="animation-delay: 0.1s;">
                 <div class="ana-card-header">
                     <span class="ana-card-icon">📊</span>
-                    <span class="ana-card-title">Visitas (30 dias)</span>
+                    <span class="ana-card-title">Desempenho do Anúncio</span>
                 </div>
                 <p class="text-small" style="color: var(--text-muted); font-style:italic;">${motivo}</p>
             </div>`;
@@ -8171,86 +9499,388 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend") {
     if (percentChange7 > 5) { trend = 'Subindo'; icon = '📈'; colorClass = 'success'; }
     else if (percentChange7 < -5) { trend = 'Caindo'; icon = '📉'; colorClass = 'error'; }
 
+    // Redesenhar com os mesmos dados é o que o botão de ligar/desligar métrica chama —
+    // assim os painéis que sobram voltam a dividir a altura, sem buraco branco.
+    window.MF_redesenhaVisitas = () => exibirTendenciaVisitas(visitsData, containerId, adsData);
+
+    // A série vem com 60 dias (para o resumo comparar 30 × 30 anteriores); o gráfico
+    // desenha os últimos 30, que é o período que o card anuncia.
+    const pontosTodos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
+    const pontos = pontosTodos.filter((p) => {
+        const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
+        return idade < 30;
+    });
+    const temVendas = pontos.some((p) => typeof p.vendas === 'number');
+    // Disponíveis = o que a conta permite mostrar (sem Ads não há vendas nem conversão).
+    // Ativas = as disponíveis que o vendedor não desligou.
+    const seriesDisponiveis = MF_SERIES_VISITAS.filter((s) => s.chave === 'visitas' || temVendas);
+    const seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
+
     let svgChart = '';
-    if (results.length > 0 && total30 > 0) {
-        const h = 70;
-        const w = 260;
-        const pad = 5;
-        const maxV = Math.max(...results.map(r => r.total || 0), 1);
-        const barW = (w - pad * 2) / results.length;
-        const lineColor = colorClass === 'success' ? 'var(--green)' : (colorClass === 'error' ? 'var(--red)' : 'var(--blue)');
-        const hoverColor = colorClass === 'success' ? 'var(--green-dark)' : (colorClass === 'error' ? 'var(--red-dark)' : 'var(--blue)');
+    if (pontos.length > 0 && total30 > 0) {
+        const W = 300, PAD_E = 4, PAD_D = 4;
+        const ALT_PAINEL = 46, GAP = 14, TOPO_ROTULO = 12;
+        const larg = W - PAD_E - PAD_D;
+        const H = seriesAtivas.length * (ALT_PAINEL + TOPO_ROTULO) + (seriesAtivas.length - 1) * GAP;
 
-        let barsHtml = '';
-        results.forEach((r, i) => {
-            const barH = ((r.total || 0) / maxV) * (h - pad * 2);
-            const x = pad + i * barW;
-            const y = pad + (h - pad * 2) - barH;
-
-            // Format date for tooltip
-            const dObj = new Date(r.date);
-            const dStr = String(dObj.getUTCDate()).padStart(2, '0') + '/' + String(dObj.getUTCMonth() + 1).padStart(2, '0');
-            const tooltip = `${dStr}: ${r.total || 0} visitas`;
-
-            barsHtml += `
-                <g class="visit-bar-group" style="cursor:crosshair;">
-                    <!-- Invisible rect for easier hover detection spanning full height -->
-                    <rect x="${x}" y="0" width="${Math.max(barW - 1, 2)}" height="${h}" fill="transparent">
-                        <title>${tooltip}</title>
-                    </rect>
-                    <!-- Actual bar -->
-                    <rect x="${x}" y="${y}" width="${Math.max(barW - 1, 2)}" height="${barH}" fill="${lineColor}" rx="2" class="visit-bar-rect" style="transition: fill 0.2s;">
-                        <title>${tooltip}</title>
-                    </rect>
-                </g>
-            `;
+        let paineis = '';
+        seriesAtivas.forEach((s, idx) => {
+            const y0 = idx * (ALT_PAINEL + TOPO_ROTULO + GAP) + TOPO_ROTULO;
+            const vals = pontos.map((p) => p[s.chave]).filter((v) => typeof v === 'number');
+            const max = vals.length ? Math.max(...vals) : 0;
+            const d = MF_caminhoSerie(pontos, s.chave, PAD_E, larg, y0, ALT_PAINEL);
+            const maxTxt = s.chave === 'conversao' ? max.toFixed(1) + '%' : String(Math.round(max));
+            paineis += `
+                <g data-serie="${s.chave}">
+                    <text x="${PAD_E}" y="${y0 - 3}" font-size="7.5" fill="var(--text-muted)" font-weight="600">${s.rotulo}</text>
+                    <text x="${W - PAD_D}" y="${y0 - 3}" font-size="7" fill="var(--text-muted)" text-anchor="end">máx ${maxTxt}</text>
+                    <line x1="${PAD_E}" y1="${y0 + ALT_PAINEL}" x2="${W - PAD_D}" y2="${y0 + ALT_PAINEL}" stroke="var(--border,#e5e7eb)" stroke-width="0.5"/>
+                    ${d ? `<path d="${d}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` : ''}
+                </g>`;
         });
 
         svgChart = `
-        <style>
-            .visit-bar-group:hover .visit-bar-rect { fill: ${hoverColor}; }
-        </style>
-        <div style="margin-top: 15px; width: 100%; height: 75px; position:relative;">
-            <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%; height:100%; overflow:visible;">
-                ${barsHtml}
+        <div class="mf-vis-chart" style="margin-top:14px; position:relative;" data-pontos='${escapeHtml(JSON.stringify(pontos))}'>
+            <svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; overflow:visible; display:block;">
+                ${paineis}
+                <line class="mf-vis-cross" x1="0" y1="0" x2="0" y2="${H}" stroke="var(--text-muted)" stroke-width="0.6" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>
+                <rect class="mf-vis-hit" x="0" y="0" width="${W}" height="${H}" fill="transparent" style="cursor:crosshair;"/>
             </svg>
+            <div class="mf-vis-tip" style="display:none; position:absolute; z-index:5; pointer-events:none; background:var(--navy,#0f172a); color:#fff; padding:7px 9px; border-radius:6px; font-size:0.72rem; line-height:1.5; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.18);"></div>
+        </div>
+        <div class="mf-vis-legenda" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+            ${seriesDisponiveis.map((s) => {
+                // O botão da métrica desligada CONTINUA na legenda — some o painel, não o
+                // controle, senão não há como religar.
+                const off = MF_visOcultas.has(s.chave);
+                return `
+                <button type="button" class="mf-vis-toggle" data-serie="${s.chave}" aria-pressed="${off ? 'false' : 'true'}"
+                    title="${off ? 'Mostrar' : 'Ocultar'} ${escapeHtml(s.rotulo)}"
+                    style="display:inline-flex; align-items:center; gap:5px; background:none; border:none; padding:2px 4px; cursor:pointer; font-family:inherit; font-size:0.72rem; color:var(--text-secondary); opacity:${off ? '0.4' : '1'};">
+                    <span style="width:12px; height:2px; background:${off ? 'var(--text-muted)' : s.cor}; border-radius:2px; flex-shrink:0;"></span>${s.rotulo}
+                </button>`;
+            }).join('')}
         </div>`;
     }
 
     const lowDataWarning = total30 < 10 ? '<div style="margin-top:8px;"><span class="status-badge muted" style="font-size:0.7rem;">⚠️ Poucos dados</span></div>' : '';
 
+    // Sem Ads não há série de vendas por dia — a tabela mostra só visitas, e o card diz
+    // por quê em vez de deixar o vendedor procurando as colunas que não vieram.
+    const semAdsHtml = (adsData && adsData.has_ads) ? '' : `
+        <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border,#e5e7eb);">
+            <span class="text-small" style="color:var(--text-muted);">Vendas e conversão aparecem quando o anúncio tem publicidade — é de lá que vem a venda dia a dia.</span>
+        </div>`;
+
+    // Resumo por período seguindo as MÉTRICAS ATIVAS (Lucas, 11/08): desligar Vendas tira
+    // a coluna de vendas daqui também. Um controle só manda no card inteiro — dois lugares
+    // com regras diferentes de "o que está ligado" seria a mesma armadilha das contagens
+    // divergentes de campos (05/08).
+    const janelas = [
+        { rotulo: '7 dias', ini: 0, fim: 7, iniAnt: 7, fimAnt: 14 },
+        { rotulo: '15 dias', ini: 0, fim: 15, iniAnt: 15, fimAnt: 30 },
+        { rotulo: '30 dias', ini: 0, fim: 30, iniAnt: 30, fimAnt: 60 },
+    ];
+    // Soma por janela a partir dos MESMOS pontos do gráfico — resumo e gráfico não podem
+    // sair de contas diferentes.
+    const somaJanela = (ini, fim) => {
+        // Usa a série COMPLETA (60d): a janela anterior de "30 dias" mora fora dos 30 do
+        // gráfico. Sem isso a comparação não existe.
+        const dentro = pontosTodos.filter((p) => {
+            const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
+            return idade >= ini && idade < fim;
+        });
+        const v = dentro.reduce((s, p) => s + (typeof p.visitas === 'number' ? p.visitas : 0), 0);
+        const ven = dentro.reduce((s, p) => s + (typeof p.vendas === 'number' ? p.vendas : 0), 0);
+        const temVenda = dentro.some((p) => typeof p.vendas === 'number');
+        return {
+            visitas: v,
+            vendas: temVenda ? ven : null,
+            // Conversão da JANELA = vendas da janela ÷ visitas da janela. Média das
+            // conversões diárias daria peso igual a um dia de 2 visitas e a um de 200.
+            conversao: (temVenda && v > 0) ? (ven / v) * 100 : null,
+        };
+    };
+    const fmtMetrica = (chave, v) => {
+        if (typeof v !== 'number') return '—';
+        return chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
+    };
+    // A variação vive em COLUNA PRÓPRIA, não colada no número. Junto no mesmo <span>, ela
+    // empurrava o valor e cada linha começava num lugar diferente — a tabela parecia solta.
+    // Com coluna separada, os números alinham à direita entre si e os selos começam todos
+    // na mesma posição, mesmo quando uma linha não tem variação.
+    const variacaoHtml = (atual, anterior) => {
+        if (typeof atual !== 'number' || typeof anterior !== 'number' || anterior === 0) return '';
+        const pct = ((atual - anterior) / anterior) * 100;
+        if (Math.abs(pct) < 1) return '';
+        const cor = pct > 0 ? 'var(--green-dark)' : 'var(--red-dark)';
+        const bg = pct > 0 ? 'var(--green-light)' : 'var(--red-light)';
+        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
+    };
+    // Por métrica: uma coluna pro número (direita) e uma pro selo (largura fixa).
+    const colunas = 'minmax(48px, auto) ' + seriesAtivas.map(() => 'minmax(0, 1fr) 42px').join(' ');
+    const resumoHtml = `
+        <div style="display:grid; grid-template-columns:${colunas}; gap:7px 8px; align-items:center; margin-bottom:14px;">
+            <span></span>
+            ${seriesAtivas.map((s) => `
+                <span class="text-small" style="color:${s.cor}; font-weight:700; text-align:right;">${s.rotulo}</span>
+                <span></span>`).join('')}
+            ${janelas.map((j) => {
+                const at = somaJanela(j.ini, j.fim);
+                const ant = somaJanela(j.iniAnt, j.fimAnt);
+                return `<span class="text-small" style="color:var(--text-muted); white-space:nowrap;">${j.rotulo}</span>`
+                    + seriesAtivas.map((s) => `
+                        <span style="font-family:var(--font-mono,'DM Mono',monospace); font-weight:600; font-size:0.9rem; color:var(--text); text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}</span>
+                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
+            }).join('')}
+        </div>`;
+
     el.innerHTML = `
         <div class="ana-card" style="animation-delay: 0.1s;">
             <div class="ana-card-header" style="margin-bottom:10px;">
                 <span class="ana-card-icon">📊</span>
-                <span class="ana-card-title">Visitas Recentes</span>
+                <span class="ana-card-title">Desempenho do Anúncio</span>
             </div>
-            <div style="display: flex; gap: 15px; align-items: stretch; justify-content: space-between;">
-                <div class="trend-indicator" style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-width:80px; text-align:center;">
-                    <span class="trend-icon" style="font-size:1.8rem; line-height:1; margin-bottom:4px;">${icon}</span>
-                    <span class="trend-text ${colorClass}" style="font-weight:bold; font-size:1.6rem; line-height:1;">${total30}</span>
-                    <span class="text-small" style="text-align:center; color:var(--text-muted); display:block; margin-top:2px;">30 dias</span>
-                </div>
-                <div class="trend-stats" style="flex-grow:1; display:flex; flex-direction:column; justify-content:center; gap:6px;">
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Últimos 7 dias</span>
-                        <span class="text-value" style="font-weight:600;">${total7}${percentChange7 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange7 > 0 ? 'var(--green-dark)' : (percentChange7 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange7 > 0 ? 'var(--green-light)' : (percentChange7 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange7 > 0 ? '+' : ''}${percentChange7.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Últimos 15 dias</span>
-                        <span class="text-value" style="font-weight:600;">${total15}${percentChange15 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange15 > 0 ? 'var(--green-dark)' : (percentChange15 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange15 > 0 ? 'var(--green-light)' : (percentChange15 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange15 > 0 ? '+' : ''}${percentChange15.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                    <div class="trend-row" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-small" style="color:var(--text-muted);">Mês (30 dias)</span>
-                        <span class="text-value" style="font-weight:600;">${total30}${percentChange30 !== null ? ` <span style="font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:4px; color:${percentChange30 > 0 ? 'var(--green-dark)' : (percentChange30 < 0 ? 'var(--red-dark)' : 'var(--text-secondary)')}; background-color:${percentChange30 > 0 ? 'var(--green-light)' : (percentChange30 < 0 ? 'var(--red-light)' : 'var(--border)')};">${percentChange30 > 0 ? '+' : ''}${percentChange30.toFixed(1)}%</span>` : ''}</span>
-                    </div>
-                </div>
-            </div>
+            ${resumoHtml}
             ${svgChart}
+            ${semAdsHtml}
             ${lowDataWarning}
         </div>
     `;
+    // Listeners só depois do innerHTML — `<script>` inline não roda por aqui.
+    MF_ativarGraficoVisitas(el);
 }
+
+/* =========================================================================
+   Gráfico do card de visitas — visitas, vendas e conversão dia a dia.
+   Pedido do Lucas (11/08/2026): linha em vez de barra, os dados do dia ao passar o
+   mouse, e poder desligar uma métrica.
+
+   TRÊS PAINÉIS empilhados, não um gráfico com dois eixos: visitas ficam na casa das
+   centenas, vendas na das unidades e conversão em %. Sobrepor isso exigiria dois eixos Y,
+   que é o erro clássico de gráfico — a inclinação de uma série passa a depender da escala
+   escolhida pra outra, e a comparação vira ilusão de ótica. Empilhado, o eixo X é
+   compartilhado e a leitura "as visitas subiram e as vendas não" continua direta.
+
+   Cores validadas contra fundo claro (CVD ΔE 8.9, acima do piso): cada painel tem título
+   próprio, então a cor é reforço e não a única identificação.
+   ========================================================================= */
+const MF_SERIES_VISITAS = [
+    { chave: 'visitas',   rotulo: 'Visitas',    cor: '#0066ff', sufixo: '' },
+    { chave: 'vendas',    rotulo: 'Vendas',     cor: '#00875a', sufixo: '' },
+    { chave: 'conversao', rotulo: 'Conversão',  cor: '#c2410c', sufixo: '%' },
+];
+
+/**
+ * Dia seguinte em ISO, pelo UTC — somar 86400000 escorrega no horário de verão.
+ * Devolve null se a entrada não for data: `toISOString()` de um Invalid Date LANÇA, e
+ * quem chama está num laço.
+ */
+function MF_diaSeguinte(iso) {
+    const t = new Date(iso + 'T12:00:00Z');
+    if (isNaN(t.getTime())) return null;
+    t.setUTCDate(t.getUTCDate() + 1);
+    return t.toISOString().slice(0, 10);
+}
+
+/**
+ * Monta as séries diárias a partir das visitas e do daily de Ads.
+ *
+ * VISITA: dia que a API omite é dia de ZERO visita, e entra como 0. Medido na conta em
+ * 13/08/2026 em dois anúncios de tráfego oposto — 48 e 58 registros numa janela de 60
+ * dias, nenhum `total: 0` nos dois, menor valor 1. A API simplesmente não devolve o dia
+ * sem visita. Tratar essa ausência como desconhecido custava o furo na linha e, pior, o
+ * eixo encolhido: 48 pontos ocupando 60 dias ligavam 19/06 direto em 21/06 como se
+ * fossem dias seguidos, e a inclinação mentia sobre o ritmo.
+ *
+ * VENDA: continua `null` quando não há fonte (buraco na linha), nunca 0 — o daily do Ads
+ * não omite dia, então falta ali é falta de verdade, e "não vendeu" e "não deu pra saber"
+ * não podem virar o mesmo desenho.
+ */
+function MF_seriesDiarias(results, adsDaily) {
+    const porDia = new Map();
+    for (const v of (results || [])) {
+        const d = (v.date || '').slice(0, 10);
+        if (d) porDia.set(d, { dia: d, visitas: Number(v.total) || 0, vendas: null, conversao: null });
+    }
+    // Preenche só o MIOLO: do primeiro ao último dia que a API devolveu. Fora daí não se
+    // sabe se o anúncio existia — e a ponta de hoje ainda está propagando (ver guarda
+    // abaixo), então zero ali seria afirmar que o dia acabou sem visita nenhuma.
+    //
+    // Só entram no cálculo dos limites as chaves que SÃO data. Uma data malformada
+    // ordena depois de qualquer '2026-…' (letra > dígito), virava o "último dia" e o
+    // laço nunca chegava lá — travava o browser do vendedor. O teto de voltas é o cinto
+    // de segurança: a janela pedida é de 60 dias, então 400 nunca é alcançado por dado
+    // legítimo.
+    const ordenados = [...porDia.keys()].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+    if (ordenados.length > 1) {
+        const fim = ordenados[ordenados.length - 1];
+        let voltas = 0;
+        for (let d = MF_diaSeguinte(ordenados[0]); d && d < fim && voltas < 400; d = MF_diaSeguinte(d)) {
+            voltas++;
+            if (!porDia.has(d)) porDia.set(d, { dia: d, visitas: 0, vendas: null, conversao: null });
+        }
+    }
+    // O daily do Ads vai de date_from a date_to INCLUSIVE, então traz HOJE — que as visitas
+    // ainda não têm. Esse dia entrava como ponto de `visitas: null` e abria um furo na ponta
+    // da linha, todo dia, em todo anúncio com Ads (12/08/2026).
+    //
+    // A guarda é só pra PONTA: dia fora do intervalo que as visitas cobrem não vira ponto.
+    // Buraco no meio continua valendo, e anúncio SEM série de visitas nenhuma continua
+    // mostrando as vendas do Ads — some o furo, não a informação.
+    const diasVisita = [...porDia.keys()].sort();
+    const primeiro = diasVisita[0], ultimo = diasVisita[diasVisita.length - 1];
+    const temAds = Array.isArray(adsDaily) && adsDaily.length > 0;
+    if (temAds) {
+        for (const a of adsDaily) {
+            const d = (a.date || '').slice(0, 10);
+            if (!d) continue;
+            if (diasVisita.length && (d < primeiro || d > ultimo)) continue;
+            const vendas = (Number(a.units_quantity) || 0) + (Number(a.organic_units_quantity) || 0);
+            const linha = porDia.get(d) || { dia: d, visitas: null, vendas: null, conversao: null };
+            linha.vendas = vendas;
+            // Com visita, a conta normal. Sem visita nenhuma e sem venda, a conversão do dia
+            // É zero — nada entrou e nada converteu, e o vendedor lê isso direto. Mas venda
+            // em dia de zero visita não vira 0%: a visita que gerou foi contada em outro dia,
+            // e dizer "0% de conversão" num dia que VENDEU seria mentira ao contrário. Esse
+            // é o único furo que resta na linha de conversão.
+            linha.conversao = (linha.visitas > 0) ? (vendas / linha.visitas) * 100
+                : (vendas === 0 ? 0 : null);
+            porDia.set(d, linha);
+        }
+    }
+    return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
+/**
+ * Liga o crosshair, o tooltip e os botões de ligar/desligar série.
+ *
+ * Pendurado por JS depois do innerHTML: `<script>` dentro de innerHTML não executa, e no
+ * Bubble isso já mordeu antes ([[feedback_bubble_innerhtml_script]]).
+ */
+function MF_ativarGraficoVisitas(raiz) {
+    const box = raiz && raiz.querySelector('.mf-vis-chart');
+    if (!box) return;
+    let pontos = [];
+    try { pontos = JSON.parse(box.getAttribute('data-pontos') || '[]'); } catch (e) { return; }
+    if (!pontos.length) return;
+
+    const svg = box.querySelector('svg');
+    const cross = box.querySelector('.mf-vis-cross');
+    const tip = box.querySelector('.mf-vis-tip');
+    const vb = (svg.getAttribute('viewBox') || '0 0 300 100').split(/\s+/).map(Number);
+    const W = vb[2] || 300, PAD_E = 4, PAD_D = 4;
+    const larg = W - PAD_E - PAD_D;
+    const escondidas = new Set();
+
+    const fmtDia = (iso) => {
+        const p = String(iso).split('-');
+        return p.length === 3 ? `${p[2]}/${p[1]}` : iso;
+    };
+    const valorTexto = (s, v) => {
+        if (typeof v !== 'number') return '—';
+        return s.chave === 'conversao' ? v.toFixed(2).replace('.', ',') + '%' : String(v);
+    };
+
+    // O ponteiro mira a data, não a linha: acha o X mais próximo.
+    const mover = (ev) => {
+        const r = svg.getBoundingClientRect();
+        const xRel = ((ev.clientX - r.left) / r.width) * W;
+        const t = Math.min(1, Math.max(0, (xRel - PAD_E) / larg));
+        const i = Math.round(t * (pontos.length - 1));
+        const p = pontos[i];
+        if (!p) return;
+        const px = PAD_E + (pontos.length <= 1 ? larg / 2 : (i / (pontos.length - 1)) * larg);
+        cross.setAttribute('x1', px); cross.setAttribute('x2', px);
+        cross.style.display = '';
+        // Um tooltip só, com TODAS as séries daquele dia — o leitor não precisa acertar a linha.
+        // Valor em destaque, nome da série secundário; textContent porque o dado é de fora.
+        tip.innerHTML = '';
+        const cab = document.createElement('div');
+        cab.style.cssText = 'font-weight:700; margin-bottom:3px;';
+        cab.textContent = fmtDia(p.dia);
+        tip.appendChild(cab);
+        for (const s of MF_SERIES_VISITAS) {
+            if (escondidas.has(s.chave)) continue;
+            if (!(s.chave in p)) continue;
+            const linha = document.createElement('div');
+            linha.style.cssText = 'display:flex; align-items:center; gap:6px;';
+            const traco = document.createElement('span');
+            traco.style.cssText = `width:10px; height:2px; border-radius:2px; flex-shrink:0; background:${s.cor};`;
+            const val = document.createElement('b');
+            val.textContent = valorTexto(s, p[s.chave]);
+            const nome = document.createElement('span');
+            nome.style.cssText = 'opacity:.75;';
+            nome.textContent = s.rotulo;
+            linha.appendChild(traco); linha.appendChild(val); linha.appendChild(nome);
+            tip.appendChild(linha);
+        }
+        tip.style.display = 'block';
+        // Acompanha o ponteiro e desvia da linha: fixo no topo ele tapava justamente o
+        // painel de Visitas, que é o primeiro (visto na imagem, não no HTML — o teste de
+        // markup passava porque o tooltip "existia").
+        const largTip = tip.offsetWidth || 120;
+        const altTip = tip.offsetHeight || 70;
+        const xPx = (px / W) * r.width;
+        const yPx = ev.clientY - r.top;
+        tip.style.left = Math.max(0, Math.min(r.width - largTip, xPx + 12)) + 'px';
+        tip.style.top = Math.max(0, Math.min(r.height - altTip, yPx - altTip / 2)) + 'px';
+        // Perto da borda direita o tooltip vira pro outro lado do cursor.
+        if (xPx + 12 + largTip > r.width) tip.style.left = Math.max(0, xPx - largTip - 12) + 'px';
+    };
+    const sair = () => { cross.style.display = 'none'; tip.style.display = 'none'; };
+
+    const hit = box.querySelector('.mf-vis-hit');
+    hit.addEventListener('pointermove', mover);
+    hit.addEventListener('pointerleave', sair);
+    // Mesmo detalhe no teclado que no mouse.
+    hit.addEventListener('focus', () => { if (pontos.length) mover({ clientX: svg.getBoundingClientRect().right }); });
+    hit.addEventListener('blur', sair);
+
+    raiz.querySelectorAll('.mf-vis-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const chave = btn.getAttribute('data-serie');
+            // Esconder o <g> deixava um buraco branco do tamanho do painel — o espaço
+            // continuava reservado. Guarda a escolha e REDESENHA com os painéis que
+            // sobraram, que voltam a dividir a altura entre si.
+            if (MF_visOcultas.has(chave)) MF_visOcultas.delete(chave); else MF_visOcultas.add(chave);
+            // Nunca deixar o card sem nenhum painel: o último aceso não desliga.
+            if (MF_visOcultas.size >= MF_SERIES_VISITAS.length) { MF_visOcultas.delete(chave); return; }
+            if (typeof window.MF_redesenhaVisitas === 'function') window.MF_redesenhaVisitas();
+        });
+    });
+}
+// Séries que o vendedor desligou. Fora da função porque precisa sobreviver ao redesenho.
+const MF_visOcultas = new Set();
+
+/** Caminho SVG de uma série, quebrando a linha onde o dado não existe. */
+function MF_caminhoSerie(pontos, chave, x0, larg, y0, alt) {
+    const vals = pontos.map((p) => p[chave]).filter((v) => typeof v === 'number');
+    if (!vals.length) return '';
+    const max = Math.max(...vals, chave === 'conversao' ? 1 : 1);
+    const n = pontos.length;
+    const px = (i) => x0 + (n <= 1 ? larg / 2 : (i / (n - 1)) * larg);
+    const py = (v) => y0 + alt - (max > 0 ? (v / max) * alt : 0);
+    let d = '';
+    let abriu = false;
+    pontos.forEach((p, i) => {
+        const v = p[chave];
+        if (typeof v !== 'number') { abriu = false; return; }   // buraco: não liga os pontos
+        const x = px(i).toFixed(1), y = py(v).toFixed(1);
+        if (abriu) { d += `L${x} ${y} `; return; }
+        // Dia com valor mas sem vizinho válido: `M x y` sozinho NÃO desenha nada — path só
+        // com moveTo é invisível, mesmo com stroke-linecap="round". Numa série alternada
+        // (dado, buraco, dado…) o gráfico saía vazio COM dados dentro, e era isso que o
+        // Lucas via como "furos que não fazem sentido" (12/08/2026). Um segmento de
+        // comprimento zero vira um ponto redondo por causa do linecap.
+        const proximo = pontos[i + 1];
+        const temVizinho = proximo && typeof proximo[chave] === 'number';
+        d += temVizinho ? `M${x} ${y} ` : `M${x} ${y} L${x} ${y} `;
+        abriu = true;
+    });
+    return d.trim();
+}
+
 
 function exibirAvaliacoes(reviewsData, containerId = "reviewsContainer") {
     const el = document.getElementById(containerId);
@@ -8357,7 +9987,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
         const detectedSite = (window.MF_siteIdFromItemId ? window.MF_siteIdFromItemId(itemId) : 'MLB');
         window.MF_CURRENT_SITE = detectedSite;
         console.log(`--- Iniciando Análise: ${itemId} (tipo: ${parsed.type}, site: ${detectedSite}) ---`);
-        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null, moderacaoData = null, qualidadeFichaData = null;
+        let accessToken, userId, detail = null, fetchError = null, usedFallback = false, performanceData = null, visitsData = null, reviewsData = null, descriptionData = null, categoryAttributes = null, adsData = null, purchaseExperienceData = null, moderacaoData = null, qualidadeFichaData = null, compatData = null;
 
         try {
             [accessToken, userId] = await Promise.all([fetchAccessToken(), fetchUserIdForScraping()]);
@@ -8518,7 +10148,10 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                 fetchPurchaseExperience(detail.id, accessToken).catch(() => null),
                 // Moderação e ficha pelos olhos do ML — uma chamada cada, junto das demais
                 fetchModeracaoAtiva(detail.id, accessToken).catch(() => null),
-                fetchQualidadeFicha(detail.id, accessToken).catch(() => null)
+                fetchQualidadeFicha(detail.id, accessToken).catch(() => null),
+                // Compatibilidades de autopeças (COMPAT-SPEC.md) — falhou → null, mesmo
+                // contrato das demais (feedback_falha_nunca_vira_zero).
+                fetchCompatibilidades(detail.id, accessToken).catch(() => null)
             ]);
             visitsData = results[0].status === 'fulfilled' ? results[0].value : null;
             reviewsData = results[1].status === 'fulfilled' ? results[1].value : null;
@@ -8527,6 +10160,7 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
             purchaseExperienceData = results[4].status === 'fulfilled' ? results[4].value : null;
             moderacaoData = results[5].status === 'fulfilled' ? results[5].value : null;
             qualidadeFichaData = results[6].status === 'fulfilled' ? results[6].value : null;
+            compatData = results[7].status === 'fulfilled' ? results[7].value : null;
         }
 
         if (detail && detail.category_id && accessToken) {
@@ -8563,6 +10197,11 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
                          vem antes dos números porque o anúncio está fora do ar -->
                     <div id="moderacaoAtiva${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
+                    <!-- ROW 2.6: Veículos compatíveis (autopeças) — API /api/compatibilidades,
+                         COMPAT-SPEC.md. Junto da moderação: mesma família de "por que está
+                         fora do ar" -->
+                    <div id="compatibilidades${containerIdSuffix}" style="margin-bottom:16px;"></div>
+
                     <!-- ROW 3: Product Ads -->
                     <div id="adsMetrics${containerIdSuffix}" style="margin-bottom:16px;"></div>
 
@@ -8597,15 +10236,18 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Store global state for UI toggles
             window.currentAnalysisState = {
-                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData
+                detail, descriptionData, performanceData, visitsData, reviewsData, categoryAttributes, usedFallback, containerIdSuffix, accessToken, adsData, moderacaoData, qualidadeFichaData, compatData,
+                // userId vai junto pra sugestão de descrição não ter que ir buscar de novo
+                // no Bubble a cada clique.
+                userId
             };
 
             exibirTitulo(detail.title, isMlbu, `tituloTexto${containerIdSuffix}`, detail);
-            exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`, performanceData);
+            exibirChecklistRapido(detail, descriptionData, `quickChecklist${containerIdSuffix}`);
             processarAtributos(detail.attributes, detail.title, usedFallback, `fichaTecnicaTexto${containerIdSuffix}`);
             exibirAtributosCategoria(categoryAttributes, detail.attributes, `categoryAttributes${containerIdSuffix}`);
             verificarTags(detail.tags, usedFallback, `tagsTexto${containerIdSuffix}`);
-            exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`);
+            exibirTendenciaVisitas(visitsData, `visitsTrend${containerIdSuffix}`, adsData);
             exibirAvaliacoes(reviewsData, `reviewsContainer${containerIdSuffix}`);
 
             window._adsItemId = detail.id;
@@ -8620,6 +10262,9 @@ async function analisarAnuncio(itemIdToAnalyze = null, append = false) {
 
             // Moderação ativa (API ML /moderations/details) — motivo e solução do próprio ML
             exibirModeracao(moderacaoData, `moderacaoAtiva${containerIdSuffix}`);
+
+            // Veículos compatíveis (autopeças) — API /api/compatibilidades (COMPAT-SPEC.md)
+            exibirCompatibilidades(compatData, `compatibilidades${containerIdSuffix}`);
 
             // Ficha técnica na visão do ML (API ML /catalog_quality/status)
             exibirQualidadeFicha(qualidadeFichaData, categoryAttributes, `qualidadeFicha${containerIdSuffix}`);
@@ -9127,6 +10772,509 @@ function calcularPontuacaoQualidade(detail, descriptionData, usedFallback = fals
     return Math.max(0, Math.min(Math.round(score), 100));
 }
 
+/* =========================================================================
+   Veículos compatíveis (autopeças) — COMPAT-SPEC.md (13/08/2026)
+
+   O proxy decide (situação, certeza, quem pode escrever); aqui só se desenha o que ele
+   manda e se traduz `code` de erro pra frase. Vocabulário: a tela NUNCA escreve
+   incomplete_compatibilities, waiting_for_patch, under_review, WITHOUT_COMPATS nem
+   "compatibilities" cru (COMPAT-SPEC §6). Nenhum limiar, peso ou regra de elegibilidade
+   mora aqui — isso é o que `_regras/inteligencia-no-servidor.md` proíbe.
+   ========================================================================= */
+
+/** Veredito único do anúncio — mesmo contrato dos outros do allSettled: falhou → null. */
+async function fetchCompatibilidades(itemId, accessToken) {
+    return fetchApiData(`${API_COMPAT_ENDPOINT}?item_id=${encodeURIComponent(itemId)}`, accessToken);
+}
+
+// Tradução de `code` pra frase. QUAL código sai é decisão do proxy — aqui só o texto.
+const MF_COMPAT_ERROS = {
+    ja_tem_lista: 'Este anúncio já tem veículos indicados. Para marcar como universal, o Mercado Livre pede para remover a lista antes.',
+    // Sem link clicável de propósito: a URL do Gerenciador de Compatibilidades ainda não
+    // foi levantada (COMPAT-SPEC §10.6). Descreve o caminho sem fingir que há atalho aqui
+    // — quando a URL existir, o link entra e o texto volta a prometer.
+    sem_permissao: 'O app não tem permissão para gravar isso. Você consegue resolver pelo próprio Mercado Livre, na página do anúncio.',
+    // Medido em 13/08 nos terminais rotulares (categoria MLB194168): universal desabilitado
+    // pra essa categoria. Tentar de novo dá o mesmo erro sempre.
+    categoria_nao_aceita: 'O Mercado Livre não aceita "serve em qualquer veículo" nesta categoria.',
+    sem_candidatos: 'Nenhum outro anúncio seu tem veículos compatíveis para copiar.',
+    // O front já avisa e desabilita o botão antes de chegar a 200 (ver MF_renderEscadaCompat);
+    // esta entrada é o defensivo caso o limite mude do lado do proxy sem o front saber.
+    limite_de_familias: 'Muitos veículos de uma vez. O máximo por envio é 200 — grave em duas etapas.',
+    muitas_chamadas: 'Muitas consultas seguidas. Espere um minuto e tente de novo.',
+    nao_deu_pra_consultar: 'Não deu para consultar agora.',
+    ml_recusou: 'O Mercado Livre não aceitou.',
+};
+
+// Classes existentes de .status-badge (success/error/neutral/muted) — 'neutral' já é o
+// amarelo de "atenção" usado em "Pausado" (linha ~1769), não existe .warning no CSS.
+const MF_COMPAT_SELOS = {
+    fora_do_ar: { classe: 'error', selo: 'Fora do ar' },
+    em_risco: { classe: 'neutral', selo: 'Atenção' },
+    ok: { classe: 'success', selo: 'Tudo certo' },
+};
+
+function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    // Falha de leitura NUNCA vira "não tem compatibilidade" (feedback_falha_nunca_vira_zero).
+    if (!veredito) {
+        el.innerHTML = `
+        <div class="ana-card">
+            <div class="ana-card-header">
+                <span class="ana-card-icon">🚗</span>
+                <span class="ana-card-title">Veículos compatíveis</span>
+            </div>
+            <p class="text-small">Não deu para consultar agora.
+                <button class="mf-conteudo-botao" onclick="window.mfCompatRecarregar()">Tentar de novo</button>
+            </p>
+        </div>`;
+        return;
+    }
+    if (!veredito.exige) { el.innerHTML = ''; return; }
+
+    const sel = MF_COMPAT_SELOS[veredito.situacao] || MF_COMPAT_SELOS.em_risco;
+    const universal = (veredito.remedios || []).find((r) => r.id === 'universal') || { pode: false };
+    const copiar = (veredito.remedios || []).find((r) => r.id === 'copiar') || { pode: false };
+
+    // "Fora do ar" com certeza de INDÍCIO não liga uma coisa na outra: o app não afirma
+    // causa que a ML não confirmou (COMPAT-SPEC §6).
+    // Quantos veículos JÁ estão na lista muda o que a tela tem o direito de pedir. Medido
+    // em 15/08/2026 no MLB3869799637: 2 veículos gravados e a ML seguia com o anúncio
+    // parado — o card mandava "indicar os veículos" como se o vendedor não tivesse feito
+    // nada. Pedir de novo o que já foi feito é o oposto de dizer o que fazer agora.
+    const jaTem = (veredito.ja_preenchido && veredito.ja_preenchido.total) || 0;
+    const contagem = `${jaTem} ${jaTem === 1 ? 'veículo' : 'veículos'}`;
+
+    const frase = veredito.situacao === 'fora_do_ar'
+        ? (jaTem > 0
+            // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
+            // fato — a lista existe e o anúncio continua parado.
+            ? `Você já indicou ${contagem}, e o anúncio continua fora do ar: o Mercado Livre ainda não reavaliou. Pode adicionar outros veículos enquanto isso.`
+            : veredito.certeza === 'moderacao'
+                ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
+                : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
+        : veredito.situacao === 'ok'
+            ? `${contagem} indicado${jaTem === 1 ? '' : 's'}.`
+            : jaTem > 0
+                ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. Enquanto isso, o anúncio pode sair do ar.`
+                : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
+
+    const desde = veredito.desde ? ` <span class="text-small" style="color:var(--text-muted);">desde ${escapeHtml(veredito.desde)}</span>` : '';
+
+    // Texto do próprio ML, em bloco separado e marcado como dele — mesmo padrão da
+    // moderação (exibirModeracao). Quando NENHUM remédio está disponível, é só isto que
+    // aparece: nada de botão morto nem link chutado (o remédio `gerenciador_ml` ainda não
+    // existe no veredito — a URL não foi levantada, ver COMPAT-SPEC §10.6).
+    const blocoML = veredito.texto_ml && veredito.texto_ml.motivo ? `
+        <div class="mf-compat-bloco-ml" style="padding:10px 12px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted); margin-top:10px;">
+            <div class="text-small"><strong>O que o Mercado Livre diz:</strong> ${escapeHtml(veredito.texto_ml.motivo)}</div>
+            ${veredito.texto_ml.como_resolver ? `<div class="text-small" style="margin-top:4px;">${escapeHtml(veredito.texto_ml.como_resolver)}</div>` : ''}
+        </div>` : '';
+
+    // A família aparece ANTES de qualquer botão: a escrita por user-product cai em todos
+    // os anúncios do grupo (COMPAT-SPEC §7.4). `itens` ainda vem `null` na Fase 1 — número
+    // que não foi medido não vira número, e não vira aviso vago também.
+    const famItens = veredito.afeta_familia && veredito.afeta_familia.itens;
+    const avisoFamilia = (typeof famItens === 'number' && famItens > 1)
+        ? `<div class="mf-compat-aviso-familia text-small" style="margin-top:8px;">⚠️ Isto vale para os <strong>${famItens} anúncios</strong> deste grupo de variações.</div>`
+        : '';
+
+    const botaoUniversal = universal.pode
+        ? `<button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-universal" onclick="window.mfCompatUniversal()">Serve em qualquer veículo</button>`
+        : '';
+    const botaoCopiar = copiar.pode
+        ? `<button class="mf-conteudo-botao" id="mf-compat-copiar" onclick="window.mfCompatAbrirCandidatos()">Copiar de outro anúncio (${copiar.candidatos})</button>`
+        : '';
+    // Ao contrário de universal/copiar, este remédio não depende de `pode` do proxy — é o
+    // caminho manual, sempre disponível quando o ML exige compatibilidade (fecha o fluxo:
+    // até 14/08 o card só diagnosticava, sem jeito de resolver pelo app).
+    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">${jaTem > 0 ? 'Adicionar mais veículos' : 'Escolher os veículos'}</button>`;
+    const acoes = botaoUniversal + botaoCopiar + botaoEscada;
+
+    // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem
+    // placar. Nunca inventar número aqui (amigavel-e-gamificacao: não custa honestidade).
+    const placar = veredito.placar_conta
+        ? `<span class="text-small" style="margin-left:auto; color:var(--text-muted);">${veredito.placar_conta.parados === 0 ? 'Nenhum anúncio parado 🎉' : `${veredito.placar_conta.resolvidos} de ${veredito.placar_conta.parados} resolvidos`}</span>`
+        : '';
+
+    el.innerHTML = `
+    <div class="ana-card">
+        <div class="ana-card-header">
+            <span class="ana-card-icon">🚗</span>
+            <span class="ana-card-title">Veículos compatíveis</span>
+            ${placar}
+        </div>
+        <span class="status-badge ${sel.classe}">${sel.selo}</span>${desde}
+        <p class="text-small" style="margin-top:8px;">${frase}</p>
+        ${blocoML}
+        ${avisoFamilia}
+        ${acoes ? `<div class="mf-chk-linha" style="margin-top:10px;">${acoes}</div>` : ''}
+        <div id="mf-rapido-erro-compat" class="mf-conteudo-erro" style="display:none;"></div>
+        <div id="mf-compat-candidatos" style="display:none; margin-top:10px;"></div>
+        <div id="mf-compat-escada" style="display:none; margin-top:10px;"></div>
+    </div>`;
+}
+
+window.mfCompatUniversal = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const btn = document.getElementById('mf-compat-universal');
+    const rotulo = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    // Categoria sem universal habilitado: descoberto só na resposta do POST (a régua de
+    // §5.3 do proxy olha só `ja_preenchido.total`, não a categoria). Tentar de novo dá o
+    // mesmo erro sempre — o botão não pode voltar como se fosse resolver.
+    let semRetentativa = false;
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/universal`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            if (dados.code === 'categoria_nao_aceita') semRetentativa = true;
+            return;
+        }
+        // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6).
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    } finally {
+        if (btn) {
+            if (semRetentativa) { btn.disabled = true; btn.style.display = 'none'; }
+            else { btn.disabled = false; btn.textContent = rotulo; }
+        }
+    }
+};
+
+window.mfCompatRecarregar = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+    exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+};
+
+/**
+ * Tela de conferência do remédio "copiar" — nunca copia sem o vendedor ver de onde vem
+ * (COMPAT-SPEC §7.1). `GET /api/compatibilidades/candidatos` ainda não existe no proxy
+ * (decisão deliberada da Fase 1 — sem anúncio-fonte na conta medida); `copiar.pode` só
+ * fica `true` quando o proxy tiver candidatos de verdade, então este caminho não roda hoje.
+ */
+window.mfCompatAbrirCandidatos = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const box = document.getElementById('mf-compat-candidatos');
+    if (!box) return;
+    box.style.display = 'block';
+    box.innerHTML = '<p class="text-small">Buscando anúncios com veículos cadastrados...</p>';
+    try {
+        const dados = await fetchApiData(`${API_COMPAT_ENDPOINT}/candidatos?item_id=${encodeURIComponent(state.detail.id)}`, state.accessToken);
+        const candidatos = (dados && Array.isArray(dados.candidatos)) ? dados.candidatos : [];
+        if (!candidatos.length) {
+            box.innerHTML = '<p class="text-small">Nenhum outro anúncio seu tem veículos compatíveis para copiar agora.</p>';
+            return;
+        }
+        box.innerHTML = candidatos.map((c) => `
+            <div class="mf-chk-linha" style="margin-top:6px;">
+                <div class="mf-chk-texto text-small">${escapeHtml(c.titulo || c.item_id)} — <strong>${escapeHtml(String(c.veiculos || 0))} veículos</strong></div>
+                <button class="mf-conteudo-botao mf-conteudo-botao-rapido" onclick="window.mfCompatCopiar('${escapeHtml(c.item_id)}')">Copiar deste</button>
+            </div>`).join('');
+    } catch (e) {
+        box.innerHTML = '<p class="text-small">Não deu para buscar os candidatos agora.</p>';
+    }
+};
+
+// `POST /api/compatibilidades/copiar` também ainda não existe no proxy (mesma decisão da
+// Fase 1 acima) — chega a rodar só quando `mfCompatAbrirCandidatos` listar um candidato.
+window.mfCompatCopiar = async function (fonteId) {
+    const state = window.currentAnalysisState;
+    if (!state || !fonteId) return;
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/copiar`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id, fonte_item_id: fonteId }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            return;
+        }
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        await window.mfCompatRecarregar();
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    }
+};
+
+/* -------------------------------------------------------------------------
+   Escolher os veículos manualmente — escada marca → modelo → ano (14/08/2026)
+
+   Fecha o fluxo: até aqui o card só diagnosticava, sem jeito de resolver pelo app quando
+   universal/copiar não davam conta. GET .../compatibilidades/veiculos devolve as opções de
+   cada nível já ordenadas por popularidade — o front NÃO reordena. POST grava, mas nunca
+   sem o vendedor ver a lista inteira e confirmar (regra do Lucas: compatibilidade errada é
+   pior que faltando — o comprador recebe peça que não serve).
+   ------------------------------------------------------------------------- */
+
+/**
+ * Busca as opções de um nível. Não usa `fetchApiData` de propósito: aqui "erro na busca"
+ * (mostra o `code` + Tentar de novo) e "nível sem opções" (lista vazia de verdade, ex: um
+ * modelo raro sem anos catalogados) são coisas diferentes — `fetchApiData` devolve `null`
+ * pros dois casos, o que apagaria essa distinção.
+ */
+async function fetchCompatVeiculos(params, accessToken) {
+    const partes = Object.keys(params)
+        .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
+        .map((k) => `${k}=${encodeURIComponent(params[k])}`);
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos?${partes.join('&')}`, {
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok) return { erro: true, code: (dados && dados.code) || null };
+        return { erro: false, opcoes: Array.isArray(dados && dados.opcoes) ? dados.opcoes : [] };
+    } catch (e) {
+        return { erro: true, code: null };
+    }
+}
+
+const MF_COMPAT_NIVEL_CARREGANDO = { marca: 'Carregando as marcas...', modelo: 'Carregando os modelos...', ano: 'Carregando os anos...' };
+const MF_COMPAT_NIVEL_LABEL = { marca: 'Marca', modelo: 'Modelo', ano: 'Ano (opcional)' };
+
+// Marcas e modelos não mudam no meio da sessão (é um domínio fixo da ML, igual à categoria
+// da garantia) — cache por nível+pais evita perguntar de novo ao voltar um passo na escada.
+function MF_compatChaveCache(nivel, params) {
+    return `${nivel}:${params.brand_id || ''}:${params.model_id || ''}`;
+}
+
+/** Descreve uma seleção já feita, pra lista de conferência que o vendedor vê antes de gravar. */
+function MF_compatDescreveSelecao(s) {
+    return `${s.brand_nome} ${s.model_nome}${s.year_nome ? ' ' + s.year_nome : ' (todos os anos)'}`;
+}
+
+async function MF_compatCarregarNivel(state, nivel, params) {
+    const esc = state.escadaCompat;
+    if (!esc) return;
+    esc.nivel = nivel;
+    esc.paramsAtuais = params;
+    esc.erro = null;
+    esc.carregando = true;
+    MF_renderEscadaCompat(state);
+
+    window.MF_compatVeiculosCache = window.MF_compatVeiculosCache || {};
+    const chave = MF_compatChaveCache(nivel, params);
+    let resultado = window.MF_compatVeiculosCache[chave];
+    if (!resultado) {
+        resultado = await fetchCompatVeiculos(Object.assign({ nivel }, params), state.accessToken);
+        if (!resultado.erro) window.MF_compatVeiculosCache[chave] = resultado;
+    }
+
+    // O painel pode ter trocado de nível de novo (ou fechado) enquanto a chamada estava em
+    // voo — não pisar num estado mais novo com uma resposta velha.
+    if (state.escadaCompat !== esc || esc.nivel !== nivel) return;
+    esc.carregando = false;
+    if (resultado.erro) { esc.erro = resultado.code; esc.opcoes = []; }
+    else { esc.opcoes = resultado.opcoes; }
+    MF_renderEscadaCompat(state);
+}
+
+/** Fecha uma "família" (marca+modelo[+ano]) e recomeça a escada do zero pra próxima. */
+function MF_compatAdicionarSelecao(state, extra) {
+    const esc = state.escadaCompat;
+    if (!esc || !esc.marca || !esc.modelo) return;
+    esc.selecoes.push({
+        brand_id: esc.marca.id, brand_nome: esc.marca.nome,
+        model_id: esc.modelo.id, model_nome: esc.modelo.nome,
+        year_id: (extra && extra.year_id) || null, year_nome: (extra && extra.year_nome) || null,
+    });
+    esc.marca = null;
+    esc.modelo = null;
+    MF_compatCarregarNivel(state, 'marca', {});
+}
+
+function MF_renderEscadaCompat(state) {
+    const box = document.getElementById('mf-compat-escada');
+    if (!box) return;
+    const esc = state.escadaCompat;
+    if (!esc) { box.innerHTML = ''; return; }
+
+    const trilha = [];
+    if (esc.marca) trilha.push(`<strong>${escapeHtml(esc.marca.nome)}</strong>`);
+    if (esc.modelo) trilha.push(`<strong>${escapeHtml(esc.modelo.nome)}</strong>`);
+    const blocoTrilha = trilha.length ? `
+        <div class="mf-compat-trilha text-small" style="margin-bottom:8px;">
+            ${trilha.join(' <span style="color:var(--text-muted);">›</span> ')}
+            <button class="mf-link-acao" onclick="window.mfCompatVoltarEscada()">trocar</button>
+        </div>` : '';
+
+    let corpoNivel;
+    if (esc.carregando) {
+        corpoNivel = `<p class="text-small">${MF_COMPAT_NIVEL_CARREGANDO[esc.nivel]}</p>`;
+    } else if (esc.erro) {
+        // Erro nunca vira lista vazia silenciosa: o vendedor precisa saber que foi uma
+        // falha de busca, não "essa marca não tem modelo nenhum".
+        corpoNivel = `
+            <p class="text-small">${escapeHtml(MF_COMPAT_ERROS[esc.erro] || MF_COMPAT_ERROS.nao_deu_pra_consultar)}
+                <button class="mf-conteudo-botao" onclick="window.mfCompatTentarNivelDeNovo()">Tentar de novo</button>
+            </p>`;
+    } else if (!esc.opcoes.length) {
+        corpoNivel = `<p class="text-small">Nenhuma opção encontrada.</p>`;
+    } else {
+        const opcoesHtml = esc.opcoes.map((o) => `<option value="${escapeHtml(String(o.id))}">${escapeHtml(o.nome)}</option>`).join('');
+        // "Modelo inteiro" é o caminho mais rápido e mais comum (peça que serve em várias
+        // gerações do mesmo modelo) — fica em destaque, acima do select de ano opcional.
+        const atalhoModeloInteiro = esc.nivel === 'ano' ? `
+            <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-modelo-inteiro" onclick="window.mfCompatEscolherModeloInteiro()">Usar o modelo inteiro (todos os anos)</button>
+            <p class="text-small" style="color:var(--text-muted); margin:4px 0 8px;">É o caminho mais rápido e mais comum: pega o modelo inteiro, em qualquer ano.</p>` : '';
+        corpoNivel = `
+            ${atalhoModeloInteiro}
+            <label class="mf-conteudo-label">${MF_COMPAT_NIVEL_LABEL[esc.nivel]}
+                <select class="mf-conteudo-select" id="mf-compat-select-nivel" onchange="window.mfCompatEscolherOpcao(this.value)">
+                    <option value="">Selecione...</option>
+                    ${opcoesHtml}
+                </select>
+            </label>`;
+    }
+
+    // Régua de escala: avisa ANTES de tentar gravar, não depois do erro da ML — o proxy
+    // recusa acima de 200 famílias por chamada (`limite_de_familias`).
+    const acimaDoLimite = esc.selecoes.length > 200;
+    const listaSelecoes = esc.selecoes.length ? `
+        <div style="margin-top:12px;">
+            <p class="text-small" style="font-weight:600;">Vai gravar (${esc.selecoes.length}):</p>
+            ${esc.selecoes.map((s, i) => `
+                <div class="mf-chk-linha mf-chk-ok mf-compat-selecao-item" style="margin-top:4px;">
+                    <div class="mf-chk-texto text-small">${escapeHtml(MF_compatDescreveSelecao(s))}</div>
+                    <button class="mf-conteudo-botao" onclick="window.mfCompatRemoverSelecao(${i})">Remover</button>
+                </div>`).join('')}
+            ${acimaDoLimite ? `<p class="text-small" style="color:var(--red); margin-top:6px;">São ${esc.selecoes.length} veículos — o máximo por vez é 200. Remova alguns antes de gravar.</p>` : ''}
+        </div>` : `<p class="text-small" style="margin-top:12px; color:var(--text-muted);">Nada escolhido ainda.</p>`;
+
+    box.innerHTML = `
+        <div class="mf-conteudo-box">
+            ${blocoTrilha}
+            ${corpoNivel}
+            ${listaSelecoes}
+            <div class="mf-conteudo-rodape">
+                <button class="mf-conteudo-botao" onclick="window.mfCompatAbrirEscada()">Fechar</button>
+                <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-gravar-veiculos"
+                    ${(esc.selecoes.length === 0 || acimaDoLimite) ? 'disabled' : ''}
+                    onclick="window.mfCompatGravarVeiculos()">Gravar${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}</button>
+            </div>
+        </div>`;
+}
+
+window.mfCompatAbrirEscada = async function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    const box = document.getElementById('mf-compat-escada');
+    if (!box) return;
+    const estaFechado = box.style.display === 'none' || !box.style.display;
+    if (!estaFechado) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    if (!state.escadaCompat) {
+        state.escadaCompat = { nivel: 'marca', opcoes: [], carregando: false, erro: null, marca: null, modelo: null, selecoes: [] };
+    }
+    if (!state.escadaCompat.opcoes.length && !state.escadaCompat.erro && !state.escadaCompat.carregando) {
+        await MF_compatCarregarNivel(state, 'marca', {});
+    } else {
+        MF_renderEscadaCompat(state);
+    }
+};
+
+window.mfCompatEscolherOpcao = async function (valorId) {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat || !valorId) return;
+    const esc = state.escadaCompat;
+    const opcao = esc.opcoes.find((o) => String(o.id) === String(valorId));
+    if (!opcao) return;
+
+    if (esc.nivel === 'marca') {
+        esc.marca = { id: opcao.id, nome: opcao.nome };
+        await MF_compatCarregarNivel(state, 'modelo', { brand_id: opcao.id });
+    } else if (esc.nivel === 'modelo') {
+        esc.modelo = { id: opcao.id, nome: opcao.nome };
+        await MF_compatCarregarNivel(state, 'ano', { brand_id: esc.marca.id, model_id: opcao.id });
+    } else if (esc.nivel === 'ano') {
+        MF_compatAdicionarSelecao(state, { year_id: opcao.id, year_nome: opcao.nome });
+    }
+};
+
+window.mfCompatEscolherModeloInteiro = function () {
+    const state = window.currentAnalysisState;
+    if (!state) return;
+    MF_compatAdicionarSelecao(state, {});
+};
+
+window.mfCompatVoltarEscada = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    const esc = state.escadaCompat;
+    if (esc.modelo) { esc.modelo = null; await MF_compatCarregarNivel(state, 'modelo', { brand_id: esc.marca.id }); }
+    else if (esc.marca) { esc.marca = null; await MF_compatCarregarNivel(state, 'marca', {}); }
+};
+
+window.mfCompatTentarNivelDeNovo = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    await MF_compatCarregarNivel(state, state.escadaCompat.nivel, state.escadaCompat.paramsAtuais || {});
+};
+
+window.mfCompatRemoverSelecao = function (i) {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    state.escadaCompat.selecoes.splice(i, 1);
+    MF_renderEscadaCompat(state);
+};
+
+window.mfCompatGravarVeiculos = async function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    const esc = state.escadaCompat;
+    // Defensivo: o botão já vem `disabled` nesses dois casos (ver MF_renderEscadaCompat),
+    // mas um clique/chamada direta não pode gravar lista vazia nem estourar o limite.
+    if (!esc.selecoes.length || esc.selecoes.length > 200) return;
+
+    const btn = document.getElementById('mf-compat-gravar-veiculos');
+    const rotulo = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+        // Ids como STRING, não número — é o que o proxy pediu explicitamente.
+        const familias = esc.selecoes.map((s) => {
+            const f = { brand_id: String(s.brand_id), model_id: String(s.model_id) };
+            if (s.year_id) f.year_id = String(s.year_id);
+            return f;
+        });
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: state.detail.id, familias }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !dados.ok) {
+            MF_erroAtalho('compat', MF_COMPAT_ERROS[dados.code] || MF_COMPAT_ERROS.ml_recusou);
+            return;
+        }
+        // Gravou não é reativado: a ML reprocessa quando quiser (COMPAT-SPEC §6) — mesma
+        // régua do botão universal, nunca "resolvido".
+        MF_avisoAtalho('compat', 'Enviado. O Mercado Livre leva um tempo para reativar o anúncio.');
+        esc.selecoes = [];
+        state.compatData = await fetchCompatibilidades(state.detail.id, state.accessToken);
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+    } catch (e) {
+        MF_erroAtalho('compat', 'Não deu para enviar agora. Tente de novo.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = rotulo; }
+    }
+};
+
 // End of Analyzer Logic
 
 
@@ -9303,7 +11451,11 @@ const MOCK = false;
 const state = {
   sellerId: null,
   status: 'active',              // active | paused | all
-  order: 'last_updated_desc',
+  // Padrão pedido pelo Lucas em 11/08/2026: a lista abre pelos mais vendidos (total do
+  // anúncio). A ML NÃO ordena por vendas (o available_orders dela só tem tempo, estoque e
+  // preço), então a ordem vem pronta do proxy — ver ORDER_MAIS_VENDIDOS e loadSalesRanking.
+  // Literal e não a constante porque ela é declarada mais abaixo (TDZ).
+  order: 'sold_desc',   // = ORDER_MAIS_VENDIDOS
   search: '',
   searchParam: null,             // 'q' | 'seller_sku' | null  (param que vai pra ML)
   statusRestore: null,           // status a devolver quando o degrau que força "Todos" sair
@@ -9332,6 +11484,11 @@ const state = {
   visitsMap: {},         // itemId -> nº de visitas 30d (undefined=carregando, null=falhou)  (camada C)
   visitsSeries: {},      // itemId -> [visitas por dia, 30 posições] (mesma chamada do total — custo zero extra)
   sales30Map: null,      // itemId -> unidades vendidas nos últimos 30d (null=ainda não carregou/falhou)  (camada C)
+  ranking: null,         // [{item_id, sold}] já ordenado pelo servidor (ordem "mais vendidos")
+  rankingInfo: null,     // { complete, items_scanned, items_total } — pra tela poder ser honesta
+  rankingChave: null,    // conta+status de que o ranking em memória saiu (troca de conta invalida)
+  ordemDegradada: null,  // msg quando a ordem pedida não pôde ser usada. NÃO mexe em state.order:
+                         // mudar a ordem gravaria `order=` na URL e prenderia o vendedor nela.
   sales30Incomplete: false,  // true quando a conta tem mais pedidos que o teto varrido (não afirmar taxas)
   moderationMap: {},     // itemId -> { reason, remedy } (moderação ativa do ML)
   promoMap: {},          // itemId -> { price, original_price, discount_percent, promotion_name }
@@ -9696,6 +11853,68 @@ async function loadSales30(sellerId) {
     renderCurrentRows();
   } catch (e) { /* sem escopo de pedidos / erro -> segue sem conversão; previsão cai no ritmo desde a criação */ }
 }
+/* =========================================================================
+   Ordem "mais vendidos" — a conta vem PRONTA do servidor.
+   A ML não ordena por vendas (available_orders só tem tempo, estoque e preço), e somar
+   sold_quantity item a item seriam ~250 multigets numa conta de 5.000 anúncios. O proxy
+   monta o ranking a partir dos PEDIDOS, que só trazem quem vendeu.
+   Aqui o front NÃO calcula nada: pede, pagina e desenha (regra de 11/08 — a inteligência
+   fica no servidor).
+   ========================================================================= */
+const ORDER_MAIS_VENDIDOS = 'sold_desc';
+const ORDER_FALLBACK = 'last_updated_desc';
+
+// Aplica o ranking ao estado. Um caminho só para rede e cache: quando isso estava
+// duplicado, o cache-hit devolvia cedo e nunca preenchia o mapa — os números sumiam da
+// tela no F5 enquanto a lista seguia ordenada por eles, fazendo a ordem parecer aleatória.
+function aplicarRanking(ranking, info) {
+  state.ranking = ranking;
+  state.rankingInfo = info;
+  return ranking;
+}
+
+/**
+ * Ranking de mais vendidos (total do anúncio), pronto do servidor.
+ *
+ * A chave de cache leva o VENDEDOR: sem isso, quem tem mais de uma conta trocava de conta,
+ * a página recarregava na mesma aba (sessionStorage sobrevive ao reload) e o cache devolvia
+ * o ranking da conta anterior — sem passar pelo proxy, então sem ownershipGate. A lista
+ * saía com anúncios de outra conta, porque o multiget da ML aceita id de qualquer vendedor.
+ */
+async function loadSalesRanking() {
+  const chave = `mf_sel_ranking_${state.sellerId}_${state.status}`;
+  if (state.ranking && state.rankingChave === chave) return state.ranking;
+  const cached = getCachedJson(chave);
+  if (cached && Array.isArray(cached.ranking)) {
+    state.rankingChave = chave;
+    return aplicarRanking(cached.ranking, cached.info);
+  }
+  const resp = await proxyGet(`/api/sales-ranking?seller_id=${state.sellerId}&status=${encodeURIComponent(state.status)}`);
+  const ranking = Array.isArray(resp && resp.ranking) ? resp.ranking : [];
+  const info = {
+    complete: !!(resp && resp.complete),
+    items_scanned: resp && resp.items_scanned,
+    items_total: resp && resp.items_total,
+  };
+  setCachedJson(chave, { ranking, info });
+  state.rankingChave = chave;
+  return aplicarRanking(ranking, info);
+}
+
+// Ordena itens já hidratados pelo total de vendas. Usado quando há filtro que o ranking do
+// servidor não conhece (chip, tipo, logística) e a lista vem da varredura local.
+function ordenarPorVendas(itens) {
+  return [...itens].sort((a, b) =>
+    (b.sold_quantity || 0) - (a.sold_quantity || 0)
+    || String(a.id).localeCompare(String(b.id))   // desempate: sem ele a lista dança no F5
+  );
+}
+// Filtros que o /api/sales-ranking não aplica (ele só conhece o status). Com qualquer um
+// deles ligado, a ordem sai da varredura local — que já os aplica — em vez do ranking.
+function filtroForaDoRanking() {
+  return !!(state.activeChip || state.listingType || state.logisticType);
+}
+
 // Unidades vendidas nos últimos 30d de um item (null = camada indisponível/incompleta)
 function sales30Of(id) {
   if (!state.sales30Map || state.sales30Incomplete) return null;
@@ -9977,7 +12196,12 @@ function buildListUrl(offsetOverride) {
   else if (state.status === 'paused') p.set('status', 'paused');
   // 'all' -> não manda status
 
-  p.set('orders', state.order);
+  // `sold_desc` é ordem NOSSA, não da ML: ela não ordena por vendas. Mandar isso em
+  // `orders=` faz o proxy responder 400 (`isValidOrder` nem aceita o formato) e a tela
+  // inteira cai no erro genérico — o que acontecia em TODA busca por texto, já que a
+  // busca não passa pelo ramo do ranking. Quando a ordem é a nossa, a ML ordena do jeito
+  // padrão dela e quem reordena somos nós.
+  p.set('orders', state.order === ORDER_MAIS_VENDIDOS ? ORDER_FALLBACK : state.order);
   p.set('limit', String(CONFIG.PAGE_SIZE));
   p.set('offset', String(offsetOverride != null ? offsetOverride : state.offset));
 
@@ -10206,6 +12430,7 @@ function computeBadges(item) {
   const id = item.id || '';
   const inSet = (sigId) => !!(state.signalSets[sigId] && state.signalSets[sigId].has(id));
 
+
   // Moderação do ML vem PRIMEIRO: o anúncio está fora do ar até ser corrigido, e o
   // texto do que fazer é do próprio Mercado Livre (não é palpite nosso).
   const mod = state.moderationMap[id];
@@ -10304,6 +12529,9 @@ function computeBadges(item) {
   if (item.shipping && item.shipping.free_shipping === false && Number(item.price) >= PROBLEM_RULES.freeShippingFloor) {
     out.push({ text: 'Sem frete grátis', cls: 'gray' });
   }
+  // Sem badge de vendas aqui: a ordem "mais vendidos" é pelo TOTAL do anúncio, e a tabela
+  // já tem uma coluna VENDAS com exatamente esse número. Repetir seria uma segunda
+  // contagem da mesma coisa na mesma linha — o bug das três contagens de campos de novo.
   // "Ainda sem vendas" (não "Sem vendas"): não contradiz o "Sem problemas" na mesma linha
   if (item.sold_quantity === 0) out.push({ text: 'Ainda sem vendas', cls: 'gray' });
   return out;
@@ -11104,9 +13332,12 @@ async function loadPage() {
       const scan = await scanAccount(() => !desatualizada());
       if (desatualizada()) return;
       state.scanAtivo = true;
-      state.total = scan.itens.length;
+      // A varredura já vem na ordem da ML; se o vendedor pediu "mais vendidos", reordena
+      // aqui — os itens estão hidratados, então `sold_quantity` já está na mão.
+      const scanItens = state.order === ORDER_MAIS_VENDIDOS ? ordenarPorVendas(scan.itens) : scan.itens;
+      state.total = scanItens.length;
       if (state.offset >= state.total) state.offset = 0;
-      const pageItems = scan.itens.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
+      const pageItems = scanItens.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
       state.lastItems = pageItems;
       state.loading = false;
       renderRows(pageItems);
@@ -11121,7 +13352,89 @@ async function loadPage() {
       loadVisitsForPage(pageItems.map((i) => i.id));
       return;
     }
+    // Ordem "mais vendidos" (padrão): a ML não ordena por vendas, então o ranking vem
+    // pronto do proxy (que varre com scan e passa do teto de 1.000 do offset) e a lista é
+    // paginada sobre ele. Chip, tipo e logística o ranking não conhece — com qualquer um
+    // deles ligado a ordem sai da varredura local, que já aplica os filtros. Sem isso, os
+    // filtros viravam no-ops silenciosos justamente na visão padrão.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()) {
+      let ranking;
+      try {
+        ranking = await loadSalesRanking();
+      } catch (err) {
+        if (desatualizada()) return;
+        // A rota pode não existir ainda no proxy (o front sobe antes do servidor) ou ter
+        // falhado. Cai pra ordem da ML, mas DIZENDO — em 10/08 um servidor à frente do
+        // cliente deixou o vendedor clicando em loop sem entender o que estava errado.
+        //
+        // `ordemDegradada` em vez de mexer em state.order: mudar a ordem faria
+        // writeStateToUrl gravar `order=` na URL, e aí o vendedor ficaria preso à ordem
+        // antiga em todo F5 e em todo link salvo, mesmo depois de o proxy voltar — a
+        // mesma armadilha que o statusRestore já evita para o status.
+        state.ordemDegradada = err && err.status === 404
+          ? 'A ordenação por mais vendidos ainda está sendo liberada. Mostrando por atualização recente.'
+          : 'Não consegui montar a lista de mais vendidos agora. Mostrando por atualização recente — tente de novo em alguns minutos.';
+        return loadPage();
+      }
+      if (desatualizada()) return;
+      state.ordemDegradada = null;
+
+      // Conta sem nenhuma venda: lista vazia seria uma tela morta e sem explicação.
+      if (!ranking.length) {
+        state.ordemDegradada = 'Nenhum anúncio seu tem venda registrada. Mostrando por atualização recente.';
+        return loadPage();
+      }
+
+      state.scanAtivo = true;   // paginação local, igual aos recortes de conta inteira
+      state.total = ranking.length;
+      if (state.offset >= state.total) state.offset = 0;
+      const idsPagina = ranking.slice(state.offset, state.offset + CONFIG.PAGE_SIZE).map((r) => r.item_id);
+      const items = await hydrate(idsPagina);
+      if (desatualizada()) return;
+      state.lastItems = items;
+      state.loading = false;
+      renderRows(items);
+      loadAttrNames();
+      loadVisitsForPage(idsPagina);
+
+      const info = state.rankingInfo || {};
+      if (info.complete === false) {
+        // Ordem parcial engana igual a número parcial: dizer de quantos anúncios ela saiu.
+        setBanner('warn', `Esta ordem saiu de ${info.items_scanned} anúncios, de ${info.items_total} na conta — parte da sua conta não respondeu agora. Use "Atualizar" em alguns segundos para refazer.`);
+      }
+      return;
+    }
+    // Ordem por vendas COM filtro que o ranking não conhece (chip, tipo, logística):
+    // varre a conta com os filtros aplicados (buildListUrl já os manda) e ordena aqui.
+    // O teto de 1.000 do offset vale neste caminho — o scan avisa quando trunca.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && filtroForaDoRanking()) {
+      const scan = await scanAccount(() => !desatualizada());
+      if (desatualizada()) return;
+      state.scanAtivo = true;
+      const ordenados = ordenarPorVendas(scan.itens);
+      state.total = ordenados.length;
+      if (state.offset >= state.total) state.offset = 0;
+      const pageItems = ordenados.slice(state.offset, state.offset + CONFIG.PAGE_SIZE);
+      state.lastItems = pageItems;
+      state.loading = false;
+      renderRows(pageItems);
+      if (scan.parcial) {
+        setBanner('warn', `Parte dos seus anúncios não respondeu agora — esta ordem saiu de ${scan.varridos} anúncios, não da conta inteira. Clique em "Atualizar" em alguns segundos.`);
+      } else if (scan.truncado) {
+        setBanner('info', `Ordenamos os primeiros ${CONFIG.OFFSET_CAP} anúncios (o Mercado Livre limita a navegação a esse número neste tipo de filtro).`);
+      }
+      loadAttrNames();
+      loadVisitsForPage(pageItems.map((i) => i.id));
+      return;
+    }
     state.scanAtivo = false;
+
+    // Caiu aqui com a ordem padrão pedida e sem conseguir usá-la: a tela precisa dizer por
+    // que não está como o vendedor espera — silêncio aqui é ele achando que a ordenação
+    // não funciona e clicando de novo.
+    if (state.order === ORDER_MAIS_VENDIDOS && state.ordemDegradada) {
+      setBanner('warn', state.ordemDegradada);
+    }
 
     const searchResp = await mlGet(buildListUrl());
     if (desatualizada()) return;
@@ -11337,7 +13650,7 @@ function setStatusToggle(status) {
   });
 }
 function isDefaultState() {
-  return state.status === 'active' && state.order === 'last_updated_desc' && !state.search
+  return state.status === 'active' && state.order === ORDER_MAIS_VENDIDOS && !state.search
     && !state.activeChip && !state.listingType && !state.logisticType && !state.discountOnly
     && !state.freeShipUnder;
 }
@@ -11346,7 +13659,7 @@ function isDefaultState() {
 function updateFiltersToggle() {
   const t = $('#filtersToggle');
   if (!t) return;
-  const n = (state.order !== 'last_updated_desc' ? 1 : 0) + (state.listingType ? 1 : 0)
+  const n = (state.order !== ORDER_MAIS_VENDIDOS ? 1 : 0) + (state.listingType ? 1 : 0)
     + (state.logisticType ? 1 : 0) + (state.discountOnly ? 1 : 0) + (state.freeShipUnder ? 1 : 0);
   // aberto/fechado no próprio rótulo (mesmo padrão de caret que flipa das famílias e do "+N sinais")
   const open = $('#filtersCard') && $('#filtersCard').classList.contains('open');
@@ -11475,8 +13788,13 @@ function writeStateToUrl() {
   // que ela nunca escolheu, e o statusRestore — que só existe em memória — sumia.
   const statusDoVendedor = state.statusRestore != null ? state.statusRestore : state.status;
   if (statusDoVendedor !== 'active') p.set('status', statusDoVendedor);
-  if (state.order !== 'last_updated_desc') p.set('order', state.order);
+  if (state.order !== ORDER_MAIS_VENDIDOS) p.set('order', state.order);
   if (state.search) p.set('busca', state.search);
+  // Em que degrau da escada a busca parou. 'buscapor' estava na lista de chaves desde o
+  // port, mas nunca era escrito nem lido: o F5 jogava a busca de volta no primeiro degrau
+  // e a escada refazia TODAS as chamadas até chegar onde já estava. Numa conta grande isso
+  // é a diferença entre 1 e 4 consultas por F5.
+  if (state.search && state.searchParam) p.set('buscapor', state.searchParam);
   if (state.activeChip) p.set('chip', state.activeChip);
   if (state.listingType) p.set('tipo', state.listingType);
   if (state.logisticType) p.set('log', state.logisticType);
@@ -11492,7 +13810,36 @@ function readStateFromUrl() {
   if (p.get('order')) state.order = p.get('order');
   if (p.get('busca')) {
     state.search = p.get('busca');
-    state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+    // Volta pro degrau onde a busca tinha parado. Só aceita os três degraus conhecidos:
+    // o valor vem da URL, que é texto de fora.
+    const degrau = p.get('buscapor');
+    const DEGRAUS = ['q', CONFIG.SKU_PARAM, CONFIG.SKU_PARAM_ALT];
+    if (degrau && DEGRAUS.includes(degrau)) {
+      state.searchParam = degrau;
+      // A escada é ordenada (q → seller_sku → sku), então estar num degrau significa que
+      // os anteriores já foram tentados. Sem marcar isso, ela tentaria de novo o que já
+      // falhou e voltaria a gastar as chamadas que a restauração veio economizar.
+      const degrauDeSku = degrau === CONFIG.SKU_PARAM || degrau === CONFIG.SKU_PARAM_ALT;
+      if (degrau === CONFIG.SKU_PARAM) {
+        state.qAllTried = true;
+      } else if (degrau === CONFIG.SKU_PARAM_ALT) {
+        state.qAllTried = true;
+        state.skuTried = true;
+      }
+      // Todo degrau de SKU chega alargando o status (avancarDegrau), porque SKU casa exato
+      // e o anúncio procurado costuma estar pausado. Restaurar o degrau sem restaurar o
+      // alargamento fazia o F5 esconder o anúncio que a busca tinha acabado de achar.
+      //
+      // Escolha manual continua intocável: `statusManual` não sobrevive ao reload, mas o
+      // sintoma dela sim — writeStateToUrl só põe `status` na URL quando é o do VENDEDOR.
+      // Então status na URL = ele escolheu; sem status = está no padrão e pode alargar.
+      if (degrauDeSku && !p.get('status')) {
+        state.statusRestore = state.status;
+        state.status = 'all';
+      }
+    } else {
+      state.searchParam = CONFIG.USE_Q_PARAM ? 'q' : CONFIG.SKU_PARAM;
+    }
   }
   if (p.get('chip')) state.activeChip = p.get('chip');
   if (p.get('tipo')) state.listingType = p.get('tipo');
@@ -11540,6 +13887,10 @@ function refreshCounts() {
   try { Object.keys(sessionStorage).forEach((k) => { if (/^mf_sel_/.test(k)) sessionStorage.removeItem(k); }); } catch (e) {}
   state.signalSets = {}; state.signalSetsIncomplete = {}; state.questionsMap = {};
   state.sales30Map = null; state.sales30Incomplete = false;
+  // O ranking em memória também: limpar só o sessionStorage não adiantava, porque
+  // loadSalesRanking devolve state.ranking antes de olhar o cache — o "Atualizar" nunca
+  // conseguia refazer a ordenação e a lista ficava presa no ranking da primeira carga.
+  state.ranking = null; state.rankingInfo = null; state.rankingChave = null;
   state.moderationMap = {}; state.fichaMap = {}; state.promoMap = {};
   invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);
@@ -11652,7 +14003,7 @@ function wireControls() {
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
-    state.status = 'active'; state.order = 'last_updated_desc';
+    state.status = 'active'; state.order = ORDER_MAIS_VENDIDOS;
     state.search = ''; state.searchParam = null; resetSearchLadder();
     state.statusRestore = null; state.statusManual = false; state.activeChip = null; state.prevStatus = null;
     state.listingType = ''; state.logisticType = ''; state.discountOnly = false; state.freeShipUnder = false; state.offset = 0;

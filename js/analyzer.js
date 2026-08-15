@@ -7282,13 +7282,26 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
 
     // "Fora do ar" com certeza de INDÍCIO não liga uma coisa na outra: o app não afirma
     // causa que a ML não confirmou (COMPAT-SPEC §6).
+    // Quantos veículos JÁ estão na lista muda o que a tela tem o direito de pedir. Medido
+    // em 15/08/2026 no MLB3869799637: 2 veículos gravados e a ML seguia com o anúncio
+    // parado — o card mandava "indicar os veículos" como se o vendedor não tivesse feito
+    // nada. Pedir de novo o que já foi feito é o oposto de dizer o que fazer agora.
+    const jaTem = (veredito.ja_preenchido && veredito.ja_preenchido.total) || 0;
+    const contagem = `${jaTem} ${jaTem === 1 ? 'veículo' : 'veículos'}`;
+
     const frase = veredito.situacao === 'fora_do_ar'
-        ? (veredito.certeza === 'moderacao'
-            ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
-            : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
+        ? (jaTem > 0
+            // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
+            // fato — a lista existe e o anúncio continua parado.
+            ? `Você já indicou ${contagem}, e o anúncio continua fora do ar: o Mercado Livre ainda não reavaliou. Pode adicionar outros veículos enquanto isso.`
+            : veredito.certeza === 'moderacao'
+                ? 'O Mercado Livre tirou este anúncio do ar até você indicar em quais veículos a peça serve.'
+                : 'Este anúncio está fora do ar esperando correção, e falta indicar os veículos compatíveis.')
         : veredito.situacao === 'ok'
-            ? `${(veredito.ja_preenchido && veredito.ja_preenchido.total) || 0} veículos indicados.`
-            : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
+            ? `${contagem} indicado${jaTem === 1 ? '' : 's'}.`
+            : jaTem > 0
+                ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. Enquanto isso, o anúncio pode sair do ar.`
+                : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
 
     const desde = veredito.desde ? ` <span class="text-small" style="color:var(--text-muted);">desde ${escapeHtml(veredito.desde)}</span>` : '';
 
@@ -7319,7 +7332,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     // Ao contrário de universal/copiar, este remédio não depende de `pode` do proxy — é o
     // caminho manual, sempre disponível quando o ML exige compatibilidade (fecha o fluxo:
     // até 14/08 o card só diagnosticava, sem jeito de resolver pelo app).
-    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">Escolher os veículos</button>`;
+    const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">${jaTem > 0 ? 'Adicionar mais veículos' : 'Escolher os veículos'}</button>`;
     const acoes = botaoUniversal + botaoCopiar + botaoEscada;
 
     // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem

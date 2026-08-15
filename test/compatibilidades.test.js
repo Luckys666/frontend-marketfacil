@@ -218,6 +218,47 @@ async function main() {
     check('mostra quantos veículos foram indicados', /55 ve[íi]culos indicados/i.test(html), html.slice(0, 300));
   }
 
+  // Medido na conta real em 15/08/2026: MLB3869799637 já tem 2 veículos gravados
+  // (`ja_preenchido.do_vendedor: 2`, lido pelo próprio /items/{id}/compatibilities) e a
+  // moderação da ML SEGUE de pé. A tela mandava "indicar em quais veículos a peça serve",
+  // como se nada tivesse sido feito — pede de novo o que o vendedor já fez e esconde a
+  // única informação que muda a decisão dele: quem está devendo agora é a ML.
+  console.log('\n== fora do ar, mas com veículos já indicados ==');
+  {
+    const parcial = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    parcial.ja_preenchido = { total: 2, do_vendedor: 2, do_catalogo: 0 };
+    parcial.remedios[0] = { id: 'universal', pode: false, porque: 'ja_tem_lista' };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(parcial, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('diz quantos veículos já foram indicados', /2 ve[íi]culos/i.test(html), html.slice(0, 400));
+    check('não manda indicar o que já foi indicado', !/at[ée] você indicar em quais ve[íi]culos/i.test(html), html.slice(0, 400));
+    check('continua dizendo que o anúncio está fora do ar', /FORA DO AR/i.test(html), html.slice(0, 400));
+    check('o botão convida a somar, não a começar do zero', /Adicionar mais ve[íi]culos/i.test(html), html.slice(0, 400));
+  }
+
+  // Contagem no singular: "1 veículos" é o tipo de detalhe que faz a tela parecer robô.
+  console.log('\n== fora do ar com 1 veículo só ==');
+  {
+    const um = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    um.ja_preenchido = { total: 1, do_vendedor: 1, do_catalogo: 0 };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(um, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('escreve no singular', /1 ve[íi]culo[^s]/i.test(html), html.slice(0, 400));
+  }
+
+  // Lista vazia continua com a frase original — a correção acima não pode apagar o caso
+  // que o card foi criado para resolver.
+  console.log('\n== fora do ar sem nenhum veículo: frase original intacta ==');
+  {
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(VEREDITO_REAL, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('sem lista, o app ainda pede os veículos', /indicar em quais ve[íi]culos/i.test(html), html.slice(0, 400));
+    check('e o botão é o de começar', /Escolher os ve[íi]culos/i.test(html), html.slice(0, 400));
+  }
+
   console.log('\n== clicar em "Serve em qualquer veículo" ==');
   {
     const ctx = ambiente({ resposta: { ok: true, status: 200, dados: { ok: true, criadas: 1, afetou_familia: 1 } } });
