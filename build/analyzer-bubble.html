@@ -10835,6 +10835,34 @@ function MF_compatMensagemErro(code, padrao) {
     return conhecido ? MF_COMPAT_ERROS[code] : (padrao || MF_COMPAT_ERROS.ml_recusou);
 }
 
+/**
+ * Estados em que a gravação já nasce recusada pela ML (v480). Texto único, usado no card
+ * (que esconde os botões) e nas funções de gravação (que recusam a chamada).
+ */
+const MF_COMPAT_BLOQUEIOS = {
+    // A palavra "universal" não aparece: na tela isso sempre se chama "serve em qualquer
+    // veículo", que é como o próprio botão do card chama.
+    ja_e_universal: 'Este anúncio está marcado como "serve em qualquer veículo". Enquanto essa marcação estiver ativa, o Mercado Livre não aceita adicionar veículos a ele — e o app não desfaz marcação que você fez. Para mudar, use o Gerenciador de Compatibilidades no próprio Mercado Livre.',
+    exige_posicao: 'Nesta categoria o Mercado Livre também exige a posição da peça (dianteira ou traseira, esquerda ou direita), e isso ainda não dá para fazer pelo app. Para indicar os veículos deste anúncio, use o Gerenciador de Compatibilidades no próprio Mercado Livre.',
+};
+
+/**
+ * Por que esta tela NÃO pode gravar compatibilidade agora — ou `null`.
+ *
+ * Fonte ÚNICA, de propósito: o card usa isto para esconder os botões e as duas funções de
+ * gravação usam para recusar a chamada. Quando os dois lados calculam a mesma regra
+ * separado, um dia eles discordam — e o que sobra é sempre o botão clicável, que é o pior
+ * dos dois erros.
+ *
+ * `null` em qualquer campo de `categoria` não decide nada: só `true` explícito bloqueia.
+ */
+function MF_compatMotivoDeBloqueio(veredito) {
+    if (!veredito) return null;
+    if (veredito.ja_e_universal === true) return 'ja_e_universal';
+    if (veredito.categoria && veredito.categoria.exige_posicao === true) return 'exige_posicao';
+    return null;
+}
+
 // Classes existentes de .status-badge (success/error/neutral/muted) — 'neutral' já é o
 // amarelo de "atenção" usado em "Pausado" (linha ~1769), não existe .warning no CSS.
 const MF_COMPAT_SELOS = {
@@ -10980,17 +11008,10 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     // a montar uma lista de 12 veículos para ele descobrir no fim que nada disso ia funcionar.
     // `null` em qualquer campo de `categoria` é "não sei" e NÃO decide nada — sem o dado, a
     // tela segue como se ele não existisse.
-    const categoriaDoVeredito = veredito.categoria || {};
-    const bloqueio = veredito.ja_e_universal === true
-        // A palavra "universal" não aparece: na tela isso sempre se chama "serve em qualquer
-        // veículo", que é como o próprio botão do card chama.
-        ? 'Este anúncio está marcado como "serve em qualquer veículo". Enquanto essa marcação estiver ativa, o Mercado Livre não aceita adicionar veículos a ele — e o app não desfaz marcação que você fez. Para mudar, use o Gerenciador de Compatibilidades no próprio Mercado Livre.'
-        : categoriaDoVeredito.exige_posicao === true
-            ? 'Nesta categoria o Mercado Livre também exige a posição da peça (dianteira ou traseira, esquerda ou direita), e isso ainda não dá para fazer pelo app. Para indicar os veículos deste anúncio, use o Gerenciador de Compatibilidades no próprio Mercado Livre.'
-            : null;
+    const bloqueio = MF_compatMotivoDeBloqueio(veredito);
     const blocoBloqueio = bloqueio
         ? `<div class="mf-compat-bloqueio" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
-               <p class="text-small">${escapeHtml(bloqueio)}</p>
+               <p class="text-small">${escapeHtml(MF_COMPAT_BLOQUEIOS[bloqueio])}</p>
            </div>`
         : '';
     // Com bloqueio, NENHUM remédio é oferecido: copiar e universal também gravam
@@ -11029,6 +11050,13 @@ window.mfCompatUniversal = async function () {
     // Um envio de cada vez, com a trava no ESTADO — ver o comentário do botão em
     // exibirCompatibilidades e a mesma decisão em mfCompatGravarVeiculos.
     if (state.compatEnviandoUniversal) return;
+    // Mesma guarda da escada, mesma fonte de verdade: o card pode estar velho na tela.
+    const bloqueadoAgora = MF_compatMotivoDeBloqueio(state.compatData);
+    if (bloqueadoAgora) {
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        MF_erroAtalho('compat', MF_COMPAT_BLOQUEIOS[bloqueadoAgora]);
+        return;
+    }
     state.compatEnviandoUniversal = true;
     const btn = document.getElementById('mf-compat-universal');
     const rotulo = btn ? btn.textContent : '';
@@ -11543,6 +11571,17 @@ window.mfCompatGravarVeiculos = async function () {
     // lista diferente da que estava em voo. Compatibilidade é aditiva na ML — seria o dobro
     // do que o vendedor mandou, num anúncio que pela /alcance pode nem ser só dele.
     if (esc.gravando) return;
+    // A escada pode estar ABERTA com um veredito velho: o card novo nasce sem os botões, mas
+    // estado envelhece — quem já estava com o painel aberto quando o veredito virou continua
+    // com um botão que a tela já sabe que vai falhar. Recusa antes de gastar a chamada, e
+    // redesenha o card ANTES da mensagem (o redesenho apagaria o aviso se viesse depois), pra
+    // tela velha se consertar sozinha em vez de deixar o vendedor clicando num botão morto.
+    const bloqueadoAgora = MF_compatMotivoDeBloqueio(state.compatData);
+    if (bloqueadoAgora) {
+        exibirCompatibilidades(state.compatData, `compatibilidades${state.containerIdSuffix || ''}`);
+        MF_erroAtalho('compat', MF_COMPAT_BLOQUEIOS[bloqueadoAgora]);
+        return;
+    }
     // Defensivo: o botão já vem `disabled` nestes casos (ver MF_renderEscadaCompat), mas um
     // clique/chamada direta não pode gravar lista vazia, estourar o limite, nem gravar antes
     // do escopo chegar — esta última é a guarda §7.4 do COMPAT-SPEC, que só existia no
