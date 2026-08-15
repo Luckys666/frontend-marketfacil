@@ -1491,6 +1491,84 @@ async function main() {
       JSON.stringify(ctx.chamadas.map((c) => c.method + ' ' + c.url)));
   }
 
+  /* =========================================================================
+     `categoria.obrigatorio` (v480) — o campo mais fácil de usar errado.
+
+     Ele fala da CATEGORIA, não deste anúncio. Transformá-lo em card novo ou em previsão de
+     parada seria o app falando pela ML — o erro que custou o card de qualidade em 13/08 —
+     e, numa conta de mais de mil anúncios, um card em toda peça de autopeça é ruído que
+     mata o aviso que importa.
+
+     Uso único: quando o card JÁ está em `em_risco`, ele reforça a frase, virando o fato que
+     explica por que a tag importa. Nos outros estados não muda nada: em `fora_do_ar` quem
+     fala é a moderação, e em `ok` não há o que reforçar.
+     ========================================================================= */
+  function emRisco(extra) {
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.situacao = 'em_risco'; v.certeza = 'tag'; v.desde = null;
+    v.texto_ml = { motivo: null, como_resolver: null };
+    return Object.assign(v, extra || {});
+  }
+  function frasePura(veredito) {
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(veredito, 'compat');
+    return reg['compat'].innerHTML;
+  }
+
+  console.log('\n== obrigatorio: reforça o em_risco, sem virar card nem previsão ==');
+  {
+    const html = frasePura(emRisco({ categoria: { aceita_nota: true, exige_posicao: false, obrigatorio: true } }));
+    check('explica que a exigência é da CATEGORIA', /nesta categoria/i.test(html), html.slice(0, 700));
+    check('e que o Mercado Livre exige os veículos', /exige os ve[íi]culos compat[íi]veis/i.test(html), html.slice(0, 700));
+    check('continua sendo risco, não parada', /pode sair do ar/i.test(html) && !/est[áa] fora do ar/i.test(html), html.slice(0, 700));
+    check('o selo continua o de atenção', /status-badge neutral/.test(html), html.slice(0, 400));
+    check('não vira card separado', (html.match(/ana-card-title/g) || []).length === 1, html.slice(0, 400));
+    check('e continua oferecendo o caminho manual', /mfCompatAbrirEscada/.test(html), html.slice(0, 700));
+  }
+  {
+    // Com lista parcial, o reforço convive com a contagem — não apaga o que já foi feito.
+    const html = frasePura(emRisco({
+      ja_preenchido: { total: 3, do_vendedor: 3, do_catalogo: 0 },
+      categoria: { aceita_nota: true, exige_posicao: false, obrigatorio: true },
+    }));
+    check('mantém a contagem do que já foi indicado', /3 ve[íi]culos/.test(html), html.slice(0, 700));
+    check('e soma o fato da categoria', /nesta categoria/i.test(html), html.slice(0, 700));
+  }
+  {
+    const semDado = frasePura(emRisco({ categoria: { aceita_nota: null, exige_posicao: null, obrigatorio: null } }));
+    const negado = frasePura(emRisco({ categoria: { aceita_nota: true, exige_posicao: false, obrigatorio: false } }));
+    const semCampo = frasePura(emRisco({}));
+    check('obrigatorio:null não reforça nada', !/nesta categoria/i.test(semDado), semDado.slice(0, 700));
+    check('obrigatorio:false também não', !/nesta categoria/i.test(negado), negado.slice(0, 700));
+    check('e sem o campo a frase é a mesma de sempre', semDado === semCampo && negado === semCampo, 'as três deviam ser idênticas');
+  }
+
+  console.log('\n== obrigatorio NÃO muda os outros estados ==');
+  {
+    // Em fora_do_ar quem fala é a moderação: a frase da ML não pode ser diluída por um fato
+    // de categoria. Comparação byte a byte, que é o jeito de provar "não mudou nada".
+    const com = frasePura(Object.assign(JSON.parse(JSON.stringify(VEREDITO_REAL)), { categoria: { aceita_nota: true, exige_posicao: false, obrigatorio: true } }));
+    const sem = frasePura(JSON.parse(JSON.stringify(VEREDITO_REAL)));
+    check('fora_do_ar: o card sai idêntico com e sem obrigatorio', com === sem, 'diferiram');
+
+    const okCom = frasePura(Object.assign(JSON.parse(JSON.stringify(VEREDITO_REAL)), {
+      situacao: 'ok', certeza: 'tag', desde: null, texto_ml: { motivo: null, como_resolver: null },
+      ja_preenchido: { total: 55, do_vendedor: 55, do_catalogo: 0 },
+      categoria: { aceita_nota: true, exige_posicao: false, obrigatorio: true },
+    }));
+    const okSem = frasePura(Object.assign(JSON.parse(JSON.stringify(VEREDITO_REAL)), {
+      situacao: 'ok', certeza: 'tag', desde: null, texto_ml: { motivo: null, como_resolver: null },
+      ja_preenchido: { total: 55, do_vendedor: 55, do_catalogo: 0 },
+    }));
+    check('ok: o card sai idêntico com e sem obrigatorio', okCom === okSem, 'diferiram');
+  }
+  {
+    // E ele nunca faz o card aparecer sozinho: sem exigência, não há card, ponto.
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')({ exige: false, situacao: 'nao_se_aplica', categoria: { obrigatorio: true } }, 'compat');
+    check('obrigatorio:true não cria card em anúncio que não exige', reg['compat'].innerHTML === '', reg['compat'].innerHTML);
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }

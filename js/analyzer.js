@@ -7380,6 +7380,17 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     const naoSeiQuantos = jaTem === null;
     const contagem = naoSeiQuantos ? null : `${jaTem} ${jaTem === 1 ? 'veículo' : 'veículos'}`;
 
+    // `categoria.obrigatorio: true` só REFORÇA a frase de `em_risco` — é o fato que explica
+    // por que a tag importa: a exigência é da CATEGORIA, não implicância com este anúncio.
+    // Não cria card, não prevê parada e não muda mais nada. Em `fora_do_ar` quem fala é a
+    // moderação, e a frase dela não pode ser diluída por um fato de categoria; em `ok` não
+    // há o que reforçar. `false`/`null` mantêm a frase de sempre — o campo fala da
+    // categoria, e afirmar parada a partir dele seria o app falando pela ML.
+    const exigidoPelaCategoria = !!(veredito.categoria && veredito.categoria.obrigatorio === true);
+    const abreEmRisco = exigidoPelaCategoria
+        ? 'Nesta categoria o Mercado Livre exige os veículos compatíveis'
+        : 'O Mercado Livre pede os veículos compatíveis neste anúncio';
+
     const frase = naoSeiQuantos
         // Sem saber quantos já existem, a tela não afirma que falta nem que está completo:
         // diz só o que a situação garante, e assume o que não conseguiu ler.
@@ -7389,7 +7400,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
                 : 'Este anúncio está fora do ar esperando correção, e o Mercado Livre marca os veículos compatíveis como incompletos.')
             : veredito.situacao === 'ok'
                 ? 'Os veículos compatíveis deste anúncio já estão indicados.'
-                : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.'} Não deu para conferir quantos já estão indicados.`
+                : `${abreEmRisco}. Enquanto faltar, ele pode sair do ar.`} Não deu para conferir quantos já estão indicados.`
         : veredito.situacao === 'fora_do_ar'
             ? (jaTem > 0
                 // Não afirma POR QUE a ML não reativou (não dá pra saber): afirma só o que é
@@ -7401,8 +7412,10 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
             : veredito.situacao === 'ok'
                 ? `${contagem} indicado${jaTem === 1 ? '' : 's'}.`
                 : jaTem > 0
-                    ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. Enquanto isso, o anúncio pode sair do ar.`
-                    : 'O Mercado Livre pede os veículos compatíveis neste anúncio. Enquanto faltar, ele pode sair do ar.';
+                    ? `Você já indicou ${contagem}, e o Mercado Livre ainda marca a lista como incompleta. ${exigidoPelaCategoria
+                        ? 'Nesta categoria ele exige os veículos compatíveis, então o anúncio pode sair do ar enquanto faltar.'
+                        : 'Enquanto isso, o anúncio pode sair do ar.'}`
+                    : `${abreEmRisco}. Enquanto faltar, ele pode sair do ar.`;
 
     const desde = veredito.desde ? ` <span class="text-small" style="color:var(--text-muted);">desde ${escapeHtml(veredito.desde)}</span>` : '';
 
