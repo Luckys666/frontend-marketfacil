@@ -1397,6 +1397,100 @@ async function main() {
       JSON.stringify(ctx.sandbox.currentAnalysisState.escadaCompat.selecoes));
   }
 
+  /* =========================================================================
+     A escada aberta com veredito velho (15/08).
+
+     "A tela nova nasce sem os botões" é garantia de ESTADO, e estado envelhece: quem já
+     estava com a escada aberta quando o veredito virou `ja_e_universal`/`exige_posicao`
+     continua com um botão clicável que a tela já sabia que ia falhar. O proxy recusa
+     depois, então nada corrompe — mas gastar a chamada e entregar um erro previsível é
+     exatamente o que esta leva veio eliminar.
+
+     O motivo do bloqueio passou a sair de UMA função só, usada pelo card (que esconde os
+     botões) e pelas funções de gravação (que recusam a chamada). Quando os dois calculam
+     isso separado, um dia discordam — e é sempre o botão que sobra clicável.
+     ========================================================================= */
+  async function escadaComSelecao(ctx) {
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  console.log('\n== gravar com veredito novo dizendo "serve em qualquer veículo" ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    await escadaComSelecao(ctx);
+    const postsAntes = ctx.chamadas.filter((c) => c.method === 'POST').length;
+
+    // o veredito virou enquanto a escada estava aberta
+    const novo = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    novo.ja_e_universal = true;
+    ctx.sandbox.currentAnalysisState.compatData = novo;
+
+    await ctx.get('mfCompatGravarVeiculos')();
+    const postsDepois = ctx.chamadas.filter((c) => c.method === 'POST').length;
+    check('não gasta a chamada que já se sabe que vai falhar', postsDepois === postsAntes, `posts: ${postsAntes} -> ${postsDepois}`);
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('e explica o motivo, em vez de não fazer nada', /serve em qualquer ve[íi]culo/i.test(erro.textContent), erro.textContent.slice(0, 200));
+    check('a seleção não se perde', ctx.sandbox.currentAnalysisState.escadaCompat.selecoes.length === 1,
+      JSON.stringify(ctx.sandbox.currentAnalysisState.escadaCompat.selecoes));
+    // A tela velha se conserta sozinha: o card é redesenhado com o veredito novo e os
+    // botões somem, senão o vendedor clica de novo no mesmo botão morto.
+    const card = ctx.sandbox.document.getElementById('compatibilidades');
+    check('o card se redesenha sem os botões', !/mfCompatAbrirEscada|mfCompatUniversal/.test(card.innerHTML), card.innerHTML.slice(0, 800));
+  }
+
+  console.log('\n== gravar com veredito novo dizendo que a categoria exige a posição da peça ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    await escadaComSelecao(ctx);
+    const postsAntes = ctx.chamadas.filter((c) => c.method === 'POST').length;
+
+    const novo = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    novo.categoria = { aceita_nota: true, exige_posicao: true, obrigatorio: true };
+    ctx.sandbox.currentAnalysisState.compatData = novo;
+
+    await ctx.get('mfCompatGravarVeiculos')();
+    const postsDepois = ctx.chamadas.filter((c) => c.method === 'POST').length;
+    check('não gasta a chamada', postsDepois === postsAntes, `posts: ${postsAntes} -> ${postsDepois}`);
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('e diz que falta a posição da peça', /posi[çc][ãa]o/i.test(erro.textContent), erro.textContent.slice(0, 200));
+  }
+
+  console.log('\n== o mesmo vale para "Serve em qualquer veículo" ==');
+  {
+    const ctx = ambiente();
+    const novo = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    novo.ja_e_universal = true;
+    ctx.sandbox.currentAnalysisState.compatData = novo;
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+
+    await ctx.get('mfCompatUniversal')();
+    check('não manda POST de universal num anúncio que já é', ctx.chamadas.filter((c) => c.method === 'POST').length === 0,
+      JSON.stringify(ctx.chamadas.map((c) => c.method + ' ' + c.url)));
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('e explica o porquê', /serve em qualquer ve[íi]culo/i.test(erro.textContent), erro.textContent.slice(0, 200));
+  }
+
+  console.log('\n== contraprova: sem bloqueio, grava como sempre ==');
+  {
+    // O conserto não pode virar "nunca grava". Com o veredito limpo (e com `null` nos campos
+    // de categoria, que não decidem nada), a gravação sai normalmente.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    const limpo = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    limpo.ja_e_universal = false;
+    limpo.categoria = { aceita_nota: null, exige_posicao: null, obrigatorio: null };
+    ctx.sandbox.currentAnalysisState.compatData = limpo;
+    await escadaComSelecao(ctx);
+    await ctx.get('mfCompatGravarVeiculos')();
+    check('grava normalmente', ctx.chamadas.some((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url)),
+      JSON.stringify(ctx.chamadas.map((c) => c.method + ' ' + c.url)));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
