@@ -81,6 +81,20 @@ ctxCompat.get('exibirCompatibilidades')(veredictoCompat, 'compat');
 const htmlCompat = ctxCompat.reg['compat'].innerHTML;
 
 /*
+ * Estado de BLOQUEIO (v480, 15/08): o anúncio já está marcado como "serve em qualquer
+ * veículo", então a ML recusa veículo novo e o card não oferece botão nenhum — sobra um
+ * parágrafo comprido explicando o porquê e mandando para o Gerenciador da ML. É a versão
+ * mais longa das duas mensagens de bloqueio (a outra é a da posição da peça), e é um bloco
+ * com padding e borda lateral: exatamente o perfil que a regra deste arquivo manda medir.
+ */
+const ctxBloqueio = carregar();
+ctxBloqueio.get('exibirCompatibilidades')(
+  Object.assign({}, veredictoCompat, { ja_e_universal: true, situacao: 'em_risco', certeza: 'tag', desde: null }),
+  'compat-bloqueio',
+);
+const htmlBloqueio = ctxBloqueio.reg['compat-bloqueio'].innerHTML;
+
+/*
  * Escada "Escolher os veículos" (14/08/2026, Task 8) — a lista cheia é o pior caso: 8
  * seleções com nomes de marca+modelo+ano compridos ("Volkswagen Nivus Highline 250 TSI
  * 2024"), cada linha com botão de Remover, MAIS o nível "ano" aberto (select + o botão de
@@ -144,6 +158,7 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
   <div class="simula-card" id="card-desc">${htmlDescricao}</div>
   <div class="simula-card" id="card-gar" style="margin-top:14px">${htmlGarantia}</div>
   <div class="simula-card" id="card-compat" style="margin-top:14px">${htmlCompat}</div>
+  <div class="simula-card" id="card-bloqueio" style="margin-top:14px">${htmlBloqueio}</div>
   <div class="simula-card" id="card-escada" style="margin-top:14px">${htmlEscada}</div>
 </div></div></body></html>`;
 
@@ -269,6 +284,11 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         alcanceCaixa: medirDentro('#card-escada', '.mf-compat-alcance'),
         alcanceLinhas: medirTodos('#card-escada', '.mf-compat-alcance .text-small'),
 
+        // Bloqueio (v480): o parágrafo que explica por que não há botão nenhum. Se ele
+        // vazar ou for cortado, o vendedor fica sem botão E sem o motivo — a pior das telas.
+        bloqueioCaixa: medirDentro('#card-bloqueio', '.mf-compat-bloqueio'),
+        bloqueioTexto: medirDentro('#card-bloqueio', '.mf-compat-bloqueio .text-small'),
+
         // Campo da nota do vendedor (15/08), com o texto perto do teto de 500 caracteres.
         notaCampo: medirDentro('#card-escada', '#mf-compat-nota'),
         notaContador: medirDentro('#card-escada', '#mf-compat-nota-contador'),
@@ -377,6 +397,11 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     check(`${larg}px: nenhuma linha do aviso vaza`, m.alcanceLinhas.every(dentro0), JSON.stringify(m.alcanceLinhas));
     check(`${larg}px: nenhum título de anúncio fica cortado`,
       m.alcanceLinhas.every((x) => !x.cortado), JSON.stringify(m.alcanceLinhas));
+
+    // ── bloqueio: "serve em qualquer veículo" / posição da peça (v480) ──
+    check(`${larg}px: o bloco que explica o bloqueio existe`, !!m.bloqueioCaixa, JSON.stringify(m.bloqueioCaixa));
+    check(`${larg}px: o bloco de bloqueio não vaza`, dentro0(m.bloqueioCaixa), JSON.stringify(m.bloqueioCaixa));
+    check(`${larg}px: e o texto dele não fica cortado`, m.bloqueioTexto && !m.bloqueioTexto.cortado, JSON.stringify(m.bloqueioTexto));
 
     // ── nota do vendedor (15/08) ──
     // O campo entra entre as seleções e o aviso de alcance, com a nota perto do teto de

@@ -1234,6 +1234,169 @@ async function main() {
     check('escopo já conferido continua vindo do estado', depoisDeReabrir === depoisDoSucesso, `alcance: ${depoisDoSucesso} -> ${depoisDeReabrir}`);
   }
 
+  /* =========================================================================
+     Proxy v480: dois campos novos no veredito que mudam o que a tela pode OFERECER.
+
+     Os dois existem pelo mesmo motivo: hoje a tela convida o vendedor a montar uma lista de
+     veículos que a ML vai recusar, e ele só descobre depois de escolher tudo. Isso é o pior
+     tipo de erro que esta feature pode cometer — o card existe justamente porque o vendedor
+     estava perdendo venda sem saber por quê.
+
+     `null` em qualquer campo de `categoria` significa "não sei" e NÃO decide nada: sem o
+     dado, a tela se comporta como se ele não existisse.
+     ========================================================================= */
+  console.log('\n== já marcado como "serve em qualquer veículo": não oferecer o que a ML recusa ==');
+  {
+    // Enquanto a marca de universal estiver no anúncio, a ML recusa veículo novo — e o app
+    // não desfaz marcação de ninguém (§7.2). Oferecer a escada aqui é convidar para um
+    // trabalho que termina em erro.
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.ja_e_universal = true;
+    v.situacao = 'em_risco'; v.certeza = 'tag'; v.desde = null;
+    v.texto_ml = { motivo: null, como_resolver: null };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('o card continua aparecendo', html.trim().length > 0, JSON.stringify(html.slice(0, 120)));
+    check('NÃO oferece a escada de veículos', !/mfCompatAbrirEscada/.test(html), html.slice(0, 800));
+    check('NÃO oferece o botão de universal (já está)', !/mfCompatUniversal/.test(html), html.slice(0, 800));
+    check('diz o estado com as palavras da tela, não com jargão',
+      /serve em qualquer ve[íi]culo/i.test(html) && !/universal/i.test(html), html.slice(0, 800));
+    check('explica que por isso o ML não aceita adicionar veículos',
+      /n[ãa]o aceita/i.test(html) && /adicionar/i.test(html), html.slice(0, 800));
+    check('manda para o Gerenciador do próprio Mercado Livre', /Gerenciador de Compatibilidades/i.test(html), html.slice(0, 800));
+    check('e não inventa link (a URL não foi levantada)', !/<a\s/i.test(html), html.slice(0, 800));
+  }
+  {
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.ja_e_universal = false;
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    check('ja_e_universal:false → a escada continua sendo oferecida', /mfCompatAbrirEscada/.test(reg['compat'].innerHTML), reg['compat'].innerHTML.slice(0, 600));
+  }
+
+  console.log('\n== categoria que exige a POSIÇÃO da peça: avisar ANTES de montar a lista ==');
+  {
+    // Categoria com `exige_posicao` pede dianteira/traseira, esquerda/direita — campo que o
+    // app não manda. TODA gravação falha. Descobrir isso depois de escolher 12 veículos é o
+    // pior caso de "deixar a pessoa trabalhar à toa" da feature inteira.
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.categoria = { aceita_nota: true, exige_posicao: true, obrigatorio: true };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    const html = reg['compat'].innerHTML;
+    check('NÃO oferece a escada', !/mfCompatAbrirEscada/.test(html), html.slice(0, 900));
+    check('explica que a categoria pede a posição da peça',
+      /posi[çc][ãa]o/i.test(html) && /(dianteir|traseir|esquerd|direit)/i.test(html), html.slice(0, 900));
+    check('e assume que o app ainda não faz isso', /pelo app|ainda n[ãa]o/i.test(html), html.slice(0, 900));
+    check('manda para o Gerenciador do Mercado Livre', /Gerenciador de Compatibilidades/i.test(html), html.slice(0, 900));
+    check('sem jargão da API', !/exige_posicao|restrictions|position/i.test(html), html.slice(0, 900));
+    check('e sem link chutado', !/<a\s/i.test(html), html.slice(0, 900));
+  }
+  {
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.categoria = { aceita_nota: null, exige_posicao: null, obrigatorio: null };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    check('exige_posicao:null não decide nada — escada continua', /mfCompatAbrirEscada/.test(reg['compat'].innerHTML), reg['compat'].innerHTML.slice(0, 600));
+  }
+  {
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.categoria = { aceita_nota: true, exige_posicao: false, obrigatorio: true };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    check('exige_posicao:false → escada normal', /mfCompatAbrirEscada/.test(reg['compat'].innerHTML), reg['compat'].innerHTML.slice(0, 600));
+  }
+
+  console.log('\n== categoria que não aceita nota: não oferecer o campo ==');
+  {
+    // Oferecer um campo que a ML vai recusar é pior que não ter campo: o vendedor escreve o
+    // aviso que protege o comprador, e ele é jogado fora sem ninguém contar.
+    const semNota = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    semNota.categoria = { aceita_nota: false, exige_posicao: false, obrigatorio: true };
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.sandbox.currentAnalysisState.compatData = semNota;
+    ctx.get('exibirCompatibilidades')(semNota, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+    check('o campo da nota não aparece', !/id="mf-compat-nota"/.test(box.innerHTML), box.innerHTML.slice(-800));
+    check('e nem o contador', !/mf-compat-nota-contador/.test(box.innerHTML), box.innerHTML.slice(-800));
+    check('a escada continua funcionando', /Vai gravar \(1\)/.test(box.textContent), box.textContent.slice(-300));
+
+    // Defensivo: se o vendedor já tinha digitado antes do veredito chegar, a nota não pode
+    // viajar assim mesmo — a ML recusaria a gravação inteira por causa dela.
+    ctx.sandbox.currentAnalysisState.escadaCompat.nota = 'texto digitado antes';
+    await ctx.get('mfCompatGravarVeiculos')();
+    const grava = ctx.chamadas.find((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url));
+    check('e uma nota já digitada não é enviada', grava && !('note' in grava.body), JSON.stringify(grava && grava.body));
+  }
+  {
+    const talvez = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    talvez.categoria = { aceita_nota: null, exige_posicao: null, obrigatorio: null };
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.sandbox.currentAnalysisState.compatData = talvez;
+    ctx.get('exibirCompatibilidades')(talvez, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    check('aceita_nota:null não decide nada — o campo continua',
+      /id="mf-compat-nota"/.test(ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML),
+      ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML.slice(-600));
+  }
+
+  console.log('\n== códigos de erro novos do v480 ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS,
+      respostaGravar: { ok: false, status: 400, dados: { code: 'ja_e_universal' } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('ja_e_universal tem frase própria, não o "não aceitou" genérico',
+      /serve em qualquer ve[íi]culo/i.test(erro.textContent) && !/^O Mercado Livre não aceitou\.$/.test(erro.textContent), erro.textContent);
+    check('e diz onde resolver', /Gerenciador de Compatibilidades/i.test(erro.textContent), erro.textContent);
+  }
+  {
+    // O teto do ML é de PRODUTOS RESOLVIDOS, não de veículos escolhidos: "usar o modelo
+    // inteiro" pode virar dezenas de produtos sozinho. Sem essa explicação o vendedor olha
+    // "3 veículos escolhidos", lê "limite de 200" e conclui que o app está quebrado.
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS,
+      respostaGravar: { ok: false, status: 400, dados: { code: 'passou_de_200_produtos' } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    const t = erro.textContent;
+    check('explica que a conta do ML não é a dos veículos escolhidos', /n[ãa]o (conta|é)/i.test(t) && /escolh/i.test(t), t);
+    check('conta que "modelo inteiro" pode estourar sozinho', /modelo inteiro/i.test(t), t);
+    check('e diz o que fazer', /(anos espec[íi]ficos|duas etapas)/i.test(t), t);
+    check('sem jargão da API', !/passou_de_200_produtos|products/i.test(t), t);
+    check('a seleção não se perde no erro', ctx.sandbox.currentAnalysisState.escadaCompat.selecoes.length === 1,
+      JSON.stringify(ctx.sandbox.currentAnalysisState.escadaCompat.selecoes));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
