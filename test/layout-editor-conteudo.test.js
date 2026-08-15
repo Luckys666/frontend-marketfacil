@@ -104,6 +104,17 @@ const stateEscada = {
       { brand_id: 45, brand_nome: 'Volkswagen', model_id: 504, model_nome: 'Polo Track Sense MSI', year_id: null, year_nome: null },
       { brand_id: 9, brand_nome: 'Chevrolet', model_id: 603, model_nome: 'Spin Activ7 Premier', year_id: 2022, year_nome: '2022' },
     ],
+    // Guarda §7.4: a lista de anúncios atingidos entra no MESMO painel, embaixo das 8
+    // seleções. Títulos de anúncio da ML chegam com 60 caracteres — é o texto mais longo
+    // e sem espaço para quebrar que a escada mostra, e em 375px é o candidato natural a
+    // vazar para fora do card.
+    alcance: {
+      carregando: false, erro: null,
+      itens: [
+        { id: 'MLB3126128636', title: 'Regulador De Pressão Compressor Com Filtro E Manômetro 1/4' },
+        { id: 'MLB3370980603', title: 'Regulador Pressão Compressor Manômetro 1/4 Ar-2000 Profissional' },
+      ],
+    },
   },
 };
 ctxEscada.sandbox.currentAnalysisState = stateEscada;
@@ -231,6 +242,11 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
         escadaRemover: medirTodos('#card-escada', '.mf-compat-selecao-item .mf-conteudo-botao'),
         transformEscadaGravar: caixaAlta('#mf-compat-gravar-veiculos'),
         transformEscadaModeloInteiro: caixaAlta('#mf-compat-modelo-inteiro'),
+
+        // Guarda §7.4: o aviso de quais anúncios a gravação atinge. Se ele vazar ou for
+        // cortado, a guarda vira decoração — o vendedor grava sem ler a lista.
+        alcanceCaixa: medirDentro('#card-escada', '.mf-compat-alcance'),
+        alcanceLinhas: medirTodos('#card-escada', '.mf-compat-alcance .text-small'),
       };
     });
 
@@ -323,6 +339,16 @@ body{margin:0;padding:20px;font-family:sans-serif}.palco{max-width:620px}
     check(`${larg}px: "Gravar" e "modelo inteiro" não saem em CAIXA ALTA`,
       m.transformEscadaGravar !== 'uppercase' && m.transformEscadaModeloInteiro !== 'uppercase',
       `gravar=${m.transformEscadaGravar} modeloInteiro=${m.transformEscadaModeloInteiro}`);
+
+    // Guarda §7.4 na tela: de nada adianta o proxy saber quais anúncios serão atingidos se
+    // a lista vazar do card ou sair cortada justamente no celular.
+    check(`${larg}px: o aviso de quais anúncios serão atingidos existe`, !!m.alcanceCaixa, JSON.stringify(m.alcanceCaixa));
+    check(`${larg}px: o aviso não vaza`, dentro0(m.alcanceCaixa), JSON.stringify(m.alcanceCaixa));
+    check(`${larg}px: as linhas dos anúncios atingidos existem (título + 2 anúncios)`,
+      m.alcanceLinhas.length === 3, String(m.alcanceLinhas.length));
+    check(`${larg}px: nenhuma linha do aviso vaza`, m.alcanceLinhas.every(dentro0), JSON.stringify(m.alcanceLinhas));
+    check(`${larg}px: nenhum título de anúncio fica cortado`,
+      m.alcanceLinhas.every((x) => !x.cortado), JSON.stringify(m.alcanceLinhas));
 
     // No celular os botões ganham a linha inteira; espremidos ao lado do contador, "Salvar
     // descrição" quebrava no meio da palavra.
