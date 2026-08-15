@@ -652,6 +652,128 @@ async function main() {
       JSON.stringify(ctx.sandbox.currentAnalysisState.escadaCompat.selecoes));
   }
 
+  /* =========================================================================
+     Auditoria do fluxo — 15/08/2026.
+
+     A pergunta que motivou este bloco: o que esta tela consegue fazer sozinha, sem o
+     vendedor mandar? O card carrega junto com a análise, então tudo que ele toca é
+     iniciativa do app, não do usuário. Estes testes fecham a superfície: quais rotas o
+     fluxo alcança, qual delas escreve, e o que sobrevive a fechar e reabrir o painel.
+     ========================================================================= */
+  console.log('\n== superfície: a tela só conhece as rotas de compatibilidade ==');
+  {
+    // Leitura do CÓDIGO-FONTE, não do comportamento: um teste que só olha o caminho
+    // exercitado não vê a rota que ninguém clicou. Hoje o fluxo tem SEIS endereços, e
+    // dois deles (`/candidatos` e `/copiar`) não existem no proxy — são de uma fase
+    // adiada. Ficam na lista de propósito: o teste não julga se a rota existe do outro
+    // lado, ele trava a SUPERFÍCIE. Endereço novo aqui reprova até alguém decidir que é
+    // pra estar aqui.
+    const fonte = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'analyzer.js'), 'utf8');
+    const usos = [...fonte.matchAll(/\$\{API_COMPAT_ENDPOINT\}([^`]*)/g)]
+      .map((m) => m[1].split('?')[0])
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort();
+    const ESPERADO = ['', '/alcance', '/candidatos', '/copiar', '/universal', '/veiculos'];
+    check('o fluxo alcança exatamente as 6 rotas conhecidas, nem uma a mais',
+      JSON.stringify(usos) === JSON.stringify(ESPERADO), JSON.stringify(usos));
+  }
+
+  console.log('\n== fluxo inteiro: uma única escrita, e nenhuma chamada fora de /api/compatibilidades ==');
+  {
+    // O perigo que isto trava: uma rota de ATUALIZAR ANÚNCIO entrando neste fluxo. Mexer
+    // no anúncio é o que reativa o anúncio parado (o segundo passo que o card explica), e
+    // é tentador resolver isso com um PUT daqui — só que PUT em anúncio de família é
+    // justamente o que tira o anúncio do grupo de variações. Se um dia esse atalho
+    // aparecer, ele reprova aqui antes de chegar na conta de alguém.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+
+    const fora = ctx.chamadas.filter((c) => !/\/api\/compatibilidades(\?|\/|$)/.test(c.url.split('?')[0] + (c.url.includes('?') ? '?' : '')));
+    check('toda chamada do fluxo é /api/compatibilidades*', fora.length === 0, JSON.stringify(fora.map((c) => c.url)));
+    const escritas = ctx.chamadas.filter((c) => c.method !== 'GET');
+    check('e a ÚNICA escrita do fluxo é o POST de veículos',
+      escritas.length === 1 && /\/compatibilidades\/veiculos$/.test(escritas[0].url),
+      JSON.stringify(escritas.map((e) => e.method + ' ' + e.url)));
+    check('nenhum PUT/PATCH/DELETE sai da tela',
+      !ctx.chamadas.some((c) => ['PUT', 'PATCH', 'DELETE'].includes(String(c.method).toUpperCase())),
+      JSON.stringify(ctx.chamadas.map((c) => c.method)));
+  }
+
+  console.log('\n== escada: no caminho normal, gravar manda UM POST só ==');
+  {
+    // Linha de base da guarda contra escrita repetida: com o escopo conferido, um clique
+    // é um POST. Compatibilidade é aditiva na ML — gravar duas vezes não é inofensivo,
+    // é o dobro do que o vendedor mandou, num anúncio que talvez nem seja só dele.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+    const posts = ctx.chamadas.filter((c) => c.method === 'POST' && /\/compatibilidades\/veiculos$/.test(c.url));
+    check('um clique, um POST', posts.length === 1, `posts=${posts.length}`);
+  }
+
+  console.log('\n== escada: o aviso de quantos anúncios vem ANTES do botão de gravar ==');
+  {
+    // §7.4 não pede só que o aviso exista — pede que ele apareça ANTES. Aviso embaixo do
+    // botão é aviso que o vendedor lê depois de clicar.
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS,
+      alcance: { ok: true, status: 200, dados: { total: 2, itens: [
+        { id: 'MLB3126128636', title: 'Regulador Pressão Compressor 1/4' },
+        { id: 'MLB3370980603', title: 'Regulador Pressão Compressor Manômetro' },
+      ] } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    const posAviso = html.indexOf('mf-compat-alcance');
+    const posBotao = html.indexOf('mf-compat-gravar-veiculos');
+    check('o bloco de alcance existe e vem antes do botão',
+      posAviso >= 0 && posBotao >= 0 && posAviso < posBotao, `aviso=${posAviso} botao=${posBotao}`);
+  }
+
+  console.log('\n== escada: fechar e reabrir não perde o que já foi escolhido nem o escopo ==');
+  {
+    // O vendedor fecha a escada pra reler o card e reabre. Perder as seleções aqui é
+    // perder trabalho manual (marca → modelo → ano, um por um) e é o tipo de coisa que
+    // faz ele desistir no meio. Reperguntar o escopo é chamada à ML de graça.
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const alcanceAntes = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    ctx.get('mfCompatAbrirEscada')();                                   // fecha
+    check('fechou mesmo', ctx.sandbox.document.getElementById('mf-compat-escada').style.display === 'none');
+    await ctx.get('mfCompatAbrirEscada')();                             // reabre
+    await new Promise((r) => setTimeout(r, 0));
+
+    const esc = ctx.sandbox.currentAnalysisState.escadaCompat;
+    check('a seleção sobreviveu ao fecha-e-abre', esc.selecoes.length === 1, JSON.stringify(esc.selecoes));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('e continua desenhada na lista', /Volkswagen T-Cross \(todos os anos\)/.test(html), html.slice(0, 700));
+    const alcanceDepois = ctx.chamadas.filter((c) => /\/compatibilidades\/alcance/.test(c.url)).length;
+    check('o escopo já conferido não é perguntado de novo', alcanceDepois === alcanceAntes, `alcance: ${alcanceAntes} -> ${alcanceDepois}`);
+    check('e o botão de gravar continua liberado', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(html), html.slice(-600));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
