@@ -994,6 +994,145 @@ async function main() {
     check('sem nota digitada, o corpo não leva note', grava && !('note' in grava.body), JSON.stringify(grava && grava.body));
   }
 
+  /* =========================================================================
+     Escopo desconhecido: degradar a AFIRMAÇÃO, não a capacidade (15/08/2026).
+
+     Decisão do time-lead depois do argumento da auditoria: no Gerenciador da ML o escopo é
+     visível por construção, então travar aqui não empata com um risco que já existe — cria
+     um que a ML não tem. Mas "Gravar mesmo assim" sozinho pede consentimento para um
+     desconhecido, e isso não é consentimento. A saída usa um dado que a tela já tem
+     carregado: `afeta_familia.user_product_id`. Se ele existe, a escrita VAI pelo
+     user-product e VAI pegar a família — só não sabemos quantos anúncios. Se não existe,
+     vai por /items e atinge só este. Um estado ambíguo vira dois estados honestos, sem
+     nenhuma chamada nova.
+     ========================================================================= */
+  console.log('\n== escopo falhou, mas o anúncio TEM grupo: avisa o que dá para afirmar ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS, alcance: { ok: false, status: 500, dados: {} } });
+    ctx.sandbox.currentAnalysisState.compatData = VEREDITO_REAL; // afeta_familia.user_product_id preenchido
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+
+    check('assume que não sabe QUANTOS', /n[ãa]o deu para conferir quantos/i.test(box.textContent), box.textContent.slice(-500));
+    check('mas afirma o que sabe: faz parte de um grupo e vale para todos',
+      /faz parte de um grupo/i.test(box.textContent) && /todos eles/i.test(box.textContent), box.textContent.slice(-500));
+    check('sem jargão de user-product', !/user.?product|MLBU/i.test(box.innerHTML), box.innerHTML.slice(-600));
+    check('continua deixando gravar', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-500));
+    check('e o botão diz que é sem conferir', /Gravar mesmo assim/.test(box.innerHTML), box.innerHTML.slice(-500));
+    check('ainda oferece tentar de novo', /mfCompatConferirAlcanceDeNovo/.test(box.innerHTML), box.innerHTML.slice(-600));
+  }
+
+  console.log('\n== escopo falhou e o anúncio NÃO tem grupo: nada de alarme ==');
+  {
+    // Sem user_product_id a escrita sai por /items e atinge só este anúncio — é o próprio
+    // proxy dizendo isso. Não há surpresa possível, então não há o que avisar: manter tom de
+    // alerta aqui é assustar à toa, e alarme que toca sempre para de ser lido.
+    const semGrupo = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    semGrupo.afeta_familia = { user_product_id: null, itens: null };
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS, alcance: { ok: false, status: 500, dados: {} } });
+    ctx.sandbox.currentAnalysisState.compatData = semGrupo;
+    ctx.get('exibirCompatibilidades')(semGrupo, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+
+    check('não avisa de anúncios que não existem', !/vale para|faz parte de um grupo/i.test(box.textContent), box.textContent.slice(-500));
+    check('não fica pedindo para tentar de novo', !/n[ãa]o deu para conferir/i.test(box.textContent), box.textContent.slice(-500));
+    check('o botão é só "Gravar", sem tom de alerta', /Gravar \(1\)/.test(box.innerHTML) && !/mesmo assim/i.test(box.innerHTML), box.innerHTML.slice(-500));
+    check('e grava normalmente', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-500));
+  }
+
+  console.log('\n== valores numéricos do proxy também passam pelo escape ==');
+  {
+    // Nenhum destes é explorável hoje: o proxy só liga `copiar.pode` com `candidatos`
+    // numérico e `placar_conta` nem existe no veredito. Mas a tela não pode depender de uma
+    // invariante do outro lado para não injetar HTML — a defesa é dela.
+    const v = JSON.parse(JSON.stringify(VEREDITO_REAL));
+    v.remedios[1] = { id: 'copiar', pode: true, candidatos: '<img src=x onerror=alert(1)>' };
+    v.placar_conta = { parados: '<b>P</b>', resolvidos: '<b>R</b>' };
+    const { get, reg } = carregar();
+    get('exibirCompatibilidades')(v, 'compat');
+    const html = reg['compat'].innerHTML;
+    // A asserção é sobre TAG viva, não sobre a substring: escapado, o texto
+    // `onerror=alert(1)` continua legível dentro da entidade e é inerte — cobrar a ausência
+    // da substring daria falso vermelho e, pior, passaria despercebido no sentido contrário.
+    check('candidatos não vira tag viva', !/<img/i.test(html) && /&lt;img/.test(html), JSON.stringify(html.slice(0, 400)));
+    check('placar_conta não vira tag viva', !/<b>/i.test(html) && /&lt;b&gt;/.test(html), JSON.stringify(html.slice(0, 400)));
+  }
+
+  console.log('\n== código de erro do proxy não pode alcançar o protótipo do objeto ==');
+  {
+    // `MF_COMPAT_ERROS[code]` com code="toString" devolvia a função do protótipo, e a tela
+    // mostrava "function toString() { [native code] }" para o vendedor. Mesma armadilha que
+    // o proxy já fechou com lista literal — aqui a régua é hasOwnProperty.
+    const ctx = ambiente({ resposta: { ok: false, status: 400, dados: { code: 'toString' } } });
+    await ctx.get('mfCompatUniversal')();
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('universal: não vaza função do protótipo', !/function|native code/i.test(erro.textContent), erro.textContent.slice(0, 200));
+    check('e cai na mensagem genérica', /n[ãa]o aceitou/i.test(erro.textContent), erro.textContent.slice(0, 200));
+  }
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS,
+      respostaGravar: { ok: false, status: 400, dados: { code: 'constructor' } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatGravarVeiculos')();
+    const erro = ctx.sandbox.document.getElementById('mf-rapido-erro-compat');
+    check('gravar: não vaza função do protótipo', !/function|native code|Object\(\)/i.test(erro.textContent), erro.textContent.slice(0, 200));
+  }
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, erroEm: 'modelo' });
+    ctx.sandbox.fetch = (function (originalFetch) {
+      return async (url, opts = {}) => {
+        const u = String(url);
+        if (/nivel=modelo/.test(u)) return { ok: false, status: 400, json: async () => ({ code: 'valueOf' }) };
+        return originalFetch(url, opts);
+      };
+    })(ctx.sandbox.fetch);
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+    check('escada: não vaza função do protótipo', !/function|native code/i.test(box.textContent), box.textContent.slice(0, 300));
+    check('e mostra a mensagem genérica', /n[ãa]o deu para consultar/i.test(box.textContent), box.textContent.slice(0, 300));
+  }
+
+  console.log('\n== as rotas ainda inexistentes ficam registradas no código ==');
+  {
+    // `/candidatos` e `/copiar` são a fase "copiar" do COMPAT-SPEC: ficam no código porque
+    // são feature planejada, e nada sai do Analisador sem o Lucas mandar. Mas quem mexer
+    // nelas precisa saber que o outro lado não existe — sem o aviso, alguém liga o botão e
+    // descobre pelo 404 do vendedor. Este check é o que impede o aviso de se perder num
+    // refactor.
+    const fonte = require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'analyzer.js'), 'utf8');
+    // Ancorado no comentário do bloco, não no nome da função: `mfCompatAbrirCandidatos`
+    // aparece antes no HTML do botão, e o indexOf pegava aquele trecho em vez deste.
+    const bruto = fonte.slice(fonte.indexOf('Tela de conferência do remédio "copiar"'), fonte.indexOf('Escolher os veículos manualmente'));
+    // Junta as linhas do comentário antes de procurar: o aviso é uma frase, e reencapar o
+    // parágrafo num refactor não pode fazer o teste reprovar por causa de uma quebra.
+    const trecho = bruto.replace(/\n\s*\*?/g, ' ').replace(/\s+/g, ' ');
+    check('o bloco de copiar avisa que a rota ainda não existe no proxy',
+      /ainda n[ãa]o existe no proxy/i.test(trecho), trecho.slice(0, 240));
+    check('e avisa que precisa nascer com teste', /nascer com teste/i.test(trecho), trecho.slice(0, 240));
+  }
+
   console.log(`\n${pass} ok, ${fail} falhas`);
   process.exit(fail ? 1 : 0);
 }
