@@ -11151,6 +11151,28 @@ function MF_renderEscadaCompat(state) {
             </label>`;
     }
 
+    // Guarda §7.4 do COMPAT-SPEC: quando o anúncio tem user-product, a gravação atinge
+    // TODOS os anúncios que usam aquele produto. Medido na conta real (15/08/2026): o
+    // user-product MLBU1115911717 sustenta 2 anúncios. Gravar sem essa lista à vista é
+    // surpresa em anúncio que vende. O escopo é perguntado ao proxy quando a escada abre.
+    const alc = esc.alcance;
+    const escopoConhecido = !!(alc && !alc.carregando && !alc.erro && Array.isArray(alc.itens));
+    const varios = escopoConhecido && alc.itens.length > 1;
+    const blocoAlcance = !alc || alc.carregando
+        ? `<p class="text-small" style="margin-top:10px; color:var(--text-muted);">Conferindo quais anúncios isto vai atingir…</p>`
+        : alc.erro
+            // Falha de leitura não trava o vendedor: ele faz o mesmo pelo Gerenciador da ML.
+            // Vira double check, mesma régua do alerta de renomear variação (avisar > travar).
+            ? `<p class="text-small" style="margin-top:10px;">Não deu para conferir quais anúncios isto atinge.
+                   <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
+               </p>`
+            : varios
+                ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
+                       <p class="text-small" style="font-weight:600;">⚠️ Isto vale para ${alc.itens.length} anúncios:</p>
+                       ${alc.itens.map((i) => `<div class="text-small">• ${escapeHtml(i.title || i.id || '')}</div>`).join('')}
+                   </div>`
+                : '';
+
     // Régua de escala: avisa ANTES de tentar gravar, não depois do erro da ML — o proxy
     // recusa acima de 200 famílias por chamada (`limite_de_familias`).
     const acimaDoLimite = esc.selecoes.length > 200;
@@ -11170,11 +11192,12 @@ function MF_renderEscadaCompat(state) {
             ${blocoTrilha}
             ${corpoNivel}
             ${listaSelecoes}
+            ${blocoAlcance}
             <div class="mf-conteudo-rodape">
                 <button class="mf-conteudo-botao" onclick="window.mfCompatAbrirEscada()">Fechar</button>
                 <button class="mf-conteudo-botao mf-conteudo-botao-rapido" id="mf-compat-gravar-veiculos"
-                    ${(esc.selecoes.length === 0 || acimaDoLimite) ? 'disabled' : ''}
-                    onclick="window.mfCompatGravarVeiculos()">Gravar${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}</button>
+                    ${(esc.selecoes.length === 0 || acimaDoLimite || (!alc || alc.carregando)) ? 'disabled' : ''}
+                    onclick="window.mfCompatGravarVeiculos()">${alc && alc.erro ? 'Gravar mesmo assim' : 'Gravar'}${esc.selecoes.length ? ` (${esc.selecoes.length})` : ''}</button>
             </div>
         </div>`;
 }
@@ -11188,13 +11211,51 @@ window.mfCompatAbrirEscada = async function () {
     if (!estaFechado) { box.style.display = 'none'; return; }
     box.style.display = 'block';
     if (!state.escadaCompat) {
-        state.escadaCompat = { nivel: 'marca', opcoes: [], carregando: false, erro: null, marca: null, modelo: null, selecoes: [] };
+        state.escadaCompat = { nivel: 'marca', opcoes: [], carregando: false, erro: null, marca: null, modelo: null, selecoes: [], alcance: null };
     }
+    // O escopo da escrita (guarda §7.4) roda EM PARALELO com o primeiro nível: são duas
+    // perguntas independentes, e segurar a escada esperando o escopo só deixaria a tela
+    // lenta. Quem espera é o botão de gravar, não o vendedor navegando.
+    MF_compatCarregarAlcance(state);
     if (!state.escadaCompat.opcoes.length && !state.escadaCompat.erro && !state.escadaCompat.carregando) {
         await MF_compatCarregarNivel(state, 'marca', {});
     } else {
         MF_renderEscadaCompat(state);
     }
+};
+
+/**
+ * Pergunta ao proxy QUAIS anúncios a gravação vai atingir (COMPAT-SPEC §7.4). A regra de
+ * quem é atingido mora no proxy — aqui só se desenha a lista que ele mandar.
+ * Falha nunca vira "atinge só este" (feedback_falha_nunca_vira_zero): vira `erro`, e o
+ * botão de gravar passa a dizer que é sem conferir.
+ */
+async function MF_compatCarregarAlcance(state) {
+    const esc = state.escadaCompat;
+    if (!esc || (esc.alcance && !esc.alcance.erro && !esc.alcance.carregando)) return;
+    esc.alcance = { carregando: true, erro: null, itens: null };
+    MF_renderEscadaCompat(state);
+    try {
+        const res = await fetch(`${API_COMPAT_ENDPOINT}/alcance?item_id=${encodeURIComponent(state.detail.id)}`, {
+            headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {},
+        });
+        const dados = await res.json().catch(() => ({}));
+        if (!res.ok || !Array.isArray(dados.itens)) {
+            esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
+        } else {
+            esc.alcance = { carregando: false, erro: null, itens: dados.itens };
+        }
+    } catch (e) {
+        esc.alcance = { carregando: false, erro: 'nao_deu_pra_consultar', itens: null };
+    }
+    MF_renderEscadaCompat(state);
+}
+
+window.mfCompatConferirAlcanceDeNovo = function () {
+    const state = window.currentAnalysisState;
+    if (!state || !state.escadaCompat) return;
+    state.escadaCompat.alcance = null;
+    return MF_compatCarregarAlcance(state);
 };
 
 window.mfCompatEscolherOpcao = async function (valorId) {

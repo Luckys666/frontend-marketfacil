@@ -87,7 +87,7 @@ const ANOS_TCROSS = [
 ];
 
 /** Ambiente pra escada de veículos: fetch roteado por `nivel=` na querystring. */
-function ambienteVeiculos({ marcas = [], modelos = [], anos = [], erroEm = null, respostaGravar = null } = {}) {
+function ambienteVeiculos({ marcas = [], modelos = [], anos = [], erroEm = null, respostaGravar = null, alcance = undefined, alcanceTrava = false } = {}) {
   const ctx = carregar();
   const { sandbox } = ctx;
   ctx.chamadas = [];
@@ -97,6 +97,13 @@ function ambienteVeiculos({ marcas = [], modelos = [], anos = [], erroEm = null,
     const semQuery = u.split('?')[0];
     if (opts.method === 'POST' && /\/compatibilidades\/veiculos$/.test(semQuery)) {
       const r = respostaGravar || { ok: true, status: 200, dados: { ok: true } };
+      return { ok: r.ok, status: r.status, json: async () => r.dados };
+    }
+    // Escopo da escrita (quais anúncios o user-product atinge). `alcanceTrava` deixa a
+    // promessa pendurada de propósito, pra testar o estado "ainda conferindo".
+    if (/\/compatibilidades\/alcance$/.test(semQuery)) {
+      if (alcanceTrava) return new Promise(() => {});
+      const r = alcance || { ok: true, status: 200, dados: { itens: [{ id: 'MLB3869799637', title: 'Terminal Rotular' }], total: 1 } };
       return { ok: r.ok, status: r.status, json: async () => r.dados };
     }
     const qs = u.split('?')[1] || '';
@@ -356,6 +363,89 @@ async function main() {
     const chamouMarca = ctx.chamadas.filter((c) => /nivel=marca/.test(c.url)).length;
     ctx.get('mfCompatAbrirEscada')(); // fecha
     check('clicar de novo fecha o painel', ctx.sandbox.document.getElementById('mf-compat-escada').style.display === 'none');
+  }
+
+  // Guarda §7.4 do COMPAT-SPEC. Medido na conta real em 15/08/2026: o user-product
+  // `MLBU1115911717` (Regulador de Pressão) sustenta DOIS anúncios — MLB3126128636 e
+  // MLB3370980603. Gravar num deles mexe nos dois. Sem esta tela, o vendedor grava achando
+  // que mexeu em um só. Não desvincula nada, mas é surpresa em anúncio que vende.
+  console.log('\n== escada: mostra QUAIS anúncios a gravação vai atingir ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS,
+      alcance: { ok: true, status: 200, dados: { total: 2, itens: [
+        { id: 'MLB3126128636', title: 'Regulador Pressão Compressor 1/4' },
+        { id: 'MLB3370980603', title: 'Regulador Pressão Compressor Manômetro' },
+      ] } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('perguntou o escopo ao proxy', ctx.chamadas.some((c) => /\/compatibilidades\/alcance\?/.test(c.url)), JSON.stringify(ctx.chamadas.map((c) => c.url)));
+    check('avisa que são 2 anúncios', /2 an[úu]ncios/i.test(html), html.slice(0, 900));
+    check('mostra o título de cada um', /Regulador Pressão Compressor 1\/4/.test(html) && /Manômetro/.test(html), html.slice(0, 900));
+    check('sem jargão de user-product na tela', !/user.?product|MLBU/i.test(html), html.slice(0, 900));
+  }
+
+  console.log('\n== escada: um anúncio só não vira alarme falso ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('não inventa aviso de vários anúncios', !/an[úu]ncios/i.test(html), html.slice(0, 700));
+  }
+
+  // Enquanto o escopo não chegou, o vendedor não pode gravar às cegas — é a guarda inteira.
+  console.log('\n== escada: gravar espera o escopo chegar ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS, alcanceTrava: true });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await ctx.get('mfCompatEscolherOpcao')('45');   // Volkswagen
+    await ctx.get('mfCompatEscolherOpcao')('502');  // T-Cross
+    ctx.get('mfCompatEscolherModeloInteiro')();     // agora existe seleção de verdade
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+    check('a seleção existe (senão o teste do botão seria vazio)', /Vai gravar \(1\)/.test(box.textContent), box.textContent.slice(0, 300));
+    check('diz que está conferindo', /conferindo/i.test(box.textContent), box.textContent.slice(0, 400));
+    check('gravar fica desabilitado enquanto confere',
+      /id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-600));
+  }
+
+  // Falha de leitura NÃO trava o vendedor: ele consegue fazer o mesmo pelo Gerenciador da
+  // ML. Vira double check, igual ao alerta de renomear variação — avisar > travar.
+  console.log('\n== escada: se não deu para conferir o escopo, vira double check ==');
+  {
+    const ctx = ambienteVeiculos({ marcas: MARCAS, modelos: MODELOS_VW, anos: ANOS_TCROSS, alcance: { ok: false, status: 500, dados: {} } });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    await ctx.get('mfCompatEscolherOpcao')('45');
+    await ctx.get('mfCompatEscolherOpcao')('502');
+    ctx.get('mfCompatEscolherModeloInteiro')();
+    const box = ctx.sandbox.document.getElementById('mf-compat-escada');
+    check('conta que não deu para conferir', /n[ãa]o deu para conferir/i.test(box.textContent), box.textContent.slice(0, 500));
+    check('não trava o vendedor',
+      !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-600));
+    check('mas o botão avisa que é sem conferir', /Gravar mesmo assim/.test(box.innerHTML), box.innerHTML.slice(-600));
+  }
+
+  console.log('\n== escada: título de anúncio não escapa HTML ==');
+  {
+    const ctx = ambienteVeiculos({
+      marcas: MARCAS,
+      alcance: { ok: true, status: 200, dados: { total: 2, itens: [
+        { id: 'MLB1', title: '<img src=x onerror=alert(1)>' },
+        { id: 'MLB2', title: 'Normal' },
+      ] } },
+    });
+    ctx.get('exibirCompatibilidades')(VEREDITO_REAL, 'compatibilidades');
+    await ctx.get('mfCompatAbrirEscada')();
+    await new Promise((r) => setTimeout(r, 0));
+    const html = ctx.sandbox.document.getElementById('mf-compat-escada').innerHTML;
+    check('escapa o título', !/<img src=x/i.test(html) && /&lt;img/i.test(html), html.slice(0, 700));
   }
 
   console.log('\n== escada: marca → modelo → ano, cada nível busca só quando chega nele ==');
