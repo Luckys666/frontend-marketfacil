@@ -10810,6 +10810,16 @@ const MF_COMPAT_ERROS = {
     limite_de_familias: 'Muitos veículos de uma vez. O máximo por envio é 200 — grave em duas etapas.',
     muitas_chamadas: 'Muitas consultas seguidas. Espere um minuto e tente de novo.',
     nao_deu_pra_consultar: 'Não deu para consultar agora.',
+    // Este anúncio já está marcado como "serve em qualquer veículo": enquanto a marcação
+    // estiver lá, a ML recusa veículo novo — e o app não remove marcação de ninguém (§7.2).
+    // Sem link: a URL do Gerenciador não foi levantada (§10.6), então o texto descreve o
+    // caminho em vez de fingir que há atalho.
+    ja_e_universal: 'Este anúncio está marcado como "serve em qualquer veículo", e por isso o Mercado Livre não aceita adicionar veículos a ele. Para mudar, use o Gerenciador de Compatibilidades no próprio Mercado Livre.',
+    // O teto de 200 da ML é de PRODUTOS resolvidos, não dos veículos que o vendedor
+    // escolheu: um "usar o modelo inteiro" vira dezenas de produtos sozinho. Sem essa
+    // frase, ele olha "3 veículos escolhidos", lê "limite de 200" e conclui que o app
+    // quebrou. Diz também o que fazer, não só o que deu errado.
+    passou_de_200_produtos: 'O Mercado Livre não conta os veículos que você escolheu, e sim cada versão e ano que eles representam — por isso "usar o modelo inteiro" pode passar do limite de 200 sozinho. Escolha anos específicos, ou grave em duas etapas.',
     ml_recusou: 'O Mercado Livre não aceitou.',
 };
 
@@ -10964,7 +10974,28 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
     const rotuloEscada = naoSeiQuantos ? 'Indicar os veículos'
         : (jaTem > 0 ? 'Adicionar mais veículos' : 'Escolher os veículos');
     const botaoEscada = `<button class="mf-conteudo-botao" id="mf-compat-escolher" onclick="window.mfCompatAbrirEscada()">${rotuloEscada}</button>`;
-    const acoes = botaoUniversal + botaoCopiar + botaoEscada;
+
+    // v480 — dois estados em que a gravação já nasce recusada pela ML. Aqui a tela não pode
+    // oferecer botão nenhum: o pior erro que esta feature pode cometer é convidar o vendedor
+    // a montar uma lista de 12 veículos para ele descobrir no fim que nada disso ia funcionar.
+    // `null` em qualquer campo de `categoria` é "não sei" e NÃO decide nada — sem o dado, a
+    // tela segue como se ele não existisse.
+    const categoriaDoVeredito = veredito.categoria || {};
+    const bloqueio = veredito.ja_e_universal === true
+        // A palavra "universal" não aparece: na tela isso sempre se chama "serve em qualquer
+        // veículo", que é como o próprio botão do card chama.
+        ? 'Este anúncio está marcado como "serve em qualquer veículo". Enquanto essa marcação estiver ativa, o Mercado Livre não aceita adicionar veículos a ele — e o app não desfaz marcação que você fez. Para mudar, use o Gerenciador de Compatibilidades no próprio Mercado Livre.'
+        : categoriaDoVeredito.exige_posicao === true
+            ? 'Nesta categoria o Mercado Livre também exige a posição da peça (dianteira ou traseira, esquerda ou direita), e isso ainda não dá para fazer pelo app. Para indicar os veículos deste anúncio, use o Gerenciador de Compatibilidades no próprio Mercado Livre.'
+            : null;
+    const blocoBloqueio = bloqueio
+        ? `<div class="mf-compat-bloqueio" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
+               <p class="text-small">${escapeHtml(bloqueio)}</p>
+           </div>`
+        : '';
+    // Com bloqueio, NENHUM remédio é oferecido: copiar e universal também gravam
+    // compatibilidade, então cairiam na mesma recusa.
+    const acoes = bloqueio ? '' : (botaoUniversal + botaoCopiar + botaoEscada);
 
     // `placar_conta` não existe no veredito ainda (medido em 13/08) — sem o campo, sem
     // placar. Nunca inventar número aqui (amigavel-e-gamificacao: não custa honestidade).
@@ -10983,6 +11014,7 @@ function exibirCompatibilidades(veredito, containerId = 'compatibilidades') {
         <span class="status-badge ${sel.classe}">${sel.selo}</span>${desde}
         <p class="text-small" style="margin-top:8px;">${frase}</p>
         ${blocoML}
+        ${blocoBloqueio}
         ${avisoFamilia}
         ${acoes ? `<div class="mf-chk-linha" style="margin-top:10px;">${acoes}</div>` : ''}
         <div id="mf-rapido-erro-compat" class="mf-conteudo-erro" style="display:none;"></div>
@@ -11310,8 +11342,11 @@ function MF_renderEscadaCompat(state) {
     // um comprador de carro de chegar pelo filtro e levar a peça errada. Pergunta em
     // português, do ponto de vista do comprador: a tela nunca escreve "note" nem "nota
     // técnica". Só aparece quando já há o que gravar.
+    // v480: `categoria.aceita_nota === false` esconde o campo. Oferecer um campo que a ML
+    // vai recusar é pior que não ter campo — o vendedor escreve o aviso que protege o
+    // comprador e ele é jogado fora sem ninguém contar. `null` não decide nada.
     const nota = typeof esc.nota === 'string' ? esc.nota : '';
-    const blocoNota = esc.selecoes.length ? `
+    const blocoNota = (esc.selecoes.length && MF_compatAceitaNota(state)) ? `
         <label class="mf-conteudo-label" style="display:block; margin-top:12px;">O que o comprador precisa saber antes de comprar (opcional)
             <textarea class="mf-conteudo-textarea" id="mf-compat-nota" rows="2" maxlength="${MF_COMPAT_NOTA_MAX}"
                 placeholder="Ex.: peça industrial — confira a medida da rosca antes de comprar."
@@ -11350,6 +11385,17 @@ function MF_renderEscadaCompat(state) {
 // Teto do próprio Mercado Livre ("A nota não pode exceder 500 caracteres"), o mesmo que o
 // proxy valida. Avisar antes é melhor que levar erro da ML depois de escolher tudo.
 const MF_COMPAT_NOTA_MAX = 500;
+
+/**
+ * A categoria deste anúncio aceita nota? Só `false` explícito nega — `null` é "não sei" e
+ * não decide nada (v480). Vale para desenhar o campo E para montar o corpo da gravação: se
+ * o vendedor digitou antes do veredito chegar, a nota não pode viajar assim mesmo, porque
+ * a ML recusaria a gravação inteira por causa dela.
+ */
+function MF_compatAceitaNota(state) {
+    const cat = state && state.compatData && state.compatData.categoria;
+    return !(cat && cat.aceita_nota === false);
+}
 
 /**
  * Guarda o que foi digitado sem redesenhar a escada: um re-render a cada tecla mataria o
@@ -11517,7 +11563,7 @@ window.mfCompatGravarVeiculos = async function () {
         // Nota em branco é o mesmo que nota ausente (é o que o proxy também entende): não
         // viaja `note: ''` no corpo.
         const corpo = { item_id: state.detail.id, familias };
-        const nota = typeof esc.nota === 'string' ? esc.nota.trim() : '';
+        const nota = (MF_compatAceitaNota(state) && typeof esc.nota === 'string') ? esc.nota.trim() : '';
         if (nota) corpo.note = nota;
         const res = await fetch(`${API_COMPAT_ENDPOINT}/veiculos`, {
             method: 'POST',
