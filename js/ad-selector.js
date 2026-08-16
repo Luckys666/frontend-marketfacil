@@ -317,10 +317,13 @@ async function proxyGet(rota) {
    Contagens dos chips (com cache em sessionStorage, 10 min)
    ========================================================================= */
 // Chave separada por modo: mock e real não podem compartilhar cache de contagens.
-const COUNTS_KEY = CONFIG.COUNTS_CACHE_KEY + (MOCK ? ':mock' : '');
+// Função, não constante: a chave precisa do VENDEDOR e ele só é conhecido depois do
+// boot. Como constante calculada no load, as contagens de uma conta valiam para a
+// seguinte — os chips diriam "8 perdendo exposição" sobre a loja errada.
+function countsKey() { return CONFIG.COUNTS_CACHE_KEY + '_' + (state.sellerId || 'sem-conta') + (MOCK ? ':mock' : ''); }
 function getCachedCounts() {
   try {
-    const raw = sessionStorage.getItem(COUNTS_KEY);
+    const raw = sessionStorage.getItem(countsKey());
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj || !obj.ts) return null;
@@ -329,7 +332,7 @@ function getCachedCounts() {
   } catch (e) { return null; }
 }
 function setCachedCounts(counts) {
-  try { sessionStorage.setItem(COUNTS_KEY, JSON.stringify({ ts: Date.now(), counts })); } catch (e) {}
+  try { sessionStorage.setItem(countsKey(), JSON.stringify({ ts: Date.now(), counts })); } catch (e) {}
 }
 
 async function fetchCounts(sellerId) {
@@ -503,14 +506,14 @@ async function loadSignalSets(sellerId, counts) {
   for (const sig of SIGNAL_SETS) {
     const cnt = Number((counts && counts[sig.countKey]) || 0);
     if (cnt <= 0) { state.signalSets[sig.id] = new Set(); state.signalSetsIncomplete[sig.id] = false; continue; }  // chip diz 0 -> não chama
-    const cached = getCachedJson('mf_sel_sig2_' + sig.id);
+    const cached = getCachedJson('mf_sel_sig2_' + sellerId + '_' + sig.id);
     if (cached && Array.isArray(cached.ids)) {
       state.signalSets[sig.id] = new Set(cached.ids);
       state.signalSetsIncomplete[sig.id] = !!cached.incomplete;
       renderCurrentRows(); continue;
     }
     const found = await fetchSignalIds(sellerId, sig.filter);
-    setCachedJson('mf_sel_sig2_' + sig.id, found);
+    setCachedJson('mf_sel_sig2_' + sellerId + '_' + sig.id, found);
     state.signalSets[sig.id] = new Set(found.ids);
     state.signalSetsIncomplete[sig.id] = !!found.incomplete;
     renderCurrentRows(); // enriquece a página assim que cada sinal fica pronto
@@ -522,14 +525,14 @@ async function loadSignalSets(sellerId, counts) {
    ========================================================================= */
 async function loadQuestions(sellerId) {
   if (!CONFIG.SHOW_QUESTIONS) return;   // PORT F4: sem rota no proxy ainda
-  const cached = getCachedJson('mf_sel_questions');
+  const cached = getCachedJson('mf_sel_questions_' + sellerId);
   if (cached) { state.questionsMap = cached; renderCurrentRows(); return; }
   try {
     const resp = await mlGet(`questions/search?seller_id=${sellerId}&status=UNANSWERED&limit=50`);
     const map = {};
     (resp.questions || []).forEach((qq) => { if (qq && qq.item_id) map[qq.item_id] = (map[qq.item_id] || 0) + 1; });
     state.questionsMap = map;
-    setCachedJson('mf_sel_questions', map);
+    setCachedJson('mf_sel_questions_' + sellerId, map);
     renderCurrentRows();
   } catch (e) { /* 403/erro (ex.: whitelist antiga do serve.js) -> segue sem badges de pergunta */ }
 }
@@ -543,7 +546,7 @@ async function loadQuestions(sellerId) {
    ========================================================================= */
 async function loadSales30(sellerId) {
   if (!CONFIG.SHOW_SALES30) return;   // PORT F4: sem rota no proxy ainda
-  const cached = getCachedJson('mf_sel_sales30');
+  const cached = getCachedJson('mf_sel_sales30_' + sellerId);
   if (cached) { state.sales30Map = cached.map; state.sales30Incomplete = !!cached.incomplete; renderCurrentRows(); return; }
   try {
     const from = new Date(Date.now() - CONFIG.SALES_WINDOW_DAYS * 864e5).toISOString();
@@ -561,7 +564,7 @@ async function loadSales30(sellerId) {
     const incomplete = total > offset && offset >= CONFIG.SALES30_MAX_PAGES * 50;
     state.sales30Map = map;
     state.sales30Incomplete = incomplete;
-    setCachedJson('mf_sel_sales30', { map, incomplete });
+    setCachedJson('mf_sel_sales30_' + sellerId, { map, incomplete });
     renderCurrentRows();
   } catch (e) { /* sem escopo de pedidos / erro -> segue sem conversão; previsão cai no ritmo desde a criação */ }
 }

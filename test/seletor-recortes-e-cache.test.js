@@ -130,6 +130,29 @@ console.log('\n== 2. cache de uma conta não pode aparecer na outra ==');
   I.state.sellerId = 'BBB';
   const kB = typeof I.scanKey === 'function' ? String(I.scanKey()) : '';
   check('a chave da varredura também separa vendedores', kA !== kB, `${kA} × ${kB}`);
+
+  // ⚠️ Varredura da CLASSE inteira, não das três chaves que a revisão citou. A primeira
+  // leva corrigiu moderação, promoções e ficha; sobraram counts, sinais, perguntas e
+  // vendas-30d — todas guardando dado DA CONTA numa gaveta compartilhada. Este check falha
+  // sozinho quando alguém criar a oitava.
+  const CHAVES_NAO_SAO_DE_CONTA = [
+    'mf_sel_attrs_',   // atributos são da CATEGORIA da ML, iguais para qualquer vendedor
+  ];
+  const literais = [];
+  // A aspa tem de ser seguida de `,` ou `)` — com `+` depois, a chave está sendo
+  // concatenada com o vendedor, que é justamente o certo.
+  const re = /(?:get|set)CachedJson\(\s*'(mf_sel_[a-z0-9_]*)'\s*[,)]/g;
+  let m;
+  while ((m = re.exec(fonte)) !== null) {
+    if (!CHAVES_NAO_SAO_DE_CONTA.some((p) => m[1].startsWith(p))) literais.push(m[1]);
+  }
+  check('nenhuma chave de dado-da-conta é literal fixa', literais.length === 0,
+    [...new Set(literais)].join(', '));
+
+  // E a constante que serve de chave também precisa do vendedor na hora de usar.
+  const usaCountsKey = /COUNTS_CACHE_KEY\s*\+\s*[^;]*sellerId|sellerId[^;]*COUNTS_CACHE_KEY/.test(fonte);
+  check('a chave de contagens leva o vendedor', usaCountsKey,
+    (fonte.match(/CachedJson\([^)]*COUNTS_CACHE_KEY[^)]*\)/g) || []).slice(0, 2).join(' | '));
 }
 
 // A partir daqui é assíncrono: `exportAllCsv` é async e `exportCsv` a dispara sem await,
