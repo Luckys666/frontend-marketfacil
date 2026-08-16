@@ -2470,7 +2470,7 @@ function exportCsv() {
   // caso em que a lista não representa o recorte. Planilha errada é pior que planilha
   // nenhuma: ela vira decisão de preço e de estoque.
   if (quickFilterAtivo() && !(state.scan && state.scan.chave === scanKey())) {
-    setBanner('warn', 'A busca deste recorte não terminou por completo, então a planilha sairia sem parte dos anúncios. Clique no filtro de novo e tente em seguida.');
+    setBanner('warn', 'A busca deste recorte não terminou por completo, então a planilha sairia sem parte dos anúncios. Use o botão Atualizar e tente de novo em seguida.');
     return;
   }
   if (quickFilterAtivo() && state.scan && state.scan.chave === scanKey()) {
@@ -2640,6 +2640,12 @@ function refreshCounts() {
   // loadSalesRanking devolve state.ranking antes de olhar o cache — o "Atualizar" nunca
   // conseguia refazer a ordenação e a lista ficava presa no ranking da primeira carga.
   state.ranking = null; state.rankingInfo = null; state.rankingChave = null;
+  // A degradacao sai junto: `ordemDegradada` e o que impede a recursao, mas se ficasse de
+  // pe aqui o botao "Atualizar" nao teria efeito nenhum sobre a ordem — e o banner manda
+  // justamente clicar nele. Um 500 passageiro no boot prenderia a visao padrao na ordem da
+  // ML pela sessao inteira. Sem risco de laco: a degradacao e reescrita antes do
+  // `return loadPage()` quando a rota falha de novo.
+  state.ordemDegradada = null;
   state.moderationMap = {}; state.fichaMap = {}; state.promoMap = {};
   invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);

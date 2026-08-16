@@ -131,6 +131,16 @@ console.log('\n# 3. Desligar a única série disponível não quebra o gráfico'
   const vb = (depois.match(/viewBox="([^"]*)"/) || [])[1] || '';
   const alturaNegativa = /-\d/.test(vb);
   check('nunca sai viewBox com altura negativa', !alturaNegativa, `viewBox="${vb}"`);
+
+  // ⚠️ 2ª rodada: desenhar o painel não basta. O fallback reexibia a série mas deixava a
+  // chave em MF_visOcultas, então a LEGENDA continuava dizendo "desligado"
+  // (aria-pressed=false, "Mostrar Visitas") e o tooltip pulava a série — hover mostrava só
+  // a data, sem valor nenhum. Tela contando duas histórias sobre o mesmo painel.
+  check('a legenda concorda com o painel desenhado',
+    !visOcultas.has('visitas'), [...visOcultas].join(','));
+  check('e o botão não fica marcado como desligado',
+    !/aria-pressed="false"[^>]*>\s*Visitas|title="Mostrar Visitas"/.test(depois),
+    (depois.match(/title="[^"]*Visitas"/g) || []).join(' '));
   visOcultas.clear();
 }
 
@@ -151,6 +161,78 @@ console.log('\n# 4. Erro depois de sucesso não sai pintado de aviso');
     caixa.className);
   check('e continua com a classe de erro', /mf-conteudo-erro/.test(caixa.className), caixa.className);
   check('o texto é o do erro', /erro 500/.test(caixa.textContent), caixa.textContent);
+}
+
+// =========================================================================================
+console.log('\n# 5. Dentro do MESMO card, uma régua só (2ª rodada da revisão)');
+{
+  // A 1ª rodada converteu `somaJanela` e o recorte de `pontos` e DEIXOU `inWindow` na conta
+  // antiga — dentro da mesma função. Resultado: `total30`, que decide se o gráfico aparece
+  // e se sai o selo "⚠️ Poucos dados", discordava da tabela logo acima dele.
+  // Corrigir pela metade duas vezes seguidas foi o que motivou este bloco.
+  const diaISO = (n) => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n);
+    return d.toISOString().substring(0, 10);
+  };
+  const somaDaLinha = (texto, rotulo) => {
+    const m = texto.match(new RegExp(rotulo + '\\s+(\\d+)'));
+    return m ? Number(m[1]) : null;
+  };
+
+  // (a) visitas SÓ hoje: hoje está fora da janela por desenho (dado ainda propagando).
+  {
+    const h = carregar();
+    h.sandbox.currentAnalysisState = { visitsData: { results: [{ date: diaISO(0), total: 40 }] } };
+    h.get('exibirTendenciaVisitas')({ results: [{ date: diaISO(0), total: 40 }] }, 'so-hoje', null);
+    const t = h.reg['so-hoje'].textContent.replace(/\s+/g, ' ');
+    const trinta = somaDaLinha(t, '30 dias');
+    const poucos = /Poucos dados/i.test(t);
+    check('visitas só de hoje: a tabela diz 0 e o selo concorda',
+      trinta === 0 && poucos, `30 dias=${trinta} | poucos=${poucos}`);
+  }
+
+  // (b) visitas SÓ no dia 30: dentro da janela, então NÃO é "poucos dados".
+  {
+    const serie = [{ date: diaISO(30), total: 40 }];
+    const h = carregar();
+    h.sandbox.currentAnalysisState = { visitsData: { results: serie } };
+    h.get('exibirTendenciaVisitas')({ results: serie }, 'dia-30', null);
+    const t = h.reg['dia-30'].textContent.replace(/\s+/g, ' ');
+    const trinta = somaDaLinha(t, '30 dias');
+    const poucos = /Poucos dados/i.test(t);
+    check('visitas do dia 30: tabela e selo não se contradizem',
+      (trinta === 40 && !poucos) || (trinta === 0 && poucos), `30 dias=${trinta} | poucos=${poucos}`);
+  }
+
+  // (c) série PERFEITAMENTE plana não pode render selo de crescimento.
+  // 📏 O fixture reproduz a resposta REAL da ML, medida em 16/08/2026: `last=60` devolve as
+  // idades 1..60 — hoje não vem. Com isso as janelas 1..30 e 31..60 são simétricas.
+  {
+    const serie = [];
+    for (let i = 1; i <= 60; i++) serie.push({ date: diaISO(i), total: 10 });
+    const h = carregar();
+    h.sandbox.currentAnalysisState = { visitsData: { results: serie } };
+    h.get('exibirTendenciaVisitas')({ results: serie }, 'plano', null);
+    const t = h.reg['plano'].textContent.replace(/\s+/g, ' ');
+    const variacao = (t.match(/[+-]\d+%/g) || []);
+    check('série plana não inventa crescimento', variacao.length === 0, variacao.join(' '));
+  }
+
+  // (d) série CURTA (anúncio novo): a janela anterior nem existe, então não há o que
+  // comparar. Sem a guarda de cobertura, a tela compara 30 dias com um punhado e cospe um
+  // selo de crescimento que só fala do denominador.
+  {
+    const serie = [];
+    for (let i = 1; i <= 35; i++) serie.push({ date: diaISO(i), total: 10 });
+    const h = carregar();
+    h.sandbox.currentAnalysisState = { visitsData: { results: serie } };
+    h.get('exibirTendenciaVisitas')({ results: serie }, 'curto', null);
+    const t = h.reg['curto'].textContent.replace(/\s+/g, ' ');
+    const trinta = somaDaLinha(t, '30 dias');
+    const variacao = (t.match(/[+-]\d+%/g) || []);
+    check('anúncio novo mostra o total mas não compara com o que não existe',
+      trinta === 300 && variacao.length === 0, `30 dias=${trinta} | selos=${variacao.join(' ')}`);
+  }
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);

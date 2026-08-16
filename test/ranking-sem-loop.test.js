@@ -58,7 +58,7 @@ const TETO = 40;
 
 function carregar(fetchImpl) {
   const patched = src.replace(/\nboot\(\);\n/, `
-window.__internos = { state, CONFIG, loadPage, loadSalesRanking, filtroForaDoRanking,
+window.__internos = { state, CONFIG, loadPage, loadSalesRanking, filtroForaDoRanking, refreshCounts,
   ORDER_MAIS_VENDIDOS, ORDER_FALLBACK };
 `);
   const box = {
@@ -174,6 +174,43 @@ const tokenOk = { ok: true, status: 200, json: async () => ({ response: { access
     await I.loadPage();
     check('a rota quebrada não é reconsultada a cada página',
       chamadasRanking === depoisDaPrimeira, `1ª: ${depoisDaPrimeira} | depois de 3 páginas: ${chamadasRanking}`);
+  }
+
+  // ── "Atualizar" tem que conseguir reabilitar a ordem ──────────────────────
+  console.log('\n== o botão "Atualizar" desfaz a degradação (senão o banner mente) ==');
+  {
+    // A guarda `!ordemDegradada` que mata o laço criou esta armadilha: `refreshCounts()`
+    // limpa `state.ranking` e `rankingChave` EXATAMENTE para permitir refazer a ordenação,
+    // mas não limpava a degradação — então um 500 passageiro no boot degradava a visão
+    // padrão para a sessão inteira, com o banner mandando "tente de novo" e o botão sem
+    // efeito nenhum.
+    let falhar = true, chamadasRanking = 0;
+    const I = carregar(async (url) => {
+      const u = String(url);
+      if (u.includes('getAccessToken2')) return tokenOk;
+      if (u.includes('/api/sales-ranking')) {
+        chamadasRanking++;
+        if (chamadasRanking > TETO) throw new Error('LAÇO: ranking ' + chamadasRanking + 'x');
+        if (falhar) return { ok: false, status: 500, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => ({ complete: true, ranking: [{ item_id: 'MLB1', sold: 9 }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ results: [], paging: { total: 0 } }) };
+    });
+    I.state.sellerId = '1267924722';
+
+    await I.loadPage();
+    check('degradou com a rota em 500', !!I.state.ordemDegradada, String(I.state.ordemDegradada));
+
+    // Servidor voltou; o vendedor clica em "Atualizar". O handler real (wireControls) faz
+    // as DUAS coisas — `refreshCounts()` e `loadPage()` —, então o teste tem de fazer o
+    // mesmo: medir só a primeira diria que a ordenação não voltou, o que é falso.
+    falhar = false;
+    const antes = chamadasRanking;
+    await I.refreshCounts();
+    check('"Atualizar" limpa a degradação', !I.state.ordemDegradada, String(I.state.ordemDegradada));
+    await I.loadPage();
+    check('e a ordenação é tentada de novo', chamadasRanking > antes, `${antes} → ${chamadasRanking}`);
+    check('sem virar laço quando volta a funcionar', chamadasRanking <= antes + 2, String(chamadasRanking));
   }
 
   console.log(`\n${pass} passaram, ${fail} falharam`);

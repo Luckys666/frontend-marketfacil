@@ -5097,10 +5097,17 @@ async function fetchVisits(itemId, accessToken) {
             console.warn('Falha no Core, tentando rota direta...', e);
         }
     }
-    // 60 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
+    // 61 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
     // com uma janela de 30 esse período anterior vinha vazio — ou a variação sumia, ou
     // saía um "+5840%" que só dizia que o denominador era zero. Mesma chamada, só o
     // parâmetro muda. O gráfico continua desenhando os últimos 30.
+    // 📏 MEDIDO em 16/08/2026 (MLB3264800533, conta real): `last=60` devolve as idades
+    // 1..60 — a ML JÁ NÃO inclui hoje na resposta. Então as janelas de 30 dias saem
+    // simétricas de graça: a atual são as idades 1..30 e a anterior 31..60.
+    // Cheguei a subir para 61 supondo que a resposta viesse 0..59; a medição desmentiu, e
+    // um dia a mais só traria dado que nenhuma janela usa. Quem protege o caso em que a
+    // série NÃO alcança os 60 dias (anúncio novo) é a guarda de cobertura em `variacaoHtml`,
+    // que esconde o selo de variação em vez de comparar períodos de tamanhos diferentes.
     return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=60&unit=day`, accessToken);
 }
 
@@ -6007,12 +6014,15 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // Filtra por data real (ML retorna só dias com visita — slice por posição daria leitura errada)
     const _now = new Date();
     const _msDay = 86400000;
+    // ⚠️ MESMA régua de `somaJanela` e `MF_visitasDosUltimos`: dias civis, hoje de fora.
+    // A 1ª rodada da revisão converteu as outras duas e DEIXOU esta na conta antiga —
+    // dentro da mesma função. `total30` (que decide se o gráfico aparece e se sai o selo
+    // "Poucos dados") passou a discordar da tabela logo acima: anúncio com visitas só HOJE
+    // mostrava "30 dias 0" sem o selo, e anúncio com visitas só no dia 30 mostrava
+    // "30 dias 40" COM o selo. A janela (ini, fim) são as idades ini+1..fim.
     const inWindow = (item, daysAgoStart, daysAgoEnd) => {
-        if (!item.date) return false;
-        const t = new Date(item.date).getTime();
-        if (isNaN(t)) return false;
-        const ageDays = (_now.getTime() - t) / _msDay;
-        return ageDays >= daysAgoStart && ageDays < daysAgoEnd;
+        const idade = MF_idadeEmDias(item && item.date);
+        return idade !== null && idade >= daysAgoStart + 1 && idade <= daysAgoEnd;
     };
     const filterWindow = (start, end) => results.filter(r => inWindow(r, start, end));
 
@@ -6073,7 +6083,14 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // "visitas" num anúncio com Product Ads (sobram duas, permitido) e abrir em seguida um
     // anúncio SEM Ads chega neste ponto com nenhuma série ativa, sem clique nenhum no meio.
     // Nesse caso a escolha antiga simplesmente não se aplica: mostra o que existe.
-    if (!seriesAtivas.length) seriesAtivas = seriesDisponiveis;
+    // ⚠️ E ESQUECE a escolha para estas séries. Só reexibir o painel deixava a chave em
+    // MF_visOcultas, então a legenda seguia marcada como desligada ("Mostrar Visitas",
+    // aria-pressed=false) e o tooltip pulava a série — o vendedor via o gráfico desenhado,
+    // o botão dizendo que está oculto, e o hover sem valor nenhum. Uma tela, três versões.
+    if (!seriesAtivas.length) {
+        seriesDisponiveis.forEach((s) => MF_visOcultas.delete(s.chave));
+        seriesAtivas = seriesDisponiveis;
+    }
 
     let svgChart = '';
     if (pontos.length > 0 && total30 > 0) {
@@ -6170,7 +6187,18 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // empurrava o valor e cada linha começava num lugar diferente — a tabela parecia solta.
     // Com coluna separada, os números alinham à direita entre si e os selos começam todos
     // na mesma posição, mesmo quando uma linha não tem variação.
-    const variacaoHtml = (atual, anterior) => {
+    // Até onde a série realmente alcança. A API OMITE dia sem visita, então contar entradas
+    // não serve — o que vale é a idade do registro mais antigo.
+    const _coberturaDias = pontosTodos.reduce((max, p) => {
+        const idade = MF_idadeEmDias(p.dia);
+        return (idade !== null && idade > max) ? idade : max;
+    }, 0);
+    const variacaoHtml = (atual, anterior, fimAnterior) => {
+        // ⚠️ Sem dado que cubra a janela ANTERIOR inteira, a comparação é entre períodos de
+        // tamanhos diferentes e o selo mente. Um anúncio perfeitamente plano rendia "+3%"
+        // só porque a janela anterior tinha 29 dias contra os 30 da atual — e o vendedor não
+        // tem como saber disso olhando a tela. Sem base para comparar, não se compara.
+        if (typeof fimAnterior === 'number' && _coberturaDias < fimAnterior) return '';
         if (typeof atual !== 'number' || typeof anterior !== 'number' || anterior === 0) return '';
         const pct = ((atual - anterior) / anterior) * 100;
         if (Math.abs(pct) < 1) return '';
@@ -6192,7 +6220,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
                 return `<span class="text-small" style="color:var(--text-muted); white-space:nowrap;">${j.rotulo}</span>`
                     + seriesAtivas.map((s) => `
                         <span style="font-family:var(--font-mono,'DM Mono',monospace); font-weight:600; font-size:0.9rem; color:var(--text); text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}</span>
-                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
+                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave], j.fimAnt)}</span>`).join('');
             }).join('')}
         </div>`;
 
