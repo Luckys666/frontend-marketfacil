@@ -711,34 +711,41 @@ function MF_saveSnap(itemId, snap) {
  * pede a série inteira; quem fala em 30 passa por aqui.
  */
 /**
- * ⚠️ A janela é contada em DIAS CIVIS, não em milissegundos desde agora.
+ * Idade de uma data em DIAS CIVIS: hoje é 0, ontem é 1. `null` se a data não presta.
  *
- * A versão anterior comparava `Date.now()` com a data ancorada em T12:00, então o dia mais
- * antigo da janela ENTRAVA antes do meio-dia e SAÍA depois: o mesmo anúncio, com os mesmos
- * dados, mostrava 300 visitas de manhã e 290 à tarde (medido em 16/08/2026 — era isso que
- * fazia `janela-canais.test.js` falhar só no período da tarde). Visita da ML é dado diário;
- * a janela que fala em "30 dias" tem de virar à meia-noite, junto com o dado.
+ * ⚠️ Esta é a ÚNICA régua de janela do arquivo, e é única de propósito. A conta antiga era
+ * `(Date.now() - dia@12:00) / 86400000`, que mede milissegundos desde agora: o dia mais
+ * antigo da janela ENTRAVA antes do meio-dia e SAÍA depois dele. O mesmo anúncio mostrava
+ * 300 visitas de manhã e 290 à tarde (16/08/2026). Pior: quando só metade dos consumidores
+ * foi corrigida, a tabela de "30 dias" passou a discordar do "30 dias" que alimenta score,
+ * oportunidades e snapshot — duas verdades sobre o mesmo anúncio na mesma tela.
  *
+ * Visita da ML é dado DIÁRIO; a janela tem de virar à meia-noite, junto com o dado.
  * `agora` é injetável só pra que isso seja testável sem mexer no relógio da máquina.
+ */
+function MF_idadeEmDias(iso, agora) {
+    const texto = String(iso || '').slice(0, 10);
+    if (!texto) return null;
+    const d = new Date(texto + 'T00:00:00');
+    const t = d.getTime();
+    if (isNaN(t)) return null;
+    const hoje = new Date(typeof agora === 'number' ? agora : Date.now());
+    hoje.setHours(0, 0, 0, 0);
+    return Math.round((hoje.getTime() - t) / 86400000);
+}
+
+/**
+ * Recorta a série nos `dias` dias civis COMPLETOS — de ontem pra trás.
+ *
+ * Hoje fica de fora de propósito: a visita do dia ainda está propagando e entraria como um
+ * dia curto, puxando a média pra baixo (mesma razão da guarda de 12/08 em MF_seriesDiarias).
+ * Dia futuro (fuso do vendedor à frente do dado) também não entra.
  */
 function MF_visitasDosUltimos(results, dias = 30, agora) {
     if (!Array.isArray(results)) return [];
-    const hoje = new Date(typeof agora === 'number' ? agora : Date.now());
-    hoje.setHours(0, 0, 0, 0);
-    const hojeMs = hoje.getTime();
     return results.filter((v) => {
-        const iso = String(v && v.date || '').slice(0, 10);
-        if (!iso) return false;
-        const d = new Date(iso + 'T00:00:00');
-        const t = d.getTime();
-        if (isNaN(t)) return false;
-        // Hoje é 0, ontem é 1. A janela são os `dias` dias civis COMPLETOS — de ontem pra
-        // trás —, que é o que dá 30 dias de dado sob o rótulo "30 dias".
-        // Hoje fica de fora de propósito: a visita do dia ainda está propagando e entraria
-        // como um dia curto, puxando a média pra baixo (mesma razão da guarda de 12/08 em
-        // MF_seriesDiarias). Dia futuro (fuso do vendedor à frente do dado) também não entra.
-        const diffDias = Math.round((hojeMs - t) / 86400000);
-        return diffDias >= 1 && diffDias <= dias;
+        const idade = MF_idadeEmDias(v && v.date, agora);
+        return idade !== null && idade >= 1 && idade <= dias;
     });
 }
 
@@ -3640,6 +3647,10 @@ function MF_erroAtalho(chave, msg) {
     if (!el) return;
     el.style.display = 'block';
     el.textContent = msg;
+    // A caixa é a MESMA do aviso de sucesso, que a pinta de azul (`mf-conteudo-info`).
+    // Sem devolver a classe aqui, um erro logo depois de um sucesso saía com cara de
+    // recado neutro — "Não deu para gravar (erro 500)" em azul de informação.
+    el.className = 'mf-conteudo-erro';
 }
 
 /**
@@ -6045,15 +6056,24 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // A série vem com 60 dias (para o resumo comparar 30 × 30 anteriores); o gráfico
     // desenha os últimos 30, que é o período que o card anuncia.
     const pontosTodos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
+    // Mesma régua de MF_visitasDosUltimos (dias civis, hoje fora): o gráfico e o resumo
+    // não podem contar "30 dias" diferente do score e das oportunidades.
     const pontos = pontosTodos.filter((p) => {
-        const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
-        return idade < 30;
+        const idade = MF_idadeEmDias(p.dia);
+        return idade !== null && idade >= 1 && idade <= 30;
     });
     const temVendas = pontos.some((p) => typeof p.vendas === 'number');
     // Disponíveis = o que a conta permite mostrar (sem Ads não há vendas nem conversão).
     // Ativas = as disponíveis que o vendedor não desligou.
     const seriesDisponiveis = MF_SERIES_VISITAS.filter((s) => s.chave === 'visitas' || temVendas);
-    const seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
+    let seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
+    // ⚠️ Zero painéis daria `H = 0*(46+12) + (0-1)*14 = -14` — viewBox de altura NEGATIVA e
+    // gráfico em branco. O handler do clique impede desligar a última, mas ele não é o único
+    // caminho até aqui: `MF_visOcultas` é de módulo e SOBREVIVE à troca de anúncio. Desligar
+    // "visitas" num anúncio com Product Ads (sobram duas, permitido) e abrir em seguida um
+    // anúncio SEM Ads chega neste ponto com nenhuma série ativa, sem clique nenhum no meio.
+    // Nesse caso a escolha antiga simplesmente não se aplica: mostra o que existe.
+    if (!seriesAtivas.length) seriesAtivas = seriesDisponiveis;
 
     let svgChart = '';
     if (pontos.length > 0 && total30 > 0) {
@@ -6125,9 +6145,11 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     const somaJanela = (ini, fim) => {
         // Usa a série COMPLETA (60d): a janela anterior de "30 dias" mora fora dos 30 do
         // gráfico. Sem isso a comparação não existe.
+        // Dias civis, hoje fora: a janela "7 dias" são os dias 1..7, e a anterior 8..14.
+        // Mesma régua de MF_visitasDosUltimos — ver MF_idadeEmDias.
         const dentro = pontosTodos.filter((p) => {
-            const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
-            return idade >= ini && idade < fim;
+            const idade = MF_idadeEmDias(p.dia);
+            return idade !== null && idade >= ini + 1 && idade <= fim;
         });
         const v = dentro.reduce((s, p) => s + (typeof p.visitas === 'number' ? p.visitas : 0), 0);
         const ven = dentro.reduce((s, p) => s + (typeof p.vendas === 'number' ? p.vendas : 0), 0);
@@ -6310,7 +6332,6 @@ function MF_ativarGraficoVisitas(raiz) {
     const vb = (svg.getAttribute('viewBox') || '0 0 300 100').split(/\s+/).map(Number);
     const W = vb[2] || 300, PAD_E = 4, PAD_D = 4;
     const larg = W - PAD_E - PAD_D;
-    const escondidas = new Set();
 
     const fmtDia = (iso) => {
         const p = String(iso).split('-');
@@ -6340,7 +6361,10 @@ function MF_ativarGraficoVisitas(raiz) {
         cab.textContent = fmtDia(p.dia);
         tip.appendChild(cab);
         for (const s of MF_SERIES_VISITAS) {
-            if (escondidas.has(s.chave)) continue;
+            // MF_visOcultas é o estado REAL do que o vendedor desligou. Antes havia um Set
+            // local sempre vazio aqui: o painel sumia da tela e o tooltip seguia listando
+            // a série, dia a dia.
+            if (MF_visOcultas.has(s.chave)) continue;
             if (!(s.chave in p)) continue;
             const linha = document.createElement('div');
             linha.style.cssText = 'display:flex; align-items:center; gap:6px;';
@@ -6384,7 +6408,12 @@ function MF_ativarGraficoVisitas(raiz) {
             // sobraram, que voltam a dividir a altura entre si.
             if (MF_visOcultas.has(chave)) MF_visOcultas.delete(chave); else MF_visOcultas.add(chave);
             // Nunca deixar o card sem nenhum painel: o último aceso não desliga.
-            if (MF_visOcultas.size >= MF_SERIES_VISITAS.length) { MF_visOcultas.delete(chave); return; }
+            // ⚠️ Conta as DISPONÍVEIS, não as três: anúncio sem Product Ads só tem
+            // "visitas", e comparar com 3 deixava a única série ser desligada — aí o
+            // redesenho fazia H = 0*(46+12) + (0-1)*14 = -14 e saía um viewBox de altura
+            // NEGATIVA, com o gráfico em branco.
+            const disponiveis = raiz.querySelectorAll('.mf-vis-toggle').length || MF_SERIES_VISITAS.length;
+            if (MF_visOcultas.size >= disponiveis) { MF_visOcultas.delete(chave); return; }
             if (typeof window.MF_redesenhaVisitas === 'function') window.MF_redesenhaVisitas();
         });
     });

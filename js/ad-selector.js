@@ -693,7 +693,7 @@ async function loadVisitsForPage(ids) {
    ========================================================================= */
 async function loadModerations(sellerId) {
   if (!CONFIG.SHOW_MODERATION || !sellerId) return;
-  const cached = getCachedJson('mf_sel_moderation');
+  const cached = getCachedJson('mf_sel_moderation_' + sellerId);
   if (cached && cached.map) { state.moderationMap = cached.map; renderCurrentRows(); return; }
   try {
     const lista = await proxyGet(`/api/moderations/items?seller_id=${encodeURIComponent(sellerId)}&limit=50`);
@@ -716,7 +716,7 @@ async function loadModerations(sellerId) {
     // IDs sem detalhe buscado (acima do teto) continuam marcados como moderados
     ids.slice(CONFIG.MODERATION_DETAIL_CAP).forEach((id) => { if (!map[id]) map[id] = { reason: '', remedy: '' }; });
     state.moderationMap = map;
-    setCachedJson('mf_sel_moderation', { map: map });
+    setCachedJson('mf_sel_moderation_' + sellerId, { map: map });
     renderCurrentRows();
   } catch (e) { /* sem moderação disponível: o painel segue sem esse sinal */ }
 }
@@ -730,7 +730,7 @@ async function loadModerations(sellerId) {
    ========================================================================= */
 async function loadPromocoes(sellerId) {
   if (!CONFIG.SHOW_PROMOCOES || !sellerId) return;
-  const cached = getCachedJson('mf_sel_promo');
+  const cached = getCachedJson('mf_sel_promo_' + sellerId);
   if (cached && cached.map) { state.promoMap = cached.map; renderCurrentRows(); return; }
   try {
     const d = await proxyGet(`/api/discounted-items?seller_id=${encodeURIComponent(sellerId)}`);
@@ -738,7 +738,7 @@ async function loadPromocoes(sellerId) {
     (d && Array.isArray(d.items) ? d.items : []).forEach((i) => { if (i && i.id) map[i.id] = i; });
     state.promoMap = map;
     state.promoTruncado = !!(d && d.truncated);
-    setCachedJson('mf_sel_promo', { map: map });
+    setCachedJson('mf_sel_promo_' + sellerId, { map: map });
     renderCurrentRows();
   } catch (e) { /* sem promoções disponíveis: o painel segue com o preço do item */ }
 }
@@ -753,7 +753,7 @@ async function loadPromocoes(sellerId) {
    ========================================================================= */
 async function loadFichaTecnica(sellerId) {
   if (!CONFIG.SHOW_FICHA || !sellerId) return;
-  const cached = getCachedJson('mf_sel_ficha');
+  const cached = getCachedJson('mf_sel_ficha_' + sellerId);
   if (cached && cached.map) { state.fichaMap = cached.map; renderCurrentRows(); return; }
   try {
     const d = await proxyGet(`/api/catalog-quality?seller_id=${encodeURIComponent(sellerId)}&include_items=true`);
@@ -771,7 +771,7 @@ async function loadFichaTecnica(sellerId) {
       });
     });
     state.fichaMap = map;
-    setCachedJson('mf_sel_ficha', { map: map });
+    setCachedJson('mf_sel_ficha_' + sellerId, { map: map });
     renderCurrentRows();
     loadAttrNames();   // traduz os códigos da página atual
   } catch (e) { /* sem detalhe de ficha: o sinal antigo (tag) continua valendo */ }
@@ -968,13 +968,22 @@ function quickFilterAtivo() { return !!(state.discountOnly || state.freeShipUnde
 // "Com desconto", com busca ou com um chip (que também usa labels=) a conta não fecha,
 // e aí a varredura completa assume.
 function podeFiltrarFreteNoServidor() {
-  return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search);
+  // ⚠️ `listingType`/`logisticType` entram aqui porque a URL montada por
+  // `buscaFreteAbaixoDoPiso` não os carrega: sem esta guarda o vendedor filtrava
+  // "Clássico", recebia anúncios de todo tipo e o select continuava mostrando a escolha.
+  // Mesma régua de `filtroForaDoRanking()`, que já tratava os dois como filtros que o
+  // caminho do servidor não conhece.
+  return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search
+    && !state.listingType && !state.logisticType);
 }
 // "Com desconto" também sai pronto da ML — pela Central de Promoções, não pela busca
 // de itens (que não filtra desconto). A rota devolve os anúncios em campanha com o
 // preço promocional; aqui basta hidratar esses ids e aplicar o status escolhido.
 function podeFiltrarDescontoNoServidor() {
-  return !!(state.discountOnly && !state.freeShipUnder && !state.activeChip && !state.search);
+  // Idem: a Central de Promoções devolve ids e o hidratador só reaplica o STATUS —
+  // Tipo e Logística sumiriam em silêncio. Ver podeFiltrarFreteNoServidor.
+  return !!(state.discountOnly && !state.freeShipUnder && !state.activeChip && !state.search
+    && !state.listingType && !state.logisticType);
 }
 async function buscaAnunciosComDesconto(atual) {
   const vivo = () => (typeof atual === 'function' ? atual() : true);
@@ -985,7 +994,7 @@ async function buscaAnunciosComDesconto(atual) {
   const mapa = {};
   promos.forEach((i) => { mapa[i.id] = i; });
   state.promoMap = Object.assign({}, state.promoMap, mapa);
-  setCachedJson('mf_sel_promo', { map: state.promoMap });
+  setCachedJson('mf_sel_promo_' + state.sellerId, { map: state.promoMap });
 
   const ids = promos.map((i) => i.id).slice(0, CONFIG.OFFSET_CAP);
   const itens = [];
@@ -1027,7 +1036,10 @@ async function buscaFreteAbaixoDoPiso(atual) {
   return { itens: achados, varridos: vistos };
 }
 function scanKey() {
-  return JSON.stringify([state.status, state.search, state.searchParam, state.activeChip,
+  // O VENDEDOR entra na chave pelo mesmo motivo do cache do ranking: trocar de conta
+  // recarrega a página na mesma aba e o sessionStorage sobrevive. Sem ele, a varredura de
+  // uma conta seria dada como válida para a outra — os mesmos filtros, outra loja.
+  return JSON.stringify([state.sellerId, state.status, state.search, state.searchParam, state.activeChip,
     state.listingType, state.logisticType, state.discountOnly, state.freeShipUnder, MOCK]);
 }
 function passaNosRecortes(it) {
@@ -2069,7 +2081,14 @@ async function loadPage() {
     // paginada sobre ele. Chip, tipo e logística o ranking não conhece — com qualquer um
     // deles ligado a ordem sai da varredura local, que já aplica os filtros. Sem isso, os
     // filtros viravam no-ops silenciosos justamente na visão padrão.
-    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()) {
+    // ⚠️ `!state.ordemDegradada` é o que impede a RECURSÃO: os dois insucessos abaixo
+    // terminam em `return loadPage()`, e sem consultar a degradação a condição continuava
+    // verdadeira na volta — laço infinito. No caso do ranking vazio nem havia rede pra
+    // segurar o laço, porque `state.ranking = []` é truthy e o memo respondia na hora:
+    // a aba travava em "Carregando seus anúncios…" logo na tela inicial de quem ainda não
+    // vendeu. Com a rota em 404, o laço virava tempestade contra o proxy.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()
+        && !state.ordemDegradada) {
       let ranking;
       try {
         ranking = await loadSalesRanking();
@@ -2356,6 +2375,10 @@ function setBannerNextLoad(kind, msg) { state.pendingBanner = { kind: kind, msg:
    Controles de filtro
    ========================================================================= */
 function setStatusToggle(status) {
+  // A chave do ranking leva o STATUS, então trocar de status é uma pergunta nova: quem
+  // degradou por não ter venda entre os pausados pode ter campeões entre os ativos. Sem
+  // limpar aqui, a degradação valeria pro resto da sessão e a ordem padrão nunca voltaria.
+  if (state.status !== status) state.ordemDegradada = null;
   state.status = status;
   document.querySelectorAll('#statusGroup button').forEach((b) => {
     b.classList.toggle('on', b.getAttribute('data-status') === status);
@@ -2436,6 +2459,17 @@ function csvFromItems(items, filename) {
 function exportCsv() {
   // Recorte de conta inteira: a varredura já tem TODOS os anúncios que batem —
   // a planilha sai completa, sem chamada nova (antes saía só o pedaço da página).
+  // ⚠️ Recorte ativo SEM varredura confiável não pode cair no `exportAllCsv()` lá embaixo:
+  // ele pagina `buildListUrl()`, que não conhece `discountOnly`/`freeShipUnder`, e o
+  // vendedor baixaria os primeiros N anúncios da CONTA INTEIRA num arquivo rotulado como o
+  // recorte, com a faixa "Mostrando só: Com desconto" ainda na tela. `scanAccount` grava
+  // `chave: null` de propósito quando alguma parte da varredura falhou — é justamente o
+  // caso em que a lista não representa o recorte. Planilha errada é pior que planilha
+  // nenhuma: ela vira decisão de preço e de estoque.
+  if (quickFilterAtivo() && !(state.scan && state.scan.chave === scanKey())) {
+    setBanner('warn', 'A busca deste recorte não terminou por completo, então a planilha sairia sem parte dos anúncios. Clique no filtro de novo e tente em seguida.');
+    return;
+  }
   if (quickFilterAtivo() && state.scan && state.scan.chave === scanKey()) {
     const items = state.scan.itens;
     if (!items.length) { setBanner('info', 'Não há anúncios nesse recorte para colocar na planilha.'); return; }
@@ -2679,12 +2713,19 @@ function wireControls() {
   });
   // busca (Enter ou clique na lupa): link/ID colado -> análise direta; texto livre -> filtra
   // lastSubmit: Enter num input type=search dispara keydown E o evento 'search' — sem
-  // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª)
+  // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª).
+  // ⚠️ O guard é por INSTANTE, não permanente: os dois eventos gêmeos chegam no mesmo
+  // milissegundo, mas a segunda tentativa do vendedor vem segundos depois. Comparando só o
+  // texto, uma busca que falhou (proxy fora do ar, 429) não podia ser repetida — a lupa e o
+  // Enter ficavam mudos até ele mudar alguma letra.
+  const JANELA_EVENTO_GEMEO_MS = 700;
   let lastSubmit = null;
+  let lastSubmitEm = 0;
   function submitSearch() {
     const v = $('#searchInput').value.trim();
-    if (v === lastSubmit) return;
+    if (v === lastSubmit && (Date.now() - lastSubmitEm) < JANELA_EVENTO_GEMEO_MS) return;
     lastSubmit = v;
+    lastSubmitEm = Date.now();
     const pid = parseItemId(v);
     // PORT F4: manda o texto ORIGINAL (rawInput) — link de catálogo/edição
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
@@ -2715,6 +2756,7 @@ function wireControls() {
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
+    state.ordemDegradada = null; // "Limpar filtros" é recomeço: a ordem padrão tenta de novo
     state.status = 'active'; state.order = ORDER_MAIS_VENDIDOS;
     state.search = ''; state.searchParam = null; resetSearchLadder();
     state.statusRestore = null; state.statusManual = false; state.activeChip = null; state.prevStatus = null;
