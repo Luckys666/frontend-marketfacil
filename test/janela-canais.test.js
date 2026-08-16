@@ -78,12 +78,12 @@ console.log('\n== a conta usa só os dias que os dois lados cobrem ==');
   check('Total: 300 visitas (não 600)', linhas['Total'] && linhas['Total'].visitas === '300', JSON.stringify(linhas['Total']));
   check('Orgânico: 150 visitas (não 450)', linhas['Orgânico'] && linhas['Orgânico'].visitas === '150', JSON.stringify(linhas['Orgânico']));
   // 30 vendas orgânicas ÷ 150 visitas orgânicas = 20,00%. Com os 60 dias inteiros dava 6,67%.
-  check('Orgânico: conversão 20.00%', linhas['Orgânico'] && linhas['Orgânico'].conversao === '20.00%', JSON.stringify(linhas['Orgânico']));
-  check('Ads: 150 visitas, 30 vendas, 20.00%',
-    linhas['Ads'] && linhas['Ads'].visitas === '150' && linhas['Ads'].vendas === '30' && linhas['Ads'].conversao === '20.00%',
+  check('Orgânico: conversão 20,00%', linhas['Orgânico'] && linhas['Orgânico'].conversao === '20,00%', JSON.stringify(linhas['Orgânico']));
+  check('Ads: 150 visitas, 30 vendas, 20,00%',
+    linhas['Ads'] && linhas['Ads'].visitas === '150' && linhas['Ads'].vendas === '30' && linhas['Ads'].conversao === '20,00%',
     JSON.stringify(linhas['Ads']));
-  check('Total: conversão 20.00% (60 vendas / 300 visitas)',
-    linhas['Total'] && linhas['Total'].conversao === '20.00%', JSON.stringify(linhas['Total']));
+  check('Total: conversão 20,00% (60 vendas / 300 visitas)',
+    linhas['Total'] && linhas['Total'].conversao === '20,00%', JSON.stringify(linhas['Total']));
   check('o rótulo anuncia 30 dias', /Convers[ãa]o por canal \(últimos 30 dias\)/.test(texto), texto.slice(0, 200));
 }
 
@@ -99,7 +99,7 @@ console.log('\n== período maior que o das visitas não zera o orgânico ==');
 
   // 60 dias × 10 = 600 visitas; 300 cliques; 300 orgânicas; 60 vendas orgânicas = 20%.
   check('Orgânico não virou zero', linhas['Orgânico'] && linhas['Orgânico'].visitas === '300', JSON.stringify(linhas['Orgânico']));
-  check('Orgânico: conversão 20.00%', linhas['Orgânico'] && linhas['Orgânico'].conversao === '20.00%', JSON.stringify(linhas['Orgânico']));
+  check('Orgânico: conversão 20,00%', linhas['Orgânico'] && linhas['Orgânico'].conversao === '20,00%', JSON.stringify(linhas['Orgânico']));
   check('Total: 600 visitas (os 60 dias que existem dos dois lados)',
     linhas['Total'] && linhas['Total'].visitas === '600', JSON.stringify(linhas['Total']));
   check('o rótulo diz 60 dias, que é o que a conta cobriu', /\(últimos 60 dias\)/.test(texto), texto.slice(0, 200));
@@ -115,8 +115,8 @@ console.log('\n== a barra de composição concorda com a tabela ==');
   const html = reg['adsComp'].innerHTML;
   const resumo = (html.match(/[\d.]+ ads \/ [\d.]+ total/g) || []).join(' ');
   // 150 cliques em 300 visitas = 50% Ads / 50% orgânico.
-  check('Ads 50.0% na barra', html.includes('Ads 50.0%'), (html.match(/Ads [\d.]+%/g) || []).join(' '));
-  check('Orgânico 50.0% na barra', html.includes('Orgânico 50.0%'), (html.match(/Orgânico [\d.]+%/g) || []).join(' '));
+  check('Ads 50,0% na barra', html.includes('Ads 50,0%'), (html.match(/Ads [\d.,]+%/g) || []).join(' '));
+  check('Orgânico 50,0% na barra', html.includes('Orgânico 50,0%'), (html.match(/Orgânico [\d.,]+%/g) || []).join(' '));
   check('a barra soma 300, não os 600 dos 60 dias', resumo.includes('150 ads / 300 total'), resumo);
 }
 
@@ -156,7 +156,7 @@ console.log('\n== card de oportunidades não conta 60 dias como 30 ==');
     check('diz "300 visitas em 30d"', cvr.detail.includes('300 visitas em 30d'), cvr.detail);
     // 60 vendas ÷ 300 visitas = 20%. Contra os 60 dias caía pra 10% e o card subia de
     // prioridade como se a conversão fosse ruim.
-    check('conversão 20.00% (não 10.00%)', cvr.detail.includes('20.00%'), cvr.detail);
+    check('conversão 20,00% (não 10,00%)', cvr.detail.includes('20,00%'), cvr.detail);
     check('prioridade não inflada por conversão falsa', cvr.priority === 3, String(cvr.priority));
   }
 

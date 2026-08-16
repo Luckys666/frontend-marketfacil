@@ -710,14 +710,35 @@ function MF_saveSnap(itemId, snap) {
  * "+R$ X/mês" e cortava a conversão pela metade (11/08/2026). Quem precisa dos 60 dias
  * pede a série inteira; quem fala em 30 passa por aqui.
  */
-function MF_visitasDosUltimos(results, dias = 30) {
+/**
+ * ⚠️ A janela é contada em DIAS CIVIS, não em milissegundos desde agora.
+ *
+ * A versão anterior comparava `Date.now()` com a data ancorada em T12:00, então o dia mais
+ * antigo da janela ENTRAVA antes do meio-dia e SAÍA depois: o mesmo anúncio, com os mesmos
+ * dados, mostrava 300 visitas de manhã e 290 à tarde (medido em 16/08/2026 — era isso que
+ * fazia `janela-canais.test.js` falhar só no período da tarde). Visita da ML é dado diário;
+ * a janela que fala em "30 dias" tem de virar à meia-noite, junto com o dado.
+ *
+ * `agora` é injetável só pra que isso seja testável sem mexer no relógio da máquina.
+ */
+function MF_visitasDosUltimos(results, dias = 30, agora) {
     if (!Array.isArray(results)) return [];
+    const hoje = new Date(typeof agora === 'number' ? agora : Date.now());
+    hoje.setHours(0, 0, 0, 0);
+    const hojeMs = hoje.getTime();
     return results.filter((v) => {
         const iso = String(v && v.date || '').slice(0, 10);
         if (!iso) return false;
-        const t = new Date(iso + 'T12:00:00').getTime();
+        const d = new Date(iso + 'T00:00:00');
+        const t = d.getTime();
         if (isNaN(t)) return false;
-        return (Date.now() - t) / 86400000 < dias;
+        // Hoje é 0, ontem é 1. A janela são os `dias` dias civis COMPLETOS — de ontem pra
+        // trás —, que é o que dá 30 dias de dado sob o rótulo "30 dias".
+        // Hoje fica de fora de propósito: a visita do dia ainda está propagando e entraria
+        // como um dia curto, puxando a média pra baixo (mesma razão da guarda de 12/08 em
+        // MF_seriesDiarias). Dia futuro (fuso do vendedor à frente do dado) também não entra.
+        const diffDias = Math.round((hojeMs - t) / 86400000);
+        return diffDias >= 1 && diffDias <= dias;
     });
 }
 
@@ -850,6 +871,56 @@ function MF_oppSaveOverride(itemId, kind, patch) {
     } catch (e) { /* localStorage cheio/bloqueado — silencioso */ }
 }
 
+/**
+ * Locale do site em uso, com o mesmo fallback que já estava copiado em 4 pontos do arquivo.
+ */
+function MF_localeDoSite(siteId) {
+    if (typeof window !== 'undefined' && window.MF_getSiteConfig) {
+        const site = siteId || (window.MF_currentSiteId ? window.MF_currentSiteId() : undefined);
+        const cfg = window.MF_getSiteConfig(site);
+        if (cfg && cfg.locale) return cfg.locale;
+    }
+    return 'pt-BR';
+}
+
+/**
+ * Percentual escrito na língua de quem lê.
+ *
+ * `toFixed()` devolve SEMPRE ponto decimal, então a tela mostrava "máx 0.0%" ao lado de
+ * "0,00%" — medido no DOM da version-test em 16/08/2026 (8 com ponto × 3 com vírgula).
+ * Em pt-BR o ponto é separador de MILHAR: "1.234,5%" e "1.234.5%" contam histórias
+ * diferentes. Sai do locale do site e não de uma constante, senão MCO/MLA/MLM nascem
+ * errados quando o i18n chegar.
+ *
+ * Valor que não é número devolve travessão, nunca "NaN%": número inventado é pior que
+ * lacuna assumida.
+ */
+function MF_formatPercent(valor, casas, siteId) {
+    if (valor === null || valor === undefined || valor === '') return '—';
+    const n = Number(valor);
+    if (!isFinite(n)) return '—';
+    const d = (typeof casas === 'number' && casas >= 0) ? Math.floor(casas) : 0;
+    try {
+        return n.toLocaleString(MF_localeDoSite(siteId), {
+            minimumFractionDigits: d, maximumFractionDigits: d,
+        }) + '%';
+    } catch (_) {
+        return n.toFixed(d) + '%';
+    }
+}
+
+/**
+ * Rótulo "máx N" do topo de cada painel do gráfico de visitas.
+ *
+ * Conversão é taxa (ganha casa decimal e "%"); visitas e vendas são CONTAGEM — "máx 437,0"
+ * sugeriria meia visita.
+ */
+function MF_rotuloMaximo(max, chave) {
+    return chave === 'conversao'
+        ? `máx ${MF_formatPercent(max, 1)}`
+        : `máx ${Math.round(Number(max) || 0)}`;
+}
+
 const MF_OPP_KIND_ICON = {
     cvr_upside: '📈',
     stuck_stock: '📦',
@@ -858,6 +929,10 @@ const MF_OPP_KIND_ICON = {
     tag_pics: '📷',
     ads_hold: '⏸️',
 };
+
+// Até onde a projeção de estoque ainda é um aviso, e não adivinhação. Mesmo horizonte que
+// js/ad-selector.js já usava — não é limiar novo, é o mesmo passando a valer nas duas telas.
+const MF_RUNWAY_HORIZONTE_DIAS = 365;
 
 function MF_oppPriorityColor(prio) {
     if (prio === 1) return 'var(--red, #dc2626)';
@@ -921,7 +996,7 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
                 priority: cvrPct < 2 ? 1 : 3,
                 icon: MF_OPP_KIND_ICON.cvr_upside,
                 title: `Cada 0,1% a mais em conversão = +${fmtMoney(monthlyUpside)}/mês`,
-                detail: `Hoje: ${visits30} visitas em 30d × conversão de ${cvrPct.toFixed(2)}% × ${fmtMoney(price)}.`,
+                detail: `Hoje: ${visits30} visitas em 30d × conversão de ${MF_formatPercent(cvrPct, 2)} × ${fmtMoney(price)}.`,
                 value: monthlyUpside,
                 actions: [],
             });
@@ -1014,16 +1089,27 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             projPoints.push({ day: i, stock: Math.max(0, availableQty - projectedRate * i) });
         }
 
-        push({
-            kind: 'stock_runway',
-            priority: prio,
-            icon: '⏳',
-            title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
-            detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d, ${salesRecent} nos últimos 15d (~${salesRate15.toFixed(1)}/dia). Com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.${boostNote}`,
-            value: 0,
-            actions: [],
-            chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
-        });
+        // Acima de 1 ano a projeção deixa de ser aviso e vira ruído: a conta continua certa
+        // ("~24788 dias" = 9.993 unidades ÷ 0,4 por dia), mas ninguém repõe estoque com 68
+        // anos de antecedência, e o número finge uma precisão que 15 dias de vendas não
+        // sustentam. Este card existe pra avisar de RUPTURA — sem ruptura no horizonte em
+        // que dá pra agir, ele só ocupa o lugar das oportunidades reais.
+        // Mesma régua e mesmo horizonte de js/ad-selector.js (`stockDaysHtml`), que já
+        // suprimia acima de 365 dias; a Análise é que tinha ficado de fora.
+        // ⚠️ Cai só ESTE card, não a função: o anúncio segue recebendo as outras
+        // oportunidades logo abaixo.
+        if (daysToEmpty <= MF_RUNWAY_HORIZONTE_DIAS) {
+            push({
+                kind: 'stock_runway',
+                priority: prio,
+                icon: '⏳',
+                title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
+                detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d, ${salesRecent} nos últimos 15d (~${salesRate15.toFixed(1)}/dia). Com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.${boostNote}`,
+                value: 0,
+                actions: [],
+                chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
+            });
+        }
     }
 
     // (3) Ads pausado em anúncio que já vende organicamente — oportunidade de amplificar
@@ -4607,8 +4693,8 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
                 if (totalPrev7 === 0) pct = total7 > 0 ? 100 : 0;
                 else pct = ((total7 - totalPrev7) / totalPrev7) * 100;
 
-                if (pct < -5) checks.push({ ok: false, text: `Visitas em queda (${pct.toFixed(0)}%)` });
-                else if (pct > 5) checks.push({ ok: true, text: `Visitas subindo (+${pct.toFixed(0)}%)` });
+                if (pct < -5) checks.push({ ok: false, text: `Visitas em queda (${MF_formatPercent(pct, 0)})` });
+                else if (pct > 5) checks.push({ ok: true, text: `Visitas subindo (+${MF_formatPercent(pct, 0)})` });
                 else checks.push({ ok: true, text: `Visitas estáveis (${total30} no mês)` });
             }
         }
@@ -5132,10 +5218,14 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const totalOrganicRevenue = sumField(daily, 'organic_units_amount');
     const totalAllRevenue = totalRevenue + totalOrganicRevenue; // ads + organic revenue
 
-    const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-    const acos = totalRevenue > 0 ? ((totalCost / totalRevenue) * 100).toFixed(1) : '0.0';
-    const tacos = totalAllRevenue > 0 ? ((totalCost / totalAllRevenue) * 100).toFixed(1) : '0.0';
-    const convRate = totalClicks > 0 ? ((totalOrders / totalClicks) * 100).toFixed(2) : '0.00';
+    // NÚMEROS, não strings. Enquanto eram `toFixed()`, a cor do cartão saía de
+    // `parseFloat('20.00')` — que só funciona por acaso: em pt-BR o formatado é "1.234,5" e
+    // `parseFloat` pararia no ponto, devolvendo 1 em vez de 1234. Guardar número e formatar
+    // na saída separa o que a régua compara do que o vendedor lê.
+    const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+    const acos = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 0;
+    const tacos = totalAllRevenue > 0 ? (totalCost / totalAllRevenue) * 100 : 0;
+    const convRate = totalClicks > 0 ? (totalOrders / totalClicks) * 100 : 0;
     const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0;
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
 
@@ -5260,10 +5350,10 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
         <div class="ana-metrics-grid">
             ${metricCard('Impressões', fmt(totalImpressions), trendBadge(impTrend))}
             ${metricCard('Cliques', fmt(totalClicks), trendBadge(clicksTrend))}
-            ${metricCard('CTR', ctr + '%', trendBadge(ctrTrend), parseFloat(ctr) >= 1 ? 'var(--green-dark)' : 'var(--red)')}
-            ${metricCard('ACOS', acos + '%', trendBadge(acosTrend, true), parseFloat(acos) > 30 ? 'var(--red)' : (parseFloat(acos) > 15 ? 'var(--yellow)' : 'var(--green-dark)'))}
-            ${metricCard('TACOS', tacos + '%', `<span style="font-size:0.65rem;color:var(--text-muted);">Fat. total: ${fmtMoney(totalAllRevenue)}</span>`, parseFloat(tacos) > 20 ? 'var(--red)' : (parseFloat(tacos) > 10 ? 'var(--yellow)' : 'var(--green-dark)'))}
-            ${metricCard('Conversão Ads', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
+            ${metricCard('CTR', MF_formatPercent(ctr, 2), trendBadge(ctrTrend), ctr >= 1 ? 'var(--green-dark)' : 'var(--red)')}
+            ${metricCard('ACOS', MF_formatPercent(acos, 1), trendBadge(acosTrend, true), acos > 30 ? 'var(--red)' : (acos > 15 ? 'var(--yellow)' : 'var(--green-dark)'))}
+            ${metricCard('TACOS', MF_formatPercent(tacos, 1), `<span style="font-size:0.65rem;color:var(--text-muted);">Fat. total: ${fmtMoney(totalAllRevenue)}</span>`, tacos > 20 ? 'var(--red)' : (tacos > 10 ? 'var(--yellow)' : 'var(--green-dark)'))}
+            ${metricCard('Conversão Ads', MF_formatPercent(convRate, 2), trendBadge(cvrTrend), convRate >= 5 ? 'var(--green-dark)' : 'var(--red)')}
         </div>
         ${(() => {
             // Breakdown Ads × Orgânico × Total — só existe com dia em comum entre visitas e Ads
@@ -5306,19 +5396,19 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--blue); margin-right:6px;"></span>Ads</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${adsCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${MF_formatPercent(adsCvr, 2)}</span>
                     </div>
                     <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px;"></span>Orgânico</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${orgCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${MF_formatPercent(orgCvr, 2)}</span>
                     </div>
                     <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border); background:var(--bg-subtle, var(--row-alt));">
                         <span style="font-weight:700;">Total</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${totalCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${MF_formatPercent(totalCvr, 2)}</span>
                     </div>
                 </div>
                 ${insightHtml}
@@ -5328,7 +5418,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
         <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--navy);border-radius:4px;"><span style="font-size:0.65rem;color:rgba(255,255,255,0.5);">Campanha:</span><span style="font-size:0.78rem;font-weight:600;color:#fff;">${campaignName}</span></div>
             <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Estratégia:</span><span style="font-size:0.78rem;font-weight:600;">${campaignStrategy}</span></div>
-            ${campaignAcosTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--blue-light);border-radius:4px;"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ACOS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${parseFloat(acos) <= campaignAcosTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignAcosTarget}%</span></div>` : ''}
+            ${campaignAcosTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--blue-light);border-radius:4px;"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ACOS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${acos <= campaignAcosTarget ? 'var(--green-dark)' : 'var(--red)'};">${MF_formatPercent(campaignAcosTarget, 0)}</span></div>` : ''}
             ${campaignRoasTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ROAS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${roas >= campaignRoasTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignRoasTarget.toFixed(1)}x</span></div>` : ''}
             ${campaignBudget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Orçamento:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;">${fmtMoney(campaignBudget)}</span></div>` : ''}
             ${adLevel ? `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--${adLevel.cor}-light);border-radius:4px;" title="Reputação que o Mercado Livre dá a este anúncio dentro da publicidade."><span style="width:6px;height:6px;border-radius:50%;background:var(--${adLevel.cor});"></span><span style="font-size:0.72rem;font-weight:600;">${adLevel.texto}</span></div>` : ''}
@@ -5455,15 +5545,15 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                 </div>
                 <div style="height:12px;border-radius:6px;background:var(--border);overflow:hidden;display:flex;">
                     <div style="width:${adsPctTotal}%;background:var(--blue);display:flex;align-items:center;justify-content:center;">
-                        ${adsPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${adsPctTotal.toFixed(0)}%</span>` : ''}
+                        ${adsPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${MF_formatPercent(adsPctTotal, 0)}</span>` : ''}
                     </div>
                     <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;">
-                        ${orgPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${orgPctTotal.toFixed(0)}%</span>` : ''}
+                        ${orgPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${MF_formatPercent(orgPctTotal, 0)}</span>` : ''}
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:2px;">
-                    <span style="font-size:0.62rem;color:var(--blue);font-weight:600;">Ads ${adsPctTotal.toFixed(1)}%</span>
-                    <span style="font-size:0.62rem;color:var(--green-dark);font-weight:600;">Orgânico ${orgPctTotal.toFixed(1)}%</span>
+                    <span style="font-size:0.62rem;color:var(--blue);font-weight:600;">Ads ${MF_formatPercent(adsPctTotal, 1)}</span>
+                    <span style="font-size:0.62rem;color:var(--green-dark);font-weight:600;">Orgânico ${MF_formatPercent(orgPctTotal, 1)}</span>
                 </div>
             </div>`;
     }
@@ -5482,16 +5572,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                     <span style="font-size:0.72rem;color:var(--text-muted);">${fmt(totalOrders)} ads / ${fmt(totalOrganic)} orgânicas / ${fmt(totalSales)} total</span>
                 </div>
                 <div style="height:14px;border-radius:7px;background:var(--border);overflow:hidden;display:flex;">
-                    <div style="width:${adsSalesPct}%;background:var(--blue);border-radius:7px 0 0 7px;display:flex;align-items:center;justify-content:center;" title="Ads: ${adsSalesPct.toFixed(1)}%">
-                        ${adsSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${adsSalesPct.toFixed(0)}%</span>` : ''}
+                    <div style="width:${adsSalesPct}%;background:var(--blue);border-radius:7px 0 0 7px;display:flex;align-items:center;justify-content:center;" title="Ads: ${MF_formatPercent(adsSalesPct, 1)}">
+                        ${adsSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${MF_formatPercent(adsSalesPct, 0)}</span>` : ''}
                     </div>
-                    <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;" title="Orgânico: ${orgSalesPct.toFixed(1)}%">
-                        ${orgSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${orgSalesPct.toFixed(0)}%</span>` : ''}
+                    <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;" title="Orgânico: ${MF_formatPercent(orgSalesPct, 1)}">
+                        ${orgSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${MF_formatPercent(orgSalesPct, 0)}</span>` : ''}
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:3px;">
-                    <span style="font-size:0.65rem;color:var(--blue);font-weight:600;">Ads ${adsSalesPct.toFixed(1)}%</span>
-                    <span style="font-size:0.65rem;color:var(--green-dark);font-weight:600;">Orgânico ${orgSalesPct.toFixed(1)}%</span>
+                    <span style="font-size:0.65rem;color:var(--blue);font-weight:600;">Ads ${MF_formatPercent(adsSalesPct, 1)}</span>
+                    <span style="font-size:0.65rem;color:var(--green-dark);font-weight:600;">Orgânico ${MF_formatPercent(orgSalesPct, 1)}</span>
                 </div>
             </div>`;
     }
@@ -5978,11 +6068,11 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
             const vals = pontos.map((p) => p[s.chave]).filter((v) => typeof v === 'number');
             const max = vals.length ? Math.max(...vals) : 0;
             const d = MF_caminhoSerie(pontos, s.chave, PAD_E, larg, y0, ALT_PAINEL);
-            const maxTxt = s.chave === 'conversao' ? max.toFixed(1) + '%' : String(Math.round(max));
+            const maxTxt = MF_rotuloMaximo(max, s.chave);
             paineis += `
                 <g data-serie="${s.chave}">
                     <text x="${PAD_E}" y="${y0 - 3}" font-size="7.5" fill="var(--text-muted)" font-weight="600">${s.rotulo}</text>
-                    <text x="${W - PAD_D}" y="${y0 - 3}" font-size="7" fill="var(--text-muted)" text-anchor="end">máx ${maxTxt}</text>
+                    <text x="${W - PAD_D}" y="${y0 - 3}" font-size="7" fill="var(--text-muted)" text-anchor="end">${maxTxt}</text>
                     <line x1="${PAD_E}" y1="${y0 + ALT_PAINEL}" x2="${W - PAD_D}" y2="${y0 + ALT_PAINEL}" stroke="var(--border,#e5e7eb)" stroke-width="0.5"/>
                     ${d ? `<path d="${d}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` : ''}
                 </g>`;
@@ -6064,7 +6154,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
         if (Math.abs(pct) < 1) return '';
         const cor = pct > 0 ? 'var(--green-dark)' : 'var(--red-dark)';
         const bg = pct > 0 ? 'var(--green-light)' : 'var(--red-light)';
-        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
+        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${MF_formatPercent(pct, 0)}</span>`;
     };
     // Por métrica: uma coluna pro número (direita) e uma pro selo (largura fixa).
     const colunas = 'minmax(48px, auto) ' + seriesAtivas.map(() => 'minmax(0, 1fr) 42px').join(' ');
