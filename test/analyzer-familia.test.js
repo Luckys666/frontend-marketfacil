@@ -292,23 +292,29 @@ const ovHtml = overviewBody.innerHTML;
 check('visão de família marca "só no ML" no PARENT_PK', /Marca<span class="mfd-fb-shared-tag"|Marca\s*<span class="mfd-fb-shared-tag"/.test(ovHtml), ovHtml.slice(0, 300));
 check('visão de família NÃO marca o campo FAMILY',
   !/Voltagem da bateria\s*<span class="mfd-fb-shared-tag"/.test(ovHtml));
-check('nota mista explica os dois casos', ovHtml.includes('os outros você preenche abrindo a variação'), ovHtml.slice(-400));
+// A nota de rodapé saiu em 16/08 (Lucas: "esses textos só atrapalham, pode remover").
+// A distinção que ela explicava vive no SELO por campo — que é o que estes checks cobram:
+// PARENT_PK marcado, FAMILY não, e o porquê no title de quem quiser ler.
+check('caso misto: só o PARENT_PK leva selo', (ovHtml.match(/mfd-fb-shared-tag/g) || []).length === 1, ovHtml.slice(-400));
+check('e o selo carrega o porquê no title', /mfd-fb-shared-tag" title="[^"]{40,}"/.test(ovHtml),
+  (ovHtml.match(/mfd-fb-shared-tag"[^>]*/) || [''])[0]);
+check('sem nota de rodapé repetindo isso', !/mfd-fb-shared-note/.test(ovHtml), ovHtml.slice(-300));
 
 const soAgrupador = mkEl('ov2');
 MF_renderFamilyOverview({
   family: { name: 'F' }, variations: [{ up_id: 'U', item_id: 'I', status: 'active', price: 1, available_quantity: 1, item_attributes: [] }],
   common_attrs: [{ id: 'BRAND', value_name: 'Acme' }]
 }, soAgrupador);
-check('só PARENT_PK → nota diz que só o ML edita',
-  soAgrupador.innerHTML.includes('Esses campos agrupam as variações — só o Mercado Livre edita.'));
+check('só PARENT_PK → o campo aparece marcado',
+  (soAgrupador.innerHTML.match(/mfd-fb-shared-tag/g) || []).length === 1, soAgrupador.innerHTML.slice(-300));
 
 const soFamily = mkEl('ov3');
 MF_renderFamilyOverview({
   family: { name: 'F' }, variations: [{ up_id: 'U', item_id: 'I', status: 'active', price: 1, available_quantity: 1, item_attributes: [] }],
   common_attrs: [{ id: 'BATTERY_VOLTAGE', value_name: '12 V' }]
 }, soFamily);
-check('só FAMILY → nota manda preencher pela variação',
-  soFamily.innerHTML.includes('Preencha estes campos abrindo a variação.'));
+check('só FAMILY → nenhum campo marcado (é editável pelo app)',
+  !/mfd-fb-shared-tag/.test(soFamily.innerHTML), soFamily.innerHTML.slice(-300));
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);

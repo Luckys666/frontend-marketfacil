@@ -2487,13 +2487,6 @@ function MF_renderFamilyOverview(data, body) {
     // Só o PARENT_PK é intocável (agrupa as variações); o resto o vendedor preenche
     // abrindo a variação — a nota do rodapé muda conforme o que caiu na lista.
     const ehAgrupador = (a) => catById[a.id]?.hierarchy === 'PARENT_PK';
-    const qtdAgrupador = familyHierAttrs.filter(ehAgrupador).length;
-    const notaCompartilhados = qtdAgrupador === familyHierAttrs.length
-        ? 'Esses campos agrupam as variações — só o Mercado Livre edita.'
-        : (qtdAgrupador === 0
-            ? 'Preencha estes campos abrindo a variação.'
-            : 'Os marcados agrupam as variações (só o ML edita); os outros você preenche abrindo a variação.');
-
     const summary = MF_summarizeFamily(variations);
     const heroUpId = MF_pickHeroVariation(variations);
     const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations, heroUpId, summary)).join('');
@@ -2538,7 +2531,6 @@ function MF_renderFamilyOverview(data, body) {
                         </div>`;
                     }).join('')}
             </div>
-            <div class="mfd-fb-shared-note">${notaCompartilhados}</div>
         </div>
         <div class="mfd-fb-section">
             <div class="mfd-fb-toolbar">
@@ -4320,7 +4312,6 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
         if (!def) return false;
         return mfSoNoML(def, detalheAtual);
     };
-    const marcados = faltando.filter(soNoML).length;
 
     const listaFicha = faltando.length ? `
         <p class="text-small" style="margin:10px 0 6px; color:var(--text-secondary);">Preenchendo estes campos, a ficha fica completa para o ML:</p>
@@ -4334,7 +4325,7 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
                 return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
             }).join('')}
         </div>
-        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">Marca, modelo e linha ficam no Mercado Livre: mudar aqui tira o anúncio do grupo.</p>` : ''}` : '';
+` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
@@ -5494,9 +5485,6 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                 <div class="chart-card-body" style="height:200px;position:relative;">
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
-                <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
-                    Barras: <b>ACOS</b> (vendas da campanha). Linha: <b>TACOS</b> (todas as vendas).
-                </p>
             </div>`;
     }
 
@@ -5956,7 +5944,7 @@ function renderAiImageAnalyzer(detail, containerId) {
                 <span class="ana-card-title">Analisador de Imagens por IA</span>
                 <span class="status-badge success" style="margin-left:auto; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none;">Beta</span>
             </div>
-            <p class="text-small" style="margin-bottom:15px; color:var(--text-muted);" title="As fotos vêm separadas por variação. A IA aponta pontos fortes e o que melhorar em exposição e quebra de objeções.">Fotos separadas por variação — a IA aponta o que melhorar em cada uma.</p>
+
             <div>
                 ${picturesHtml}
             </div>

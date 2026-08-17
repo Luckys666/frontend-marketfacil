@@ -117,17 +117,11 @@ console.log('\n== gráfico de Ads mostra ACOS e TACOS ==');
   const html = reg['adsMetrics'].innerHTML;
   check('o card mudou de nome pra "ACOS e TACOS por dia"',
     html.includes('ACOS e TACOS por dia'), (html.match(/chart-card-label">[^<]+/g) || []).join(' | '));
-  // A legenda tem de NOMEAR as duas métricas e contrastar as bases — era a ausência disso
-  // que fazia "Barras: quanto do faturamento vindo de Ads foi para o anúncio" não querer
-  // dizer nada (Lucas, 16/08). Cobrar a palavra "faturamento" prendia o texto ao vocabulário
-  // antigo sem medir se ele explicava alguma coisa.
-  // Nomeia as duas métricas e contrasta a BASE de cada uma. Não cobra vocabulário: exigir a
-  // palavra "orgânico" prendia a copy e quebrou quando a legenda encurtou (Lucas: os avisos
-  // longos "matam o UX"). O detalhe mora no title, o teste cobra sentido.
-  check('explica a diferença entre barra e linha',
-    /Barras[^<]*<b>ACOS/.test(html) && /Linha[^<]*<b>TACOS/.test(html)
-      && /campanha/i.test(html) && /(todas as vendas|org[âa]nico|total)/i.test(html),
-    (html.match(/Barras[\s\S]{0,120}/) || [''])[0].replace(/\s+/g, ' '));
+  // A legenda escrita SAIU em 16/08 (Lucas: "esses textos só atrapalham, pode remover").
+  // Quem nomeia as métricas é o título do card e a legenda do próprio Chart — repetir por
+  // extenso embaixo era ruído. O check virou o inverso: o parágrafo não pode voltar.
+  check('não há parágrafo explicando barras e linha', !/<p class="text-small"/.test(html),
+    (html.match(/<p class="text-small"[\s\S]{0,120}/) || [''])[0].replace(/\s+/g, ' '));
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
