@@ -1019,9 +1019,14 @@ async function main() {
     await new Promise((r) => setTimeout(r, 0));
     const box = ctx.sandbox.document.getElementById('mf-compat-escada');
 
-    check('assume que não sabe QUANTOS', /n[ãa]o deu para conferir quantos/i.test(box.textContent), box.textContent.slice(-500));
-    check('mas afirma o que sabe: faz parte de um grupo e vale para todos',
-      /faz parte de um grupo/i.test(box.textContent) && /todos eles/i.test(box.textContent), box.textContent.slice(-500));
+    // Os dois checks cobram SENTIDO, não vocabulário: assumir a ignorância e afirmar o
+    // escopo. Presos às palavras exatas, quebraram quando a frase encurtou — e encurtar era
+    // o pedido (Lucas, 16/08: avisos longos "matam o UX"). O detalhe foi para o `title`.
+    check('assume que não sabe QUANTOS/QUAIS',
+      /n[ãa]o deu para (conferir|listar)/i.test(box.textContent), box.textContent.slice(-500));
+    check('mas afirma o que sabe: vale para o grupo de variações inteiro',
+      /(grupo de varia|faz parte de um grupo)/i.test(box.textContent)
+        && /(vale para|todos eles)/i.test(box.textContent), box.textContent.slice(-500));
     check('sem jargão de user-product', !/user.?product|MLBU/i.test(box.innerHTML), box.innerHTML.slice(-600));
     check('continua deixando gravar', !/id="mf-compat-gravar-veiculos"[^>]*disabled/.test(box.innerHTML), box.innerHTML.slice(-500));
     check('e o botão diz que é sem conferir', /Gravar mesmo assim/.test(box.innerHTML), box.innerHTML.slice(-500));

@@ -4070,7 +4070,7 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
         perfEl.innerHTML = `
             <div class="ana-card" style="animation-delay: 0.3s;">
                 <div class="ana-card-header"><span class="ana-card-icon">⚡</span><span class="ana-card-title">Qualidade do Anúncio (Mercado Livre)</span></div>
-                <p class="text-small" style="color:var(--text-muted);">Qualidade ainda não calculada pelo ML. Os anúncios ativos do marketplace têm esse dado atualizado periodicamente.</p>
+                <p class="text-small" style="color:var(--text-muted);" title="O Mercado Livre atualiza esse dado periodicamente, e só para anúncios ativos do marketplace.">Qualidade ainda não calculada pelo ML.</p>
             </div>`;
         return;
     }
@@ -4334,11 +4334,11 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
                 return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
             }).join('')}
         </div>
-        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado (marca, modelo ou linha) é o que identifica' : 'Os campos marcados (marca, modelo ou linha) são o que identificam'} o produto e ${marcados === 1 ? 'mantém' : 'mantêm'} este anúncio no grupo de variações. Mudar por aqui faria o anúncio sair do grupo, então esse ajuste é feito no Mercado Livre. Os demais campos da ficha você preenche por aqui mesmo.</p>` : ''}` : '';
+        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">Marca, modelo e linha ficam no Mercado Livre: mudar aqui tira o anúncio do grupo.</p>` : ''}` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
-            <b>Identificador do produto:</b> falta ${idsFaltando.length ? escapeHtml(idsFaltando.map(bonito).join(', ')) : 'o código de barras (GTIN/EAN)'} — é um dos requisitos de qualidade que o ML mais cobra.
+            <b>Identificador do produto:</b> falta ${idsFaltando.length ? escapeHtml(idsFaltando.map(bonito).join(', ')) : 'o código de barras (GTIN/EAN)'}.
         </p>` : '';
 
     el.innerHTML = `
@@ -5495,8 +5495,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
                 <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
-                    Barras (<b>ACOS</b>): de cada R$ 100 vendidos <b>pela campanha</b>, quanto saiu em publicidade.
-                    Linha (<b>TACOS</b>): o mesmo gasto, mas sobre <b>tudo</b> que o anúncio vendeu (campanha + orgânico).
+                    Barras: <b>ACOS</b> (vendas da campanha). Linha: <b>TACOS</b> (todas as vendas).
                 </p>
             </div>`;
     }
@@ -5957,7 +5956,7 @@ function renderAiImageAnalyzer(detail, containerId) {
                 <span class="ana-card-title">Analisador de Imagens por IA</span>
                 <span class="status-badge success" style="margin-left:auto; background: linear-gradient(135deg, #a855f7, #6366f1); color: white; border: none;">Beta</span>
             </div>
-            <p class="text-small" style="margin-bottom:15px; color:var(--text-muted);">As fotos do anúncio são separadas pelas suas variações correspondentes. A IA identificará pontos fortes e melhorias específicas de exposição e quebra de objeções.</p>
+            <p class="text-small" style="margin-bottom:15px; color:var(--text-muted);" title="As fotos vêm separadas por variação. A IA aponta pontos fortes e o que melhorar em exposição e quebra de objeções.">Fotos separadas por variação — a IA aponta o que melhorar em cada uma.</p>
             <div>
                 ${picturesHtml}
             </div>
@@ -7936,7 +7935,7 @@ function MF_renderEscadaCompat(state) {
                 ? ''
                 : upDaFamilia
                     ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
-                           <p class="text-small">Não deu para conferir quantos anúncios isto atinge. Este anúncio faz parte de um grupo de variações, então vai valer para todos eles.
+                           <p class="text-small" title="Não conseguimos listar os anúncios do grupo agora. Como este anúncio faz parte de um grupo de variações, a gravação vale para todos eles.">Vale para todo o grupo de variações — não deu para listar quais.
                                <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
                            </p>
                        </div>`
