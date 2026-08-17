@@ -19,6 +19,7 @@
  */
 const { carregar } = require('./harness-analyzer');
 
+const { dataLocal } = require('./data-local');
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -28,7 +29,7 @@ function check(name, cond, detail) {
 const diasAtras = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().substring(0, 10);
+  return dataLocal(Math.round((new Date().setHours(0,0,0,0) - d.setHours(0,0,0,0)) / 86400000));
 };
 
 /*

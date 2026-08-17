@@ -27,6 +27,7 @@
  */
 const { carregar, mkEl } = require('./harness-analyzer');
 
+const { dataLocal } = require('./data-local');
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -62,10 +63,7 @@ console.log('\n# 1. Uma régua de janela só, contada em dias civis');
   }
 
   // A prova que importa: as duas contas do MESMO card têm de bater.
-  const diasAtras = (n) => {
-    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n);
-    return d.toISOString().substring(0, 10);
-  };
+  const diasAtras = (n) => dataLocal(n);
   const visitas60 = { results: Array.from({ length: 60 }, (_, i) => ({ date: diasAtras(i + 1), total: 10 })) };
   const adsDaily = Array.from({ length: 30 }, (_, i) => ({
     date: diasAtras(i + 1), clicks: 5, prints: 50, cost: 10, total_amount: 200,
@@ -107,10 +105,7 @@ console.log('\n# 2. Tooltip respeita a série que o vendedor desligou');
 // =========================================================================================
 console.log('\n# 3. Desligar a única série disponível não quebra o gráfico');
 {
-  const diasAtras = (n) => {
-    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n);
-    return d.toISOString().substring(0, 10);
-  };
+  const diasAtras = (n) => dataLocal(n);
   const visitas = { results: Array.from({ length: 30 }, (_, i) => ({ date: diasAtras(i + 1), total: 7 })) };
 
   const h = carregar();
@@ -170,10 +165,7 @@ console.log('\n# 5. Dentro do MESMO card, uma régua só (2ª rodada da revisão
   // antiga — dentro da mesma função. Resultado: `total30`, que decide se o gráfico aparece
   // e se sai o selo "⚠️ Poucos dados", discordava da tabela logo acima dele.
   // Corrigir pela metade duas vezes seguidas foi o que motivou este bloco.
-  const diaISO = (n) => {
-    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n);
-    return d.toISOString().substring(0, 10);
-  };
+  const diaISO = (n) => dataLocal(n);
   const somaDaLinha = (texto, rotulo) => {
     const m = texto.match(new RegExp(rotulo + '\\s+(\\d+)'));
     return m ? Number(m[1]) : null;

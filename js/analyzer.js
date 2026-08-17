@@ -4328,13 +4328,13 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
             ${faltando.map((c) => {
                 const fora = soNoML(c);
                 const selo = fora
-                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Este campo é o que agrupa as variações do produto — mudar por aqui tiraria o anúncio do grupo. Dá para preencher no Mercado Livre.">só no ML</span>`
+                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Marca, modelo e linha identificam o produto e mantêm este anúncio no grupo de variações. Mudar por aqui faria o anúncio sair do grupo — no Mercado Livre dá para ajustar com o cuidado certo.">só no ML</span>`
                     : '';
                 const cor = fora ? 'background:var(--bg-subtle,#f1f5f9); color:var(--text-secondary);' : 'background:var(--yellow-light,#fef3c7); color:#92400e;';
                 return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
             }).join('')}
         </div>
-        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado agrupa' : 'Os campos marcados agrupam'} as variações do produto — edite no Mercado Livre.</p>` : ''}` : '';
+        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado (marca, modelo ou linha) é o que identifica' : 'Os campos marcados (marca, modelo ou linha) são o que identificam'} o produto e ${marcados === 1 ? 'mantém' : 'mantêm'} este anúncio no grupo de variações. Mudar por aqui faria o anúncio sair do grupo, então esse ajuste é feito no Mercado Livre. Os demais campos da ficha você preenche por aqui mesmo.</p>` : ''}` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
@@ -5495,8 +5495,8 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
                 <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
-                    Barras: quanto do faturamento <b>vindo de Ads</b> foi para o anúncio.
-                    Linha: quanto do faturamento <b>total</b> (Ads + orgânico) foi para Ads.
+                    Barras (<b>ACOS</b>): de cada R$ 100 vendidos <b>pela campanha</b>, quanto saiu em publicidade.
+                    Linha (<b>TACOS</b>): o mesmo gasto, mas sobre <b>tudo</b> que o anúncio vendeu (campanha + orgânico).
                 </p>
             </div>`;
     }

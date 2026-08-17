@@ -20,6 +20,7 @@
  */
 const { carregar } = require('./harness-analyzer');
 
+const { dataLocal } = require('./data-local');
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -29,12 +30,9 @@ function check(name, cond, detail) {
 const { get, sandbox } = carregar();
 
 // --- helpers de fixture -----------------------------------------------------------------
-function dia(atras) {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - atras);
-  return d.toISOString().substring(0, 10);
-}
+// ⚠️ dataLocal, não toISOString: em GMT-3 o dia UTC vira às 21h e o fixture passaria a
+// gerar a data de amanhã, quebrando a suíte sozinha à noite. Ver test/data-local.js.
+const dia = (atras) => dataLocal(atras);
 // Série diária do Ads com `unidades` vendas espalhadas nos últimos 30 dias.
 function adsComVendas(unidades) {
   const daily = [];
@@ -148,11 +146,7 @@ console.log('\n# 3. A tela do gráfico não mistura os dois separadores');
 // =========================================================================================
 console.log('\n# 4. A tabela de canais e a composição de tráfego também');
 {
-  const diasAtras = (n) => {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return d.toISOString().substring(0, 10);
-  };
+  const diasAtras = (n) => dataLocal(n);
   const visitas60 = { results: Array.from({ length: 60 }, (_, i) => ({ date: diasAtras(i + 1), total: 10 })) };
   const adsDaily = Array.from({ length: 30 }, (_, i) => ({
     date: diasAtras(i + 1), clicks: 5, prints: 50, cost: 10, total_amount: 200,
@@ -196,7 +190,9 @@ console.log('\n# 5. A janela de 30 dias não pode depender da HORA em que o vend
   for (let i = 1; i <= 60; i++) {
     const d = new Date('2026-08-16T00:00:00');
     d.setDate(d.getDate() - i);
-    serie.push({ date: d.toISOString().substring(0, 10), total: 10 });
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    serie.push({ date: `${d.getFullYear()}-${mm}-${dd}`, total: 10 });
   }
 
   const manha = new Date('2026-08-16T08:00:00').getTime();

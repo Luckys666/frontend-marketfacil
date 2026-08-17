@@ -17,6 +17,7 @@
  */
 const { carregar } = require('./harness-analyzer');
 
+const { dataLocal } = require('./data-local');
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -33,7 +34,7 @@ console.log('visitas-e-tacos.test.js');
 const diasAtras = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().substring(0, 10);
+  return dataLocal(0 + Math.round((new Date().setHours(0,0,0,0) - d.setHours(0,0,0,0)) / 86400000));
 };
 
 // 10 dias com 10 visitas cada = 100 visitas na janela de 30 dias
@@ -116,8 +117,13 @@ console.log('\n== gráfico de Ads mostra ACOS e TACOS ==');
   const html = reg['adsMetrics'].innerHTML;
   check('o card mudou de nome pra "ACOS e TACOS por dia"',
     html.includes('ACOS e TACOS por dia'), (html.match(/chart-card-label">[^<]+/g) || []).join(' | '));
+  // A legenda tem de NOMEAR as duas métricas e contrastar as bases — era a ausência disso
+  // que fazia "Barras: quanto do faturamento vindo de Ads foi para o anúncio" não querer
+  // dizer nada (Lucas, 16/08). Cobrar a palavra "faturamento" prendia o texto ao vocabulário
+  // antigo sem medir se ele explicava alguma coisa.
   check('explica a diferença entre barra e linha',
-    html.includes('faturamento') && html.includes('orgânico'));
+    /Barras[^<]*<b>ACOS/.test(html) && /Linha[^<]*<b>TACOS/.test(html) && html.includes('orgânico'),
+    (html.match(/Barras[\s\S]{0,120}/) || [''])[0].replace(/\s+/g, ' '));
 }
 
 console.log(`\n${pass} passaram, ${fail} falharam`);

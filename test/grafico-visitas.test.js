@@ -21,6 +21,7 @@
  */
 const { carregar } = require('./harness-analyzer');
 
+const { dataLocal } = require('./data-local');
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -35,7 +36,7 @@ const exibirTendenciaVisitas = get('exibirTendenciaVisitas');
 
 console.log('grafico-visitas.test.js');
 
-const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const dia = (n) => { return dataLocal(n); };
 
 // ── montagem das séries ─────────────────────────────────────────────────
 console.log('\n== séries diárias ==');
@@ -193,7 +194,7 @@ console.log('\n== ponto sem vizinho continua visível ==');
    * como ponto, quando não tem vizinho pra formar traço.
    */
   const MF_caminhoSerie = get('MF_caminhoSerie');
-  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const dia = (n) => { return dataLocal(n); };
 
   const isolado = MF_caminhoSerie(
     [{ dia: dia(3), vendas: null }, { dia: dia(2), vendas: 5 }, { dia: dia(1), vendas: null }],
@@ -231,7 +232,7 @@ console.log('\n== o eixo é das visitas; o Ads não inventa dia ==');
    * santo dia, em todo anúncio com Ads.
    */
   const MF_seriesDiarias = get('MF_seriesDiarias');
-  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const dia = (n) => { return dataLocal(n); };
   const visitas = Array.from({ length: 30 }, (_, i) => ({ date: dia(i + 1), total: 10 }));
   const ads = Array.from({ length: 31 }, (_, i) => ({ date: dia(i), units_quantity: 1, organic_units_quantity: 0 }));
 
@@ -273,7 +274,7 @@ console.log('\n== dia que a API omite é dia de ZERO visita ==');
    * tiver visita/venda ou conversão o valor é 0 né? fica melhor que ficar sem nada").
    */
   const MF_seriesDiarias = get('MF_seriesDiarias');
-  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const dia = (n) => { return dataLocal(n); };
 
   // 5 dias de janela, com o do meio omitido pela API.
   const visitas = [{ date: dia(5), total: 8 }, { date: dia(4), total: 3 }, { date: dia(2), total: 6 }, { date: dia(1), total: 4 }];
