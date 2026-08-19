@@ -76,6 +76,7 @@ const check = (label, cond) => { cond ? pass++ : fail++; console.log((cond ? 'ok
 const AA = sandbox.AA;
 const defaultAllMode = AA ? AA.allMode : undefined;   // captura o default ANTES dos testes de persistencia mutarem
 check('script carrega/inicializa sem lancar', !loadErr && !!AA);
+
 if (!AA) { console.log('\n' + pass + ' passaram, ' + (fail || 1) + ' falharam'); if (loadErr) console.error(loadErr); process.exit(1); }
 
 // fluxo guiado: funcoes presentes
@@ -435,6 +436,28 @@ check('AA.getMfAuth existe', typeof AA.getMfAuth === 'function');
   AA.clearApplied(['MLB30'], '1001');   // no-op seguro quando o código nem estava marcado
   check('clearApplied: idempotente (código não marcado não quebra)', true);
   AA.saveApplied({});
+
+  // ── ESTREIA da automação (18/08): a largada não é "reorganização" ────────────
+  // Desde a largada ancorada, o 1o plano de uma conta NAO joga tudo no Economico — cada anuncio
+  // entra na faixa compativel com o que ja entrega. O texto precisa refletir isso: "reorganize 800
+  // anuncios entre as faixas" faz o lojista que esta estreando achar que a conta vai ser sacudida.
+  const dpEstreia = AA.demoPlan(3, null);
+  dpEstreia.summary.onboarding = true;
+  let estreiaHtml = '';
+  try { AA.render(dpEstreia); estreiaHtml = byId('aa-out').innerHTML; } catch (e) { estreiaHtml = ''; }
+  check('estreia: o titulo diz "Organize ... nas faixas", nao "Reorganize ... entre as faixas"',
+    /Organize \d+ anúncios? nas faixas/.test(estreiaHtml) && !/Reorganize/.test(estreiaHtml));
+  check('estreia: a descricao explica que a faixa vem do ROAS ja entregue',
+    /faixa compatível com o ROAS que ele já vem entregando/.test(estreiaHtml));
+  check('estreia: a descricao diz o que acontece com quem ainda nao tem numero',
+    /mantém o mesmo alvo da campanha em que está hoje/.test(estreiaHtml));
+
+  const dpCiclo = AA.demoPlan(3, null);
+  dpCiclo.summary.onboarding = false;
+  let cicloHtml = '';
+  try { AA.render(dpCiclo); cicloHtml = byId('aa-out').innerHTML; } catch (e) { cicloHtml = ''; }
+  check('ciclo normal: segue "Reorganize ... entre as faixas" (texto de sempre preservado)',
+    /Reorganize \d+ anúncios? entre as faixas/.test(cicloHtml) && !/Estreia da automação/.test(cicloHtml));
 
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
   process.exit(fail ? 1 : 0);

@@ -863,10 +863,17 @@
     if (planIds.length){
       // título conta só o acionável (desconta os ⏳ aguardando o ML)
       var totalLeft = Math.max(0, totalGrp - AA.waitingIn(d.plan_search_ids));
+      // ESTREIA (summary.onboarding): a largada não é uma "reorganização" — é a primeira
+      // organização, e desde 18/08 ela ancora cada anúncio na faixa compatível com o que ele já
+      // entrega, em vez de levar a conta toda pro Econômico. O texto precisa dizer isso, senão o
+      // lojista que está começando lê "reorganize 800 anúncios" e acha que vamos sacudir a conta.
+      var estreia = !!(d.summary || {}).onboarding;
       stages.push({ id: 'plan', title: totalLeft > 0
-          ? 'Reorganize '+totalLeft+' anúncio'+(totalLeft===1?'':'s')+' entre as faixas'
-          : 'Reorganização — ⏳ aguardando o Mercado Livre',
-        desc: 'Cada anúncio vai pra faixa que a entrega dele sustenta — começando pelo que mais mexe no resultado.',
+          ? (estreia ? 'Organize ' : 'Reorganize ')+totalLeft+' anúncio'+(totalLeft===1?'':'s')+(estreia ? ' nas faixas' : ' entre as faixas')
+          : (estreia ? 'Organização' : 'Reorganização')+' — ⏳ aguardando o Mercado Livre',
+        desc: estreia
+          ? 'Estreia da automação: cada anúncio entra na faixa compatível com o ROAS que ele já vem entregando. Quem ainda não tem número suficiente mantém o mesmo alvo da campanha em que está hoje — começando pelo que mais mexe no resultado.'
+          : 'Cada anúncio vai pra faixa que a entrega dele sustenta — começando pelo que mais mexe no resultado.',
         body: AA.planCards(d, planIds) });
     }
 
