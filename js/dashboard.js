@@ -442,13 +442,18 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
       else visitsPts = 12;
     }
 
-    // Conversão orgânica (até 13 pts) — unidades ÷ visitas orgânicas, a MESMA
-    // base do card Visão Geral e do snapshot. Já foi base mista (pedidos no
-    // snapshot × unidades aqui) e o delta media troca de régua, não tração.
+    // Conversão orgânica (até 13 pts) — pedidos totais − vendas por Ads, sobre
+    // visitas orgânicas: a MESMA base do card Visão Geral e do snapshot. Se
+    // divergir, o delta mede troca de régua em vez de tração.
     let convPts = 13;
-    const orgOrders = Number(agg.organic_orders) || 0;
+    const pedidosNow = (STATE.ordersData && typeof STATE.ordersData.total_orders === 'number')
+      ? STATE.ordersData.total_orders : null;
+    const orgSalesNow = pedidosNow != null
+      ? Math.max(0, pedidosNow - (Number(agg.total_orders) || 0))
+      : (Number(agg.organic_orders) || 0);
     const orgVisitsNow = Math.max(0, visitsNow - (Number(agg.total_clicks) || 0));
-    const orgConvNow = orgVisitsNow > 0 ? (orgOrders / orgVisitsNow * 100) : 0;
+    const orgConvNowRaw = orgVisitsNow > 0 ? (orgSalesNow / orgVisitsNow * 100) : 0;
+    const orgConvNow = orgConvNowRaw > 100 ? 0 : orgConvNowRaw;
     const orgConvPrev = Number(prevSnap.organic_conversion) || 0;
     if (orgConvNow && orgConvPrev) {
       const delta = (orgConvNow - orgConvPrev) / orgConvPrev;
@@ -1724,8 +1729,24 @@ function patchOrganicVsCard() {
 // média ponderada fecha com o número de cima.
 //
 // Cada campo volta null quando não dá pra afirmar. Nunca zero por falta de dado.
-function computeConversions({ totalVisits, adsClicks, totalUnits, orgUnits, adsUnits, pedidos }) {
-  const out = { total: null, organic: null, ads: null, byOrder: null, orgVisits: 0, reason: null };
+// ⚠️ NÃO "CONSERTE" A BASE DESTE CÁLCULO. É decisão de produto do Lucas,
+// tomada em jun/26 e reafirmada em 26/08/26:
+//
+//   A conversão TOTAL tem que dar o MESMO número do painel de métricas do
+//   Mercado Livre, porque é lá que o vendedor confere. Se divergir, ele
+//   questiona o app — e quem tem razão nessa discussão é o painel do ML.
+//
+// O ML conta PEDIDOS (vendas brutas, cancelados inclusos, `paging.total`), não
+// unidades. Um pedido pode levar N unidades, então pedidos ≠ o número de
+// "Vendas" exibido ao lado — e está tudo bem: o que manda é bater com o ML.
+//
+// A conversão ORGÂNICA subtrai as UNIDADES de Ads dos PEDIDOS totais. Sim, são
+// grandezas diferentes, e sim, isso faz o orgânico sair maior que o total. Já
+// foi trocado por uma base uniforme (unidades) em 26/08 e REVERTIDO no mesmo
+// dia: o número passava a divergir do ML e o ganho de coerência interna não
+// pagava a pergunta "por que não bate com o Mercado Livre?" de 200+ usuários.
+function computeConversions({ totalVisits, adsClicks, pedidos, unidadesTotais, unidadesAds, unidadesOrganicas, cvrAds }) {
+  const out = { total: null, organic: null, ads: null, orgVisits: 0, reason: null };
   const visits = Number(totalVisits) || 0;
   const clicks = Number(adsClicks) || 0;
   if (visits <= 0) { out.reason = 'sem-visitas'; return out; }
@@ -1733,39 +1754,35 @@ function computeConversions({ totalVisits, adsClicks, totalUnits, orgUnits, adsU
   if (orgVisits <= 0) { out.reason = 'visitas-abaixo-dos-cliques'; return out; }
   out.orgVisits = orgVisits;
 
-  const total   = (Number(totalUnits) || 0) / visits * 100;
-  const organic = (Number(orgUnits) || 0) / orgVisits * 100;
-  const ads     = clicks > 0 ? ((Number(adsUnits) || 0) / clicks * 100) : null;
+  // Pedidos quando o /orders-count responde; unidades como último recurso.
+  const temPedidos = pedidos != null && Number(pedidos) >= 0;
+  const numeradorTotal = temPedidos ? Number(pedidos) : (Number(unidadesTotais) || 0);
+  const numeradorOrg = temPedidos
+    ? Math.max(0, Number(pedidos) - (Number(unidadesAds) || 0))
+    : (Number(unidadesOrganicas) || 0);
+
+  const total = numeradorTotal / visits * 100;
+  const organic = numeradorOrg / orgVisits * 100;
+  const ads = (cvrAds != null && isFinite(cvrAds)) ? Number(cvrAds) : null;
+
   // Visita de anúncio de catálogo é contada na página do catálogo, não no item —
   // em conta muito baseada em catálogo o denominador vem subcontado e a conta
   // estoura 100%. Melhor não mostrar do que mostrar impossível.
-  if (total > 100 || organic > 100 || (ads != null && ads > 100)) {
-    out.reason = 'acima-de-100';
-    return out;
-  }
+  if (total > 100 || organic > 100) { out.reason = 'acima-de-100'; return out; }
   out.total = total;
   out.organic = organic;
   out.ads = ads;
-
-  if (pedidos != null && Number(pedidos) >= 0) {
-    const byOrder = Number(pedidos) / visits * 100;
-    if (byOrder <= 100) out.byOrder = byOrder;
-  }
+  out.base = temPedidos ? 'pedidos' : 'unidades';
   return out;
 }
 
-// Pedidos da MESMA população da receita (sem cancelados) — é o que o proxy
-// devolve em revenue.orders desde 26/08/26. Proxy antigo só tinha total_orders,
-// que inclui cancelados: aceitamos como aproximação e o hint avisa.
+// Vendas BRUTAS do ML (`paging.total`, cancelados inclusos) — é a régua do
+// painel de métricas do Seller Central, e é ela que a conversão precisa usar.
+// O proxy também devolve `revenue.orders` (sem cancelados), que serve pra
+// conferência mas NÃO entra aqui: usar ele afastaria o número do painel do ML.
 function grossOrdersOf(od) {
-  if (!od) return { pedidos: null, semCancelados: false };
-  if (od.revenue && typeof od.revenue.orders === 'number') {
-    return { pedidos: od.revenue.orders, semCancelados: true };
-  }
-  if (typeof od.total_orders === 'number') {
-    return { pedidos: od.total_orders, semCancelados: false };
-  }
-  return { pedidos: null, semCancelados: false };
+  if (od && typeof od.total_orders === 'number') return { pedidos: od.total_orders };
+  return { pedidos: null };
 }
 
 function renderOrganicVsAds(agg) {
@@ -1813,14 +1830,19 @@ function renderOrganicVsAds(agg) {
   const prevVisits = Number(prev.visits) || 0;
   // Conversões anteriores na MESMA base de agora (unidades ÷ visitas)
   const prevOrgVisits = Math.max(0, prevVisits - prevClicks);
-  const prevTotalConv = (prevVisits > 0 && prevSales > 0) ? (prevSales / prevVisits * 100) : 0;
-  const prevOrgConv = (prevOrgVisits > 0 && prevOrgOrders > 0) ? (prevOrgOrders / prevOrgVisits * 100) : 0;
+  // Delta só compara base igual: pedidos contra pedidos. O snapshot guarda
+  // `orders` (pedidos brutos) e `organic_conversion` já na base de pedidos.
+  const prevPedidos = Number(prev.orders) || 0;
+  const prevTotalConv = (prevVisits > 0 && prevPedidos > 0)
+    ? (prevPedidos / prevVisits * 100)
+    : ((prevVisits > 0 && prevSales > 0) ? (prevSales / prevVisits * 100) : 0);
+  const prevOrgConv = Number(prev.organic_conversion) || 0;
   const prevAdsConv = (prevClicks > 0 && prevAdsOrders > 0) ? (prevAdsOrders / prevClicks * 100) : prevCvr;
 
-  // ── Conversões (todas em unidades — mesma base das linhas "Vendas") ──
+  // ── Conversões (base: PEDIDOS, igual ao painel do ML — ver computeConversions) ──
   const visits = STATE.visitsData;
-  const { pedidos, semCancelados } = grossOrdersOf(STATE.ordersData);
-  let conv = { total: null, organic: null, ads: null, byOrder: null };
+  const { pedidos } = grossOrdersOf(STATE.ordersData);
+  let conv = { total: null, organic: null, ads: null };
   let visitsHint = '';
   const semVenda = totalOrders === 0 && totalRev === 0;
 
@@ -1836,9 +1858,9 @@ function renderOrganicVsAds(agg) {
         : `${fmtInt(totalVisits)} visitas (coleta parcial agora) — atualize a página pra calcular a conversão`;
     } else {
       conv = computeConversions({
-        totalVisits, adsClicks,
-        totalUnits: totalOrders, orgUnits: orgOrders, adsUnits: adsOrders,
-        pedidos
+        totalVisits, adsClicks, pedidos,
+        unidadesTotais: totalOrders, unidadesOrganicas: orgOrders, unidadesAds: adsOrders,
+        cvrAds: adsHasTraffic ? (adsOrders / adsClicks * 100) : null
       });
       if (conv.reason === 'visitas-abaixo-dos-cliques' || conv.reason === 'acima-de-100') {
         visitsHint = `${fmtInt(totalVisits)} visitas registradas pra ${fmtInt(adsClicks)} cliques de Ads — visitas de catálogo não contam no anúncio; conversão indisponível`;
@@ -1866,15 +1888,12 @@ function renderOrganicVsAds(agg) {
   const adsConvDelta = (conv.ads != null && prevAdsConv)
     ? deltaBadge(conv.ads, prevAdsConv, { absolute: true, suffix: 'pp' }) : '';
 
-  // A régua do Mercado Livre (por pedido) só faz sentido com venda: "0,00% por
-  // pedido" abaixo de "sem vendas no período" é ruído, não informação.
-  const mostraPorPedido = conv.byOrder != null && !semVenda && conv.byOrder > 0;
-  const overallConvHint = 'De cada 100 visitas, quantas viraram unidade vendida. Vendas totais ÷ visitas totais — o mesmo "Vendas" que está aqui do lado.'
-    + (mostraPorPedido
-      ? ` O Mercado Livre conta por PEDIDO (um pedido pode levar várias unidades): por lá dá ${fmtPct(conv.byOrder, 2)}${semCancelados ? '' : ', contando pedidos cancelados junto'}.`
-      : '');
-  const orgConvHint = 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso pago.';
-  const convSub = mostraPorPedido ? `${fmtPct(conv.byOrder, 2)} por pedido` : '';
+  const overallConvHint = conv.base === 'pedidos'
+    ? '% das visitas que viraram pedido. Pedidos ÷ visitas totais — mesmo número do card "Conversão de visitas" do Seller Central (lá são visitas únicas; pode variar um pouco).'
+    : '% das visitas que viraram venda. Vendas totais ÷ visitas totais. Precisa de dados de visita.';
+  const orgConvHint = conv.base === 'pedidos'
+    ? 'Pedidos orgânicos (pedidos totais − vendas por Ads) ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.'
+    : 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.';
 
   const pctOf = (a, b) => b > 0 ? +(a / b * 100).toFixed(1) : 0;
   const orgRevPct = pctOf(orgRev, totalRev);
@@ -1922,7 +1941,7 @@ function renderOrganicVsAds(agg) {
           <div class="mfd-vs-kpi-row">
             ${kpiCell({ label: 'Vendas', hint: 'Total de unidades vendidas no período (Ads + orgânico). É o numerador da Conversão aqui do lado.', value: fmtCompact(totalOrders) + maisDe, delta: deltaBadge(totalOrders, prevSales) })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda. Receita total ÷ vendas totais.', value: fmtMoneyCompact(totalTicket), valueTitle: fmtMoney(totalTicket), delta: deltaBadge(totalTicket, prevTotalTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: overallConvHint, value: `${overallConvText}${spinnerHTML}`, delta: overallConvDelta, sub: convSub })}
+            ${kpiCell({ label: 'Conversão', hint: overallConvHint, value: `${overallConvText}${spinnerHTML}`, delta: overallConvDelta })}
             ${kpiCell({ label: 'Custo Ads', hint: 'Quanto você gastou em Ads no período (cliques × CPC médio).', value: fmtMoneyCompact(adsCost), valueTitle: fmtMoney(adsCost), delta: deltaBadge(adsCost, prevCost, { inverted: true }) })}
           </div>
         </div>
@@ -4403,16 +4422,21 @@ function consolidarSnapshot(snap, sid, period) {
   snap.src = (a.organic_from_orders || a.organic_only) ? 'orders' : 'ads';
   snap.partial = a.revenue_complete === false;
 
+  const od = STATE.ordersData;
+  // Pedidos BRUTOS do ML (com cancelados) — a base da conversão no card
+  const pedidos = (od && typeof od.total_orders === 'number') ? od.total_orders : null;
+  if (pedidos != null) snap.orders = pedidos;
+
   const visitasOk = v && v.total_visits > 0 && !v.capped && !v.incomplete;
   snap.visits = visitasOk ? v.total_visits : 0;
   const orgVisits = visitasOk ? Math.max(0, v.total_visits - snap.clicks) : 0;
-  // Unidades ÷ visitas orgânicas — MESMA base do card e do Health Score
-  const orgConv = orgVisits > 0 ? (snap.organic_orders / orgVisits * 100) : 0;
+  // MESMA base do card: pedidos totais − vendas por Ads, sobre visitas orgânicas.
+  // Se o snapshot guardasse outra base, o delta mediria a troca de régua.
+  const orgSales = pedidos != null
+    ? Math.max(0, pedidos - snap.ads_orders)
+    : snap.organic_orders;
+  const orgConv = orgVisits > 0 ? (orgSales / orgVisits * 100) : 0;
   snap.organic_conversion = orgConv > 100 ? 0 : orgConv; // >100% = visitas subcontadas (catálogo)
-
-  const od = STATE.ordersData;
-  if (od && od.revenue && typeof od.revenue.orders === 'number') snap.orders = od.revenue.orders;
-  else if (od && typeof od.total_orders === 'number') snap.orders = od.total_orders;
 
   rtSaveSnapshot(sid, period, snap);
   rtUpdateRecords(sid, Object.assign({ date: todayStr() }, snap));
@@ -4681,11 +4705,12 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
           const visitsPrev = (pVis && !pVis.capped && !pVis.incomplete && pVis.total_visits > 0) ? pVis.total_visits : 0;
           const grossOrdersPrev = grossOrdersOf(pd).pedidos || 0;
           const orgUnitsPrev = orgUnitsPrevCalc;
-          // Conversão orgânica anterior em UNIDADES — mesma base do card de hoje
+          // Conversão orgânica anterior na MESMA base do card: pedidos − vendas Ads
           let orgConvPrev = 0;
-          if (visitsPrev > 0) {
+          if (visitsPrev > 0 && grossOrdersPrev > 0) {
             const orgVisitsPrev = Math.max(0, visitsPrev - clicksPrev);
-            orgConvPrev = orgVisitsPrev > 0 ? (orgUnitsPrev / orgVisitsPrev * 100) : 0;
+            const orgSalesPrev = Math.max(0, grossOrdersPrev - adsUnitsPrev);
+            orgConvPrev = orgVisitsPrev > 0 ? (orgSalesPrev / orgVisitsPrev * 100) : 0;
             if (orgConvPrev > 100) orgConvPrev = 0; // visitas subcontadas (catálogo)
           }
           STATE.prevSnapshot = {

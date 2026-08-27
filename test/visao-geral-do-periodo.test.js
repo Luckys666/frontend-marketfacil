@@ -60,7 +60,7 @@ const ORDERS_OK = {
   revenue: { amount: 100000, units: 3473, orders: PEDIDOS_VALIDOS, orders_cancelled: 92, complete: true }
 };
 
-console.log('\n— as três conversões fecham entre si —');
+console.log('\n— a conversão total é a MESMA régua do painel do Mercado Livre —');
 {
   const { T, STATE } = carregar();
   cenario(STATE, { agg: AGG_BASE, visits: VISITS_OK, orders: ORDERS_OK });
@@ -69,53 +69,31 @@ console.log('\n— as três conversões fecham entre si —');
   const org = lerColuna(html, 'mfd-vs-organic');
   const ads = lerColuna(html, 'mfd-vs-ads');
 
-  const esperadoTotal = (UN_ADS + UN_ORG) / VISITAS * 100;      // 14,87%
-  const esperadoOrg = UN_ORG / (VISITAS - CLIQUES) * 100;        // 27,52%
-  const esperadoAds = UN_ADS / CLIQUES * 100;                    // 6,43%
+  const esperadoTotal = PEDIDOS_BRUTOS / VISITAS * 100;                        // 10,67%
+  const esperadoOrg = (PEDIDOS_BRUTOS - UN_ADS) / (VISITAS - CLIQUES) * 100;   // 17,03%
+  const esperadoAds = UN_ADS / CLIQUES * 100;                                  // 6,43%
 
-  check('conversão total = vendas totais ÷ visitas totais',
+  check('conversão total = PEDIDOS BRUTOS ÷ visitas (o número que o vendedor confere no ML)',
     Math.abs(num(total['Conversão']) - esperadoTotal) < 0.01,
     `tela ${total['Conversão']} vs conta ${esperadoTotal.toFixed(2)}%`);
-  check('conversão orgânica = vendas orgânicas ÷ visitas orgânicas',
+
+  // Guarda contra a regressão de 26/08: trocar pra unidades dá 14,87% e o
+  // vendedor passa a ver um número que não existe no painel do ML.
+  const seFosseUnidades = (UN_ADS + UN_ORG) / VISITAS * 100;
+  check('NÃO usa unidades no numerador do total (isso divergiria do ML)',
+    Math.abs(num(total['Conversão']) - seFosseUnidades) > 1,
+    `unidades daria ${seFosseUnidades.toFixed(2)}%, a tela mostra ${total['Conversão']}`);
+
+  check('conversão orgânica = (pedidos totais − vendas por Ads) ÷ visitas orgânicas',
     Math.abs(num(org['Conversão']) - esperadoOrg) < 0.01,
     `tela ${org['Conversão']} vs conta ${esperadoOrg.toFixed(2)}%`);
-  check('conversão Ads = vendas Ads ÷ cliques (não o avg_cvr do ML)',
+  check('conversão Ads = vendas Ads ÷ cliques (calculada, não o avg_cvr velho)',
     Math.abs(num(ads['Conversão']) - esperadoAds) < 0.01,
     `tela ${ads['Conversão']} vs conta ${esperadoAds.toFixed(2)}%`);
 
-  // O teste que o vendedor faz de cabeça: a média ponderada tem que fechar
-  const ponderada = (num(org['Conversão']) * (VISITAS - CLIQUES) + num(ads['Conversão']) * CLIQUES) / VISITAS;
-  check('média ponderada de orgânico e Ads bate com o total',
-    Math.abs(ponderada - num(total['Conversão'])) < 0.02,
-    `ponderada ${ponderada.toFixed(2)}% vs total ${total['Conversão']}`);
-
-  check('total fica ENTRE a conversão de Ads e a orgânica (a parte nunca é maior que o todo do lado errado)',
-    num(ads['Conversão']) <= num(total['Conversão']) && num(total['Conversão']) <= num(org['Conversão']),
-    `ads ${ads['Conversão']} / total ${total['Conversão']} / org ${org['Conversão']}`);
-
-  // Tolerância = o arredondamento do formato compacto (2.573 vira "2,6k")
-  check('as vendas mostradas somam: orgânico + Ads = total',
-    Math.abs(num(org['Vendas']) + num(ads['Vendas']) - num(total['Vendas'])) <= 100,
-    `${org['Vendas']} + ${ads['Vendas']} vs ${total['Vendas']}`);
-}
-
-console.log('\n— a régua do Mercado Livre continua na tela, separada —');
-{
-  const { T, STATE } = carregar();
-  cenario(STATE, { agg: AGG_BASE, visits: VISITS_OK, orders: ORDERS_OK });
-  const html = T.renderOrganicVsAds(STATE.data.aggregated);
-  const porPedido = (PEDIDOS_VALIDOS / VISITAS * 100).toFixed(2).replace('.', ',');
-  check('mostra a conversão por pedido como sub-informação',
-    html.includes(porPedido + '% por pedido'), porPedido);
-  check('usa os pedidos SEM cancelados (revenue.orders), não o paging.total',
-    !html.includes((PEDIDOS_BRUTOS / VISITAS * 100).toFixed(2).replace('.', ',') + '% por pedido'));
-
-  // Proxy antigo (só total_orders): aceita como aproximação e AVISA no hint
-  const { T: T2, STATE: S2 } = carregar();
-  cenario(S2, { agg: AGG_BASE, visits: VISITS_OK, orders: { total_orders: PEDIDOS_BRUTOS } });
-  const html2 = T2.renderOrganicVsAds(S2.data.aggregated);
-  check('com proxy antigo, avisa que os cancelados estão dentro',
-    html2.includes('contando pedidos cancelados junto'));
+  check('o hint do total cita o Seller Central', html.includes('Seller Central'));
+  check('não sobrou a sub-informação "por pedido" que foi revertida',
+    !html.includes('por pedido'));
 }
 
 console.log('\n— receita truncada nunca vira número fechado —');
@@ -190,24 +168,28 @@ console.log('\n— computeConversions: as guardas —');
 {
   const { T } = carregar();
   const c = T.computeConversions;
-  const base = { totalVisits: 1000, adsClicks: 200, totalUnits: 50, orgUnits: 30, adsUnits: 20, pedidos: 40 };
+  // 1000 visitas, 200 cliques de Ads, 40 pedidos, 20 unidades vendidas via Ads
+  const base = { totalVisits: 1000, adsClicks: 200, pedidos: 40,
+    unidadesTotais: 50, unidadesOrganicas: 30, unidadesAds: 20, cvrAds: 10 };
 
   const ok = c(base);
-  check('caso normal devolve as três + a régua por pedido',
-    ok.total === 5 && ok.organic === 3.75 && ok.ads === 10 && ok.byOrder === 4,
-    JSON.stringify(ok));
+  check('total = pedidos ÷ visitas',
+    ok.total === 4 && ok.base === 'pedidos', JSON.stringify(ok));
+  check('orgânico = (pedidos − unidades Ads) ÷ visitas orgânicas',
+    ok.organic === (40 - 20) / 800 * 100, String(ok.organic));
+  check('ads = a CVR que o card calculou', ok.ads === 10);
   check('sem visitas devolve null, não zero',
     c(Object.assign({}, base, { totalVisits: 0 })).total === null);
   check('visitas iguais aos cliques devolve null (denominador orgânico zero)',
     c(Object.assign({}, base, { adsClicks: 1000 })).total === null);
   check('conversão impossível (>100%) devolve null',
-    c(Object.assign({}, base, { totalUnits: 5000 })).total === null);
+    c(Object.assign({}, base, { pedidos: 5000 })).total === null);
   check('sem cliques de Ads, conversão de Ads é null e as outras seguem',
-    (() => { const r = c(Object.assign({}, base, { adsClicks: 0, adsUnits: 0 })); return r.ads === null && r.total === 5; })());
-  check('pedidos ausentes não derrubam as outras conversões',
-    (() => { const r = c(Object.assign({}, base, { pedidos: null })); return r.byOrder === null && r.total === 5; })());
+    (() => { const r = c(Object.assign({}, base, { adsClicks: 0, unidadesAds: 0, cvrAds: null })); return r.ads === null && r.total === 4; })());
+  check('sem pedidos (proxy fora do ar) cai pra unidades e AVISA na base',
+    (() => { const r = c(Object.assign({}, base, { pedidos: null })); return r.base === 'unidades' && r.total === 5; })());
   check('zero venda com visitas é 0% de verdade (não null) — quem decide mostrar é o card',
-    c(Object.assign({}, base, { totalUnits: 0, orgUnits: 0, adsUnits: 0 })).total === 0);
+    c(Object.assign({}, base, { pedidos: 0, unidadesTotais: 0, unidadesOrganicas: 0, unidadesAds: 0 })).total === 0);
 }
 
 console.log('\n— deltaBadge: sair do zero é notícia, não "sem dado" —');
@@ -271,9 +253,11 @@ console.log('\n— snapshot guarda a régua que usou —');
   check('vendas do snapshot = unidades Ads + orgânicas', snap.sales === UN_ADS + UN_ORG, String(snap.sales));
   check('cvr do snapshot é calculada, não o avg_cvr do ML',
     Math.abs(snap.cvr - (UN_ADS / CLIQUES * 100)) < 0.001, String(snap.cvr));
-  check('conversão orgânica do snapshot usa a mesma base do card',
-    Math.abs(snap.organic_conversion - (UN_ORG / (VISITAS - CLIQUES) * 100)) < 0.001,
+  check('conversão orgânica do snapshot usa a mesma base do card (pedidos − Ads)',
+    Math.abs(snap.organic_conversion - ((PEDIDOS_BRUTOS - UN_ADS) / (VISITAS - CLIQUES) * 100)) < 0.001,
     String(snap.organic_conversion));
+  check('snapshot guarda os pedidos BRUTOS (base do ML), não os sem-cancelados',
+    snap.orders === PEDIDOS_BRUTOS, String(snap.orders));
   check('grava no localStorage do seller', !!storage.getItem('mf_dash_history_999'));
 
   const { T: T2, STATE: S2 } = carregar();

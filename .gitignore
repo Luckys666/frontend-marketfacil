@@ -21,6 +21,10 @@ ruvector.db
 agentdb.rvf
 agentdb.rvf.lock
 
+# Área de trabalho da sessão (screenshots, backups, scripts ad-hoc) — nunca commitar
+_work/
+_lixo/
+
 # Material interno — repo é PÚBLICO (jsDelivr CDN exige); nada de docs/specs internos aqui
 CLAUDE.md
 *-SPEC.md
