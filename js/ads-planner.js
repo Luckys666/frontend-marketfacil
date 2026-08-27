@@ -53,6 +53,21 @@ function fmtInt(n) {
     return Number(Math.round(n)).toLocaleString(_mfCfg().locale);
 }
 
+// Janela do período selecionado. UM lugar só: antes cada chamador refazia essa
+// conta e o /ads-items ficou sem ela — a tabela, o ranking e os alertas viviam
+// nos 30 dias default do proxy enquanto os KPIs e o gráfico seguiam o botão.
+// O ML rejeita janela acima de 90 dias (400 invalid_request_param), e o seletor
+// vai até 90 — o clamp aqui é cinto de segurança.
+function adpPeriodRange(days) {
+    const d = Math.min(90, Math.max(1, parseInt(days, 10) || 30));
+    const now = new Date();
+    return {
+        days: d,
+        from: new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        to: now.toISOString().split('T')[0]
+    };
+}
+
 // Métricas consolidadas de uma campanha. Preferimos camp.metrics (vem da API do ML
 // via /ads-aggregated e cobre 100% dos anúncios da campanha no período). Fallback:
 // soma dos items carregados — PARCIAL, pois /ads-items traz só os top 50 da conta.
@@ -634,19 +649,29 @@ function renderEngagementPanel(overview, alerts, containerId) {
     const activeTarget = window._tacosTarget || (goal && goal.metric === 'tacos' ? goal.target : currentTacosVal || 3);
     if (!window._tacosTarget && activeTarget > 0) window._tacosTarget = activeTarget;
 
-    const ok = currentTacosVal <= activeTarget;
-    const pctReached = activeTarget > 0 ? Math.min(100, (activeTarget / Math.max(currentTacosVal, 0.01)) * 100) : 0;
+    // Sem investimento no per\u00edodo n\u00e3o existe TACOS \u2014 e "0% \u2264 meta" n\u00e3o \u00e9 meta
+    // batida, \u00e9 aus\u00eancia de dado. Celebrar aqui seria premiar o que n\u00e3o aconteceu.
+    const investiuNoPeriodo = ((overview.aggregated && overview.aggregated.total_cost) || 0) > 0;
+    const ok = investiuNoPeriodo && currentTacosVal <= activeTarget;
+    const pctReached = (investiuNoPeriodo && activeTarget > 0) ? Math.min(100, (activeTarget / Math.max(currentTacosVal, 0.01)) * 100) : 0;
     const daysLeft = goal && goal.endDate ? rtDaysBetween(rtToday(), goal.endDate) : 0;
-    const statusLine = ok
+    const statusLine = !investiuNoPeriodo
+        ? `<span style="color:var(--text-muted);font-weight:600;">Sem investimento no per\u00edodo</span>`
+        : ok
         ? `<span style="color:#059669;font-weight:700;">\u2713 Meta atingida!</span> ${daysLeft > 0 ? `<span style="color:var(--text-muted);"> \u00b7 ${daysLeft}d restantes</span>` : ''}`
         : `<span style="color:#dc2626;font-weight:700;">Acima da meta</span> ${daysLeft > 0 ? `<span style="color:var(--text-muted);"> \u00b7 ${daysLeft}d restantes</span>` : ''}`;
-    const goalHtml = `<div class="adp-rt-card adp-rt-card-glow" style="--glow-color:${ok?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'};">
+    // Neutro (cinza) quando não houve investimento: nem verde de conquista, nem
+    // vermelho de alerta — não há o que julgar.
+    const goalCor = !investiuNoPeriodo ? 'var(--text-muted)' : (ok ? '#059669' : '#dc2626');
+    const goalGlow = !investiuNoPeriodo ? 'rgba(148,163,184,.25)' : (ok ? 'rgba(16,185,129,.35)' : 'rgba(239,68,68,.35)');
+    const goalBar = !investiuNoPeriodo ? '#cbd5e1' : (ok ? '#10b981' : '#ef4444');
+    const goalHtml = `<div class="adp-rt-card adp-rt-card-glow" style="--glow-color:${goalGlow};">
         <div class="adp-rt-card-title">\ud83c\udfaf Meta de TACOS</div>
         <div style="display:flex;align-items:baseline;gap:6px;margin:4px 0;">
             <span style="font-size:0.68rem;color:var(--text-muted);">atual</span>
-            <span style="font-size:1.4rem;font-weight:800;color:${ok?'#059669':'#dc2626'};font-family:'DM Mono',monospace;line-height:1;"><span class="adp-count-up" data-target="${fmt(currentTacosVal, 2)}">0</span>%</span>
+            <span style="font-size:1.4rem;font-weight:800;color:${goalCor};font-family:'DM Mono',monospace;line-height:1;"><span class="adp-count-up" data-target="${fmt(currentTacosVal, 2)}">0</span>%</span>
         </div>
-        <div class="adp-rt-bar"><div class="adp-rt-bar-fill" style="width:${Math.min(100,pctReached)}%;background:${ok?'#10b981':'#ef4444'};"></div></div>
+        <div class="adp-rt-bar"><div class="adp-rt-bar-fill" style="width:${Math.min(100,pctReached)}%;background:${goalBar};"></div></div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.72rem;flex-wrap:wrap;">
             <span style="color:var(--text-muted);">m\u00e1ximo</span>
             <input type="number" id="adp-goal-inline-input" value="${fmt(activeTarget, 2).replace(',','.')}" min="0" max="100" step="0.5"
@@ -690,7 +715,14 @@ function renderEngagementPanel(overview, alerts, containerId) {
         if ((current.tacos || 0) > (window._tacosTarget || 3)) checklist.push({ id: 'tacos_high', text: 'TACOS acima da meta — revisar campanhas', done: false });
         const watchlist = rtGet(sid, 'watchlist', []);
         if (watchlist.length > 0) checklist.push({ id: 'watchlist', text: `Conferir ${watchlist.length} anúncio(s) em observação`, done: false });
-        if (!checklist.length) checklist.push({ id: 'all_good', text: '🎉 Tudo em ordem — explore oportunidades de escala', done: false });
+        if (!checklist.length) {
+            // "Tudo em ordem" só vale se houve o que conferir. Sem investimento no
+            // período, a tarefa honesta é olhar por que não rodou — não comemorar.
+            const investiu = ((overview.aggregated && overview.aggregated.total_cost) || 0) > 0;
+            checklist.push(investiu
+                ? { id: 'all_good', text: '🎉 Tudo em ordem — explore oportunidades de escala', done: false }
+                : { id: 'sem_investimento', text: 'Nenhum gasto com ads no período — confira se suas campanhas estão ativas', done: false });
+        }
         rtSetDailyChecklist(sid, checklist);
     }
     const doneCount = checklist.filter(it => it.done).length;
@@ -2094,6 +2126,66 @@ async function fetchVisitsBulk(itemIds, token, dateFrom, dateTo) {
     return allVisits;
 }
 
+// Visitas diárias da CONTA INTEIRA em UMA chamada (/users/{id}/items_visits/time_window
+// via proxy). Três motivos pra preferir isso à soma por anúncio:
+//  - cobre a janela pedida; o fetch-visits-bulk cai num fallback por item com
+//    `last=30` fixo e por isso o gráfico de 90d só tinha barra nos últimos 30 dias;
+//  - 1 chamada em vez de uma por anúncio — conta com +1.000 anúncios não derruba;
+//  - enxerga visita de CATÁLOGO, invisível item a item (23.211 vs 6.958 na
+//    conta-prova). A soma por item subreportava o orgânico.
+// Devolve { daily: { 'YYYY-MM-DD': total }, accountWide } ou null se nada respondeu.
+async function fetchVisitsAccountDaily(sellerId, days, token, fallbackItemIds) {
+    const { days: d, from, to } = adpPeriodRange(days);
+    if (sellerId) {
+        try {
+            const r = await fetch(`${BASE_URL_PROXY}/api/user-visits-daily?user_id=${sellerId}&last=${d}&unit=day`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (r.ok) {
+                const data = await r.json();
+                if (data && Array.isArray(data.results)) {
+                    // O ML devolve a lista DESORDENADA e OMITE os dias sem visita
+                    // (comprovado live 27/08/26: last=90 -> 46 pontos, nenhum com 0,
+                    // cobrindo 29/05 a 26/08). Logo: dia ausente DENTRO da janela
+                    // coberta e zero de verdade, nao falta de medicao.
+                    const daily = {};
+                    let maxData = null;
+                    for (const p of data.results) {
+                        if (!p || !p.date) continue;
+                        const ymd = String(p.date).slice(0, 10);
+                        daily[ymd] = (daily[ymd] || 0) + (Number(p.total) || 0);
+                        if (!maxData || ymd > maxData) maxData = ymd;
+                    }
+                    // O dia corrente ainda nao esta consolidado no ML — fica fora da
+                    // janela medida pra nao virar um zero falso na ponta do grafico.
+                    const ontem = new Date(Date.parse(to + 'T00:00:00Z') - 864e5).toISOString().split('T')[0];
+                    return { daily, accountWide: true, from, to: maxData || ontem };
+                }
+            }
+        } catch (_) { /* cai pro fallback por item */ }
+    }
+    // Fallback: amostra por anúncio. Cobre menos (sem catálogo, janela do proxy),
+    // mas é melhor que gráfico vazio — e vai marcado como não-conta-inteira.
+    const ids = fallbackItemIds || [];
+    if (!ids.length) return null;
+    try {
+        const bulk = await fetchVisitsBulk(ids, token, from, to);
+        const daily = {};
+        for (const itemVisits of Object.values(bulk || {})) {
+            const results = itemVisits?.results || itemVisits?.data || (Array.isArray(itemVisits) ? itemVisits : []);
+            for (const v of results) {
+                if (!v || !v.date) continue;
+                const ymd = String(v.date).slice(0, 10);
+                daily[ymd] = (daily[ymd] || 0) + (Number(v.total ?? v.total_visits) || 0);
+            }
+        }
+        // Fallback por item: o proxy cai num time_window last=30 fixo, entao a
+        // janela realmente medida e so o que veio — usa min/max do proprio dado.
+        const chaves = Object.keys(daily).sort();
+        return { daily, accountWide: false, from: chaves[0] || from, to: chaves[chaves.length - 1] || from };
+    } catch (_) { return null; }
+}
+
 // ══════════════════════════════════════════════════════
 // Fase 2: endpoints paginados que delegam sort/filter ao ML
 // ══════════════════════════════════════════════════════
@@ -2106,9 +2198,7 @@ const AGG_CACHE_KEY = 'adp_aggregated_cache_v2';
 // Retorna KPIs + série diária + lista de campanhas + count total da conta.
 async function fetchAdsAggregated(token_, days = 30) {
     let token = token_;
-    const now = new Date();
-    const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const to = now.toISOString().split('T')[0];
+    const { from, to } = adpPeriodRange(days);
 
     // Cache
     try {
@@ -2143,6 +2233,13 @@ async function fetchAdsAggregated(token_, days = 30) {
 //  advertiser_id, site_id (opcionais — passa pra evitar refetch no proxy).
 async function fetchAdsItemsPage(token_, params = {}) {
     let token = token_;
+    // Sem data explícita o proxy cai no default dele (30 dias) e os anúncios
+    // param de acompanhar o botão de período. Aplica a janela atual aqui, no
+    // único ponto por onde toda chamada ao /ads-items passa.
+    if (!params.date_from || !params.date_to) {
+        const r = adpPeriodRange(window._currentDays || _currentDays);
+        params = { ...params, date_from: params.date_from || r.from, date_to: params.date_to || r.to };
+    }
     const qs = new URLSearchParams();
     for (const k of ['date_from','date_to','offset','limit','sort_by','sort','min_prints','min_clicks','min_cost','min_revenue','min_orders','q','advertiser_id','site_id']) {
         if (params[k] !== undefined && params[k] !== null && params[k] !== '') qs.append(k, params[k]);
@@ -2544,6 +2641,25 @@ function renderDashboardOverview(overview, containerId) {
 
     const agg = overview.aggregated;
     const daily = overview.daily_aggregated || [];
+
+    // Chamada que falhou NUNCA vira "voc\u00ea n\u00e3o tem ads". Se o resumo n\u00e3o veio e
+    // ou o ML falhou, ou a conta TEM an\u00fancios, o estado \u00e9 "n\u00e3o consegui buscar" \u2014
+    // com bot\u00e3o pra tentar de novo \u2014 e n\u00e3o um convite a ativar Product Ads.
+    // S\u00f3 entra aqui quando falta o resumo: se os KPIs vieram, uma falha lateral
+    // (a lista de campanhas, por exemplo) n\u00e3o pode esconder n\u00famero que est\u00e1 certo.
+    if (!agg && (overview.fetch_failed || overview.total_items_with_ads > 0)) {
+        const quais = (overview.fetch_errors || []).map(e => e.call).join(', ');
+        container.innerHTML = `<div class="adp-empty">
+            <div class="adp-empty-icon">\u26a0\ufe0f</div>
+            <div class="adp-empty-title">N\u00e3o consegui buscar seus n\u00fameros agora</div>
+            <div class="adp-empty-text">O Mercado Livre n\u00e3o respondeu essa parte dos dados. Seus an\u00fancios continuam no ar \u2014 o que faltou foi a leitura das m\u00e9tricas.</div>
+            <div style="margin-top:16px;">
+                <button class="adp-period-btn" onclick="window.changePeriod(${_currentDays})" style="background:var(--blue);color:#fff;font-size:0.75rem;text-transform:none;letter-spacing:0;padding:8px 16px;">Tentar de novo</button>
+            </div>
+            ${quais ? `<div style="margin-top:10px;font-size:0.62rem;color:var(--text-muted);">falhou: ${escapeHtml(quais)}</div>` : ''}
+        </div>`;
+        return;
+    }
 
     if (!agg || overview.total_items_with_ads === 0) {
         container.innerHTML = `<div class="adp-empty">
@@ -3713,9 +3829,7 @@ window.adpLoadDetailCharts = async function(itemId, days, chartId, chartId2, cha
     try {
         const token = await fetchAccessToken();
         if (!token) throw new Error('Token');
-        const now = new Date();
-        const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const to = now.toISOString().split('T')[0];
+        const { from, to } = adpPeriodRange(days);
         const resp = await fetch(`${BASE_URL_PROXY}/api/ads-metrics?item_id=${itemId}&date_from=${from}&date_to=${to}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -3849,7 +3963,14 @@ function renderCharts(overview, containerId, visitsData) {
 
     const daily = overview.daily_aggregated || [];
     if (daily.length < 2) {
-        container.innerHTML = '<div class="text-muted ta-center" style="padding:40px">Dados di\u00e1rios insuficientes para gerar gr\u00e1ficos.</div>';
+        // S\u00e9rie vazia por falha do ML \u2260 s\u00e9rie vazia por falta de dado. Dizer
+        // "insuficientes" quando a chamada quebrou \u00e9 mentir sobre a conta.
+        const falhouDaily = overview.fetch_failed && (overview.fetch_errors || []).some(e => e.call === 'ads_daily');
+        container.innerHTML = falhouDaily
+            ? `<div class="text-muted ta-center" style="padding:40px">O Mercado Livre n\u00e3o devolveu o hist\u00f3rico di\u00e1rio agora.
+                 <div style="margin-top:12px;"><button class="adp-period-btn" onclick="window.changePeriod(${_currentDays})" style="background:var(--blue);color:#fff;text-transform:none;letter-spacing:0;padding:8px 16px;">Tentar de novo</button></div>
+               </div>`
+            : '<div class="text-muted ta-center" style="padding:40px">Dados di\u00e1rios insuficientes para gerar gr\u00e1ficos.</div>';
         return;
     }
 
@@ -3868,30 +3989,63 @@ function renderCharts(overview, containerId, visitsData) {
         }
     });
 
-    // Aggregate visits from visitsData (per-item visits bulk)
+    // Visitas por dia. Formato preferido: { daily: { 'YYYY-MM-DD': total } } vindo
+    // do fetchVisitsAccountDaily (conta inteira, 1 chamada). O formato antigo
+    // (mapa por item_id do fetch-visits-bulk) segue aceito pro fallback.
     const visitsByDate = {};
+    // Janela realmente MEDIDA. Dentro dela, dia ausente = zero visita; fora dela,
+    // e buraco (o ML nao mediu). Sem janela declarada, cai no conjunto de chaves.
+    let visitasDe = visitsData && visitsData.from ? String(visitsData.from).slice(0, 10) : null;
+    let visitasAte = visitsData && visitsData.to ? String(visitsData.to).slice(0, 10) : null;
     if (visitsData && typeof visitsData === 'object') {
-        for (const [itemId, itemVisits] of Object.entries(visitsData)) {
-            const results = itemVisits?.results || itemVisits?.data || (Array.isArray(itemVisits) ? itemVisits : []);
-            for (const v of results) {
-                if (v.date) {
-                    const key = v.date.substring(0, 10);
-                    visitsByDate[key] = (visitsByDate[key] || 0) + (v.total || v.total_visits || 0);
+        if (visitsData.daily && typeof visitsData.daily === 'object') {
+            for (const [k, v] of Object.entries(visitsData.daily)) {
+                visitsByDate[String(k).substring(0, 10)] = Number(v) || 0;
+            }
+        } else {
+            for (const itemVisits of Object.values(visitsData)) {
+                const results = itemVisits?.results || itemVisits?.data || (Array.isArray(itemVisits) ? itemVisits : []);
+                for (const v of results) {
+                    if (v && v.date) {
+                        const key = String(v.date).substring(0, 10);
+                        visitsByDate[key] = (visitsByDate[key] || 0) + (Number(v.total ?? v.total_visits) || 0);
+                    }
                 }
             }
         }
     }
 
-    // Build entries for visits chart
+    // Build entries for visits chart.
+    // O clique de ads é fato da conta (vem do daily_aggregated) — NÃO pode ser
+    // apagado porque falta o dado de visita daquele dia. Antes um
+    // `Math.min(totalVisitas, cliques)` zerava a barra azul junto com a verde.
+    // Dia sem visita vira BURACO (null) no orgânico, não zero: zero afirmaria
+    // que ninguém entrou, e o que houve foi ausência de medição.
+    if (!visitasDe || !visitasAte) {
+        const ks = Object.keys(visitsByDate).sort();
+        visitasDe = visitasDe || ks[0] || null;
+        visitasAte = visitasAte || ks[ks.length - 1] || null;
+    }
     const visitsEntries = daily.map(d => {
-        const totalVisits = visitsByDate[d.date] || 0;
-        const adsClicks = Math.min(totalVisits, adsClicksByDate[d.date] || 0);
+        const temVisitas = !!(visitasDe && visitasAte && d.date >= visitasDe && d.date <= visitasAte);
+        const adsClicks = adsClicksByDate[d.date] || 0;
+        const totalVisits = temVisitas ? (visitsByDate[d.date] || 0) : null;
         const prints = adsPrintsByDate[d.date] || 0;
-        return { date: d.date, total: totalVisits, ads: adsClicks, organic: Math.max(0, totalVisits - adsClicks), prints };
+        return {
+            date: d.date,
+            temVisitas,
+            total: temVisitas ? totalVisits : null,
+            ads: adsClicks,
+            organic: temVisitas ? Math.max(0, totalVisits - adsClicks) : null,
+            prints
+        };
     });
 
-    const totalVisitsSum = visitsEntries.reduce((s, e) => s + e.total, 0);
-    const totalAdsClicksSum = visitsEntries.reduce((s, e) => s + e.ads, 0);
+    // Composição só soma dia MEDIDO — misturar dia sem visita puxaria o
+    // percentual de ads pra cima por falta de denominador.
+    const visitsMedidas = visitsEntries.filter(e => e.temVisitas);
+    const totalVisitsSum = visitsMedidas.reduce((s, e) => s + e.total, 0);
+    const totalAdsClicksSum = visitsMedidas.reduce((s, e) => s + e.ads, 0);
     const adsPctTotal = totalVisitsSum > 0 ? (totalAdsClicksSum / totalVisitsSum) * 100 : 0;
     const orgPctTotal = 100 - adsPctTotal;
 
@@ -3920,12 +4074,12 @@ function renderCharts(overview, containerId, visitsData) {
         const second = daily.slice(mid);
         const sumField = (arr, f) => arr.reduce((s, d) => s + (parseFloat(d[f]) || 0), 0);
 
-        // Traffic: usa visitsEntries já calculado
+        // Traffic: só dias MEDIDOS — meia janela sem visita daria um delta falso
         let trafficDelta = null;
-        if (visitsEntries.length >= 4) {
-            const vMid = Math.floor(visitsEntries.length / 2);
-            const vFirst = visitsEntries.slice(0, vMid);
-            const vSecond = visitsEntries.slice(vMid);
+        if (visitsMedidas.length >= 4) {
+            const vMid = Math.floor(visitsMedidas.length / 2);
+            const vFirst = visitsMedidas.slice(0, vMid);
+            const vSecond = visitsMedidas.slice(vMid);
             const fTotal = vFirst.reduce((s, e) => s + e.total, 0);
             const fAds = vFirst.reduce((s, e) => s + e.ads, 0);
             const sTotal = vSecond.reduce((s, e) => s + e.total, 0);
@@ -4214,9 +4368,13 @@ function renderCharts(overview, containerId, visitsData) {
                             afterBody: (items) => {
                                 const idx = items[0]?.dataIndex;
                                 if (idx == null) return '';
-                                const org = visitsEntries[idx]?.organic || 0;
-                                const ads = visitsEntries[idx]?.ads || 0;
-                                const total = org + ads;
+                                const e = visitsEntries[idx];
+                                if (!e) return '';
+                                const ads = e.ads || 0;
+                                // Sem medição de visita o total é desconhecido — dizer
+                                // "Total: 5" com o clique de ads sozinho seria inventar.
+                                if (!e.temVisitas) return 'Cliques em ads: ' + ads.toLocaleString('pt-BR') + '  |  visitas desse dia não disponíveis';
+                                const total = (e.organic || 0) + ads;
                                 const adsPct = total > 0 ? ((ads / total) * 100).toFixed(0) : '0';
                                 return 'Total: ' + total.toLocaleString('pt-BR') + '  |  Ads: ' + adsPct + '%';
                             }
@@ -4285,7 +4443,15 @@ function renderCampaignInsights(overview, containerId) {
     const items = overview.items || [];
 
     if (campaigns.length === 0) {
-        container.innerHTML = '';
+        // Sumir com a seção esconde a diferença entre "não tem campanha" e "o ML
+        // não respondeu". Quando foi falha, diz que foi falha.
+        const falhouCampanhas = overview.fetch_failed && (overview.fetch_errors || []).some(e => e.call === 'campaigns_list');
+        container.innerHTML = falhouCampanhas
+            ? `<div class="adp-section-title">📣 Campanhas</div>
+               <div class="text-muted ta-center" style="padding:24px">Não consegui buscar suas campanhas agora. Os números da conta acima seguem valendo.
+                 <div style="margin-top:12px;"><button class="adp-period-btn" onclick="window.changePeriod(${_currentDays})" style="background:var(--blue);color:#fff;text-transform:none;letter-spacing:0;padding:8px 16px;">Tentar de novo</button></div>
+               </div>`
+            : '';
         return;
     }
 
@@ -5424,6 +5590,10 @@ async function initAdsPlanner() {
             partial: totalItemsWithAds > items.length,
             date_from: aggregatedResp?.date_from,
             date_to: aggregatedResp?.date_to,
+            // Falha de chamada ao ML vem marcada pelo proxy. Nome próprio pra não
+            // colidir com `partial`, que aqui significa "lista de anúncios parcial".
+            fetch_failed: !!aggregatedResp?.partial,
+            fetch_errors: aggregatedResp?.errors || null,
             aggregated: aggregatedResp?.aggregated || null,
             daily_aggregated: aggregatedResp?.daily_aggregated || [],
             campaigns: aggregatedResp?.campaigns || [],
@@ -5457,16 +5627,12 @@ async function initAdsPlanner() {
         }
         _currentItemDetails = itemDetails;
 
-        // Visits ainda vai por endpoint legado (n\u00e3o migrado). S\u00f3 dos 50 vis\u00edveis.
+        // Visitas: conta inteira em 1 chamada, cobrindo a janela do bot\u00e3o.
+        // Os 50 an\u00fancios vis\u00edveis ficam s\u00f3 como fallback.
         const adsItemIds = items.map(i => i.item_id);
-        if (adsItemIds.length > 0) {
-            const now2 = new Date();
-            const fromDate = new Date(now2.getTime() - _currentDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-            const toDate = now2.toISOString().split('T')[0];
-            try {
-                _currentVisitsData = await fetchVisitsBulk(adsItemIds, token, fromDate, toDate);
-            } catch (_) { _currentVisitsData = {}; }
-        }
+        try {
+            _currentVisitsData = await fetchVisitsAccountDaily(overview.seller_id, _currentDays, token, adsItemIds);
+        } catch (_) { _currentVisitsData = null; }
 
         setProgress('Montando dashboard...', 3);
         renderFullDashboard(overview, _currentItemDetails, _currentVisitsData);
@@ -5655,6 +5821,10 @@ window.changePeriod = async function(days) {
             partial: totalItemsWithAds > items.length,
             date_from: aggregatedResp?.date_from,
             date_to: aggregatedResp?.date_to,
+            // Falha de chamada ao ML vem marcada pelo proxy. Nome próprio pra não
+            // colidir com `partial`, que aqui significa "lista de anúncios parcial".
+            fetch_failed: !!aggregatedResp?.partial,
+            fetch_errors: aggregatedResp?.errors || null,
             aggregated: aggregatedResp?.aggregated || null,
             daily_aggregated: aggregatedResp?.daily_aggregated || [],
             campaigns: aggregatedResp?.campaigns || [],
@@ -5678,15 +5848,10 @@ window.changePeriod = async function(days) {
         _currentItemDetails = itemDetails;
 
         const adsItemIds = items.map(i => i.item_id);
-        if (adsItemIds.length > 0) {
-            adpShowTopLoader(`Carregando detalhes de ${adsItemIds.length} an\u00fancios\u2026`);
-            const now3 = new Date();
-            const fromDate = new Date(now3.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-            const toDate = now3.toISOString().split('T')[0];
-            try {
-                _currentVisitsData = await fetchVisitsBulk(adsItemIds, token, fromDate, toDate);
-            } catch (_) { _currentVisitsData = {}; }
-        }
+        adpShowTopLoader('Carregando visitas da conta\u2026');
+        try {
+            _currentVisitsData = await fetchVisitsAccountDaily(overview.seller_id, days, token, adsItemIds);
+        } catch (_) { _currentVisitsData = null; }
 
         adpShowTopLoader('Montando dashboard\u2026');
         renderFullDashboard(overview, _currentItemDetails, _currentVisitsData);
