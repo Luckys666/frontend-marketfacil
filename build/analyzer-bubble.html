@@ -4405,14 +4405,42 @@ function MF_saveSnap(itemId, snap) {
  * "+R$ X/mês" e cortava a conversão pela metade (11/08/2026). Quem precisa dos 60 dias
  * pede a série inteira; quem fala em 30 passa por aqui.
  */
-function MF_visitasDosUltimos(results, dias = 30) {
+/**
+ * Idade de uma data em DIAS CIVIS: hoje é 0, ontem é 1. `null` se a data não presta.
+ *
+ * ⚠️ Esta é a ÚNICA régua de janela do arquivo, e é única de propósito. A conta antiga era
+ * `(Date.now() - dia@12:00) / 86400000`, que mede milissegundos desde agora: o dia mais
+ * antigo da janela ENTRAVA antes do meio-dia e SAÍA depois dele. O mesmo anúncio mostrava
+ * 300 visitas de manhã e 290 à tarde (16/08/2026). Pior: quando só metade dos consumidores
+ * foi corrigida, a tabela de "30 dias" passou a discordar do "30 dias" que alimenta score,
+ * oportunidades e snapshot — duas verdades sobre o mesmo anúncio na mesma tela.
+ *
+ * Visita da ML é dado DIÁRIO; a janela tem de virar à meia-noite, junto com o dado.
+ * `agora` é injetável só pra que isso seja testável sem mexer no relógio da máquina.
+ */
+function MF_idadeEmDias(iso, agora) {
+    const texto = String(iso || '').slice(0, 10);
+    if (!texto) return null;
+    const d = new Date(texto + 'T00:00:00');
+    const t = d.getTime();
+    if (isNaN(t)) return null;
+    const hoje = new Date(typeof agora === 'number' ? agora : Date.now());
+    hoje.setHours(0, 0, 0, 0);
+    return Math.round((hoje.getTime() - t) / 86400000);
+}
+
+/**
+ * Recorta a série nos `dias` dias civis COMPLETOS — de ontem pra trás.
+ *
+ * Hoje fica de fora de propósito: a visita do dia ainda está propagando e entraria como um
+ * dia curto, puxando a média pra baixo (mesma razão da guarda de 12/08 em MF_seriesDiarias).
+ * Dia futuro (fuso do vendedor à frente do dado) também não entra.
+ */
+function MF_visitasDosUltimos(results, dias = 30, agora) {
     if (!Array.isArray(results)) return [];
     return results.filter((v) => {
-        const iso = String(v && v.date || '').slice(0, 10);
-        if (!iso) return false;
-        const t = new Date(iso + 'T12:00:00').getTime();
-        if (isNaN(t)) return false;
-        return (Date.now() - t) / 86400000 < dias;
+        const idade = MF_idadeEmDias(v && v.date, agora);
+        return idade !== null && idade >= 1 && idade <= dias;
     });
 }
 
@@ -4545,6 +4573,56 @@ function MF_oppSaveOverride(itemId, kind, patch) {
     } catch (e) { /* localStorage cheio/bloqueado — silencioso */ }
 }
 
+/**
+ * Locale do site em uso, com o mesmo fallback que já estava copiado em 4 pontos do arquivo.
+ */
+function MF_localeDoSite(siteId) {
+    if (typeof window !== 'undefined' && window.MF_getSiteConfig) {
+        const site = siteId || (window.MF_currentSiteId ? window.MF_currentSiteId() : undefined);
+        const cfg = window.MF_getSiteConfig(site);
+        if (cfg && cfg.locale) return cfg.locale;
+    }
+    return 'pt-BR';
+}
+
+/**
+ * Percentual escrito na língua de quem lê.
+ *
+ * `toFixed()` devolve SEMPRE ponto decimal, então a tela mostrava "máx 0.0%" ao lado de
+ * "0,00%" — medido no DOM da version-test em 16/08/2026 (8 com ponto × 3 com vírgula).
+ * Em pt-BR o ponto é separador de MILHAR: "1.234,5%" e "1.234.5%" contam histórias
+ * diferentes. Sai do locale do site e não de uma constante, senão MCO/MLA/MLM nascem
+ * errados quando o i18n chegar.
+ *
+ * Valor que não é número devolve travessão, nunca "NaN%": número inventado é pior que
+ * lacuna assumida.
+ */
+function MF_formatPercent(valor, casas, siteId) {
+    if (valor === null || valor === undefined || valor === '') return '—';
+    const n = Number(valor);
+    if (!isFinite(n)) return '—';
+    const d = (typeof casas === 'number' && casas >= 0) ? Math.floor(casas) : 0;
+    try {
+        return n.toLocaleString(MF_localeDoSite(siteId), {
+            minimumFractionDigits: d, maximumFractionDigits: d,
+        }) + '%';
+    } catch (_) {
+        return n.toFixed(d) + '%';
+    }
+}
+
+/**
+ * Rótulo "máx N" do topo de cada painel do gráfico de visitas.
+ *
+ * Conversão é taxa (ganha casa decimal e "%"); visitas e vendas são CONTAGEM — "máx 437,0"
+ * sugeriria meia visita.
+ */
+function MF_rotuloMaximo(max, chave) {
+    return chave === 'conversao'
+        ? `máx ${MF_formatPercent(max, 1)}`
+        : `máx ${Math.round(Number(max) || 0)}`;
+}
+
 const MF_OPP_KIND_ICON = {
     cvr_upside: '📈',
     stuck_stock: '📦',
@@ -4553,6 +4631,10 @@ const MF_OPP_KIND_ICON = {
     tag_pics: '📷',
     ads_hold: '⏸️',
 };
+
+// Até onde a projeção de estoque ainda é um aviso, e não adivinhação. Mesmo horizonte que
+// js/ad-selector.js já usava — não é limiar novo, é o mesmo passando a valer nas duas telas.
+const MF_RUNWAY_HORIZONTE_DIAS = 365;
 
 function MF_oppPriorityColor(prio) {
     if (prio === 1) return 'var(--red, #dc2626)';
@@ -4616,7 +4698,7 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
                 priority: cvrPct < 2 ? 1 : 3,
                 icon: MF_OPP_KIND_ICON.cvr_upside,
                 title: `Cada 0,1% a mais em conversão = +${fmtMoney(monthlyUpside)}/mês`,
-                detail: `Hoje: ${visits30} visitas em 30d × conversão de ${cvrPct.toFixed(2)}% × ${fmtMoney(price)}.`,
+                detail: `Hoje: ${visits30} visitas em 30d × conversão de ${MF_formatPercent(cvrPct, 2)} × ${fmtMoney(price)}.`,
                 value: monthlyUpside,
                 actions: [],
             });
@@ -4709,16 +4791,27 @@ function MF_buildOpportunities(detail, visitsData, adsData, opts) {
             projPoints.push({ day: i, stock: Math.max(0, availableQty - projectedRate * i) });
         }
 
-        push({
-            kind: 'stock_runway',
-            priority: prio,
-            icon: '⏳',
-            title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
-            detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d, ${salesRecent} nos últimos 15d (~${salesRate15.toFixed(1)}/dia). Com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.${boostNote}`,
-            value: 0,
-            actions: [],
-            chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
-        });
+        // Acima de 1 ano a projeção deixa de ser aviso e vira ruído: a conta continua certa
+        // ("~24788 dias" = 9.993 unidades ÷ 0,4 por dia), mas ninguém repõe estoque com 68
+        // anos de antecedência, e o número finge uma precisão que 15 dias de vendas não
+        // sustentam. Este card existe pra avisar de RUPTURA — sem ruptura no horizonte em
+        // que dá pra agir, ele só ocupa o lugar das oportunidades reais.
+        // Mesma régua e mesmo horizonte de js/ad-selector.js (`stockDaysHtml`), que já
+        // suprimia acima de 365 dias; a Análise é que tinha ficado de fora.
+        // ⚠️ Cai só ESTE card, não a função: o anúncio segue recebendo as outras
+        // oportunidades logo abaixo.
+        if (daysToEmpty <= MF_RUNWAY_HORIZONTE_DIAS) {
+            push({
+                kind: 'stock_runway',
+                priority: prio,
+                icon: '⏳',
+                title: `Estoque acaba em ~${daysToEmpty} ${daysToEmpty === 1 ? 'dia' : 'dias'}`,
+                detail: `${sales30} ${sales30 === 1 ? 'unidade vendida' : 'unidades vendidas'} em 30d, ${salesRecent} nos últimos 15d (~${salesRate15.toFixed(1)}/dia). Com ${availableQty.toLocaleString(_cfg.locale)} em estoque no ML. ${trendLine}.${boostNote}`,
+                value: 0,
+                actions: [],
+                chart: { history: histPoints, projection: projPoints, currentStock: availableQty, daysToEmpty },
+            });
+        }
     }
 
     // (3) Ads pausado em anúncio que já vende organicamente — oportunidade de amplificar
@@ -6089,13 +6182,6 @@ function MF_renderFamilyOverview(data, body) {
     // Só o PARENT_PK é intocável (agrupa as variações); o resto o vendedor preenche
     // abrindo a variação — a nota do rodapé muda conforme o que caiu na lista.
     const ehAgrupador = (a) => catById[a.id]?.hierarchy === 'PARENT_PK';
-    const qtdAgrupador = familyHierAttrs.filter(ehAgrupador).length;
-    const notaCompartilhados = qtdAgrupador === familyHierAttrs.length
-        ? 'Esses campos agrupam as variações — só o Mercado Livre edita.'
-        : (qtdAgrupador === 0
-            ? 'Preencha estes campos abrindo a variação.'
-            : 'Os marcados agrupam as variações (só o ML edita); os outros você preenche abrindo a variação.');
-
     const summary = MF_summarizeFamily(variations);
     const heroUpId = MF_pickHeroVariation(variations);
     const variationCardsHtml = variations.map((v, idx) => MF_renderVariationCard(v, idx, variations, heroUpId, summary)).join('');
@@ -6140,7 +6226,6 @@ function MF_renderFamilyOverview(data, body) {
                         </div>`;
                     }).join('')}
             </div>
-            <div class="mfd-fb-shared-note">${notaCompartilhados}</div>
         </div>
         <div class="mfd-fb-section">
             <div class="mfd-fb-toolbar">
@@ -7249,6 +7334,10 @@ function MF_erroAtalho(chave, msg) {
     if (!el) return;
     el.style.display = 'block';
     el.textContent = msg;
+    // A caixa é a MESMA do aviso de sucesso, que a pinta de azul (`mf-conteudo-info`).
+    // Sem devolver a classe aqui, um erro logo depois de um sucesso saía com cara de
+    // recado neutro — "Não deu para gravar (erro 500)" em azul de informação.
+    el.className = 'mf-conteudo-erro';
 }
 
 /**
@@ -7668,7 +7757,7 @@ function exibirPerformance(performanceData, containerId = "performanceTexto") {
         perfEl.innerHTML = `
             <div class="ana-card" style="animation-delay: 0.3s;">
                 <div class="ana-card-header"><span class="ana-card-icon">⚡</span><span class="ana-card-title">Qualidade do Anúncio (Mercado Livre)</span></div>
-                <p class="text-small" style="color:var(--text-muted);">Qualidade ainda não calculada pelo ML. Os anúncios ativos do marketplace têm esse dado atualizado periodicamente.</p>
+                <p class="text-small" style="color:var(--text-muted);" title="O Mercado Livre atualiza esse dado periodicamente, e só para anúncios ativos do marketplace.">Qualidade ainda não calculada pelo ML.</p>
             </div>`;
         return;
     }
@@ -7918,7 +8007,6 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
         if (!def) return false;
         return mfSoNoML(def, detalheAtual);
     };
-    const marcados = faltando.filter(soNoML).length;
 
     const listaFicha = faltando.length ? `
         <p class="text-small" style="margin:10px 0 6px; color:var(--text-secondary);">Preenchendo estes campos, a ficha fica completa para o ML:</p>
@@ -7926,17 +8014,17 @@ function exibirQualidadeFicha(qualidade, categoryAttributes, containerId = "qual
             ${faltando.map((c) => {
                 const fora = soNoML(c);
                 const selo = fora
-                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Este campo é o que agrupa as variações do produto — mudar por aqui tiraria o anúncio do grupo. Dá para preencher no Mercado Livre.">só no ML</span>`
+                    ? `<span style="font-size:0.68rem; font-weight:600; opacity:.75; margin-left:6px;" title="Marca, modelo e linha identificam o produto e mantêm este anúncio no grupo de variações. Mudar por aqui faria o anúncio sair do grupo — no Mercado Livre dá para ajustar com o cuidado certo.">só no ML</span>`
                     : '';
                 const cor = fora ? 'background:var(--bg-subtle,#f1f5f9); color:var(--text-secondary);' : 'background:var(--yellow-light,#fef3c7); color:#92400e;';
                 return `<span style="display:inline-flex; align-items:center; padding:4px 10px; ${cor} border-radius:999px; font-size:0.8rem; font-weight:500;">${escapeHtml(bonito(c))}${selo}</span>`;
             }).join('')}
         </div>
-        ${marcados ? `<p class="text-small" style="margin:8px 0 0; color:var(--text-muted);">${marcados === 1 ? 'O campo marcado agrupa' : 'Os campos marcados agrupam'} as variações do produto — edite no Mercado Livre.</p>` : ''}` : '';
+` : '';
 
     const listaIds = qualidade.semIdentificador ? `
         <p class="text-small" style="margin:12px 0 0; color:var(--text);">
-            <b>Identificador do produto:</b> falta ${idsFaltando.length ? escapeHtml(idsFaltando.map(bonito).join(', ')) : 'o código de barras (GTIN/EAN)'} — é um dos requisitos de qualidade que o ML mais cobra.
+            <b>Identificador do produto:</b> falta ${idsFaltando.length ? escapeHtml(idsFaltando.map(bonito).join(', ')) : 'o código de barras (GTIN/EAN)'}.
         </p>` : '';
 
     el.innerHTML = `
@@ -8302,8 +8390,8 @@ function exibirPontuacao(score, usedFallback = false, containerId = "scoreCircle
                 if (totalPrev7 === 0) pct = total7 > 0 ? 100 : 0;
                 else pct = ((total7 - totalPrev7) / totalPrev7) * 100;
 
-                if (pct < -5) checks.push({ ok: false, text: `Visitas em queda (${pct.toFixed(0)}%)` });
-                else if (pct > 5) checks.push({ ok: true, text: `Visitas subindo (+${pct.toFixed(0)}%)` });
+                if (pct < -5) checks.push({ ok: false, text: `Visitas em queda (${MF_formatPercent(pct, 0)})` });
+                else if (pct > 5) checks.push({ ok: true, text: `Visitas subindo (+${MF_formatPercent(pct, 0)})` });
                 else checks.push({ ok: true, text: `Visitas estáveis (${total30} no mês)` });
             }
         }
@@ -8695,10 +8783,17 @@ async function fetchVisits(itemId, accessToken) {
             console.warn('Falha no Core, tentando rota direta...', e);
         }
     }
-    // 60 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
+    // 61 dias, não 30: a linha de "30 dias" do resumo compara com os 30 dias ANTERIORES, e
     // com uma janela de 30 esse período anterior vinha vazio — ou a variação sumia, ou
     // saía um "+5840%" que só dizia que o denominador era zero. Mesma chamada, só o
     // parâmetro muda. O gráfico continua desenhando os últimos 30.
+    // 📏 MEDIDO em 16/08/2026 (MLB3264800533, conta real): `last=60` devolve as idades
+    // 1..60 — a ML JÁ NÃO inclui hoje na resposta. Então as janelas de 30 dias saem
+    // simétricas de graça: a atual são as idades 1..30 e a anterior 31..60.
+    // Cheguei a subir para 61 supondo que a resposta viesse 0..59; a medição desmentiu, e
+    // um dia a mais só traria dado que nenhuma janela usa. Quem protege o caso em que a
+    // série NÃO alcança os 60 dias (anúncio novo) é a guarda de cobertura em `variacaoHtml`,
+    // que esconde o selo de variação em vez de comparar períodos de tamanhos diferentes.
     return fetchApiData(`${API_VISITS_ENDPOINT}?item_id=${itemId}&last=60&unit=day`, accessToken);
 }
 
@@ -8827,10 +8922,14 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
     const totalOrganicRevenue = sumField(daily, 'organic_units_amount');
     const totalAllRevenue = totalRevenue + totalOrganicRevenue; // ads + organic revenue
 
-    const ctr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-    const acos = totalRevenue > 0 ? ((totalCost / totalRevenue) * 100).toFixed(1) : '0.0';
-    const tacos = totalAllRevenue > 0 ? ((totalCost / totalAllRevenue) * 100).toFixed(1) : '0.0';
-    const convRate = totalClicks > 0 ? ((totalOrders / totalClicks) * 100).toFixed(2) : '0.00';
+    // NÚMEROS, não strings. Enquanto eram `toFixed()`, a cor do cartão saía de
+    // `parseFloat('20.00')` — que só funciona por acaso: em pt-BR o formatado é "1.234,5" e
+    // `parseFloat` pararia no ponto, devolvendo 1 em vez de 1234. Guardar número e formatar
+    // na saída separa o que a régua compara do que o vendedor lê.
+    const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+    const acos = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 0;
+    const tacos = totalAllRevenue > 0 ? (totalCost / totalAllRevenue) * 100 : 0;
+    const convRate = totalClicks > 0 ? (totalOrders / totalClicks) * 100 : 0;
     const cpc = totalClicks > 0 ? (totalCost / totalClicks) : 0;
     const roas = totalCost > 0 ? (totalRevenue / totalCost) : 0;
 
@@ -8955,10 +9054,10 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
         <div class="ana-metrics-grid">
             ${metricCard('Impressões', fmt(totalImpressions), trendBadge(impTrend))}
             ${metricCard('Cliques', fmt(totalClicks), trendBadge(clicksTrend))}
-            ${metricCard('CTR', ctr + '%', trendBadge(ctrTrend), parseFloat(ctr) >= 1 ? 'var(--green-dark)' : 'var(--red)')}
-            ${metricCard('ACOS', acos + '%', trendBadge(acosTrend, true), parseFloat(acos) > 30 ? 'var(--red)' : (parseFloat(acos) > 15 ? 'var(--yellow)' : 'var(--green-dark)'))}
-            ${metricCard('TACOS', tacos + '%', `<span style="font-size:0.65rem;color:var(--text-muted);">Fat. total: ${fmtMoney(totalAllRevenue)}</span>`, parseFloat(tacos) > 20 ? 'var(--red)' : (parseFloat(tacos) > 10 ? 'var(--yellow)' : 'var(--green-dark)'))}
-            ${metricCard('Conversão Ads', convRate + '%', trendBadge(cvrTrend), parseFloat(convRate) >= 5 ? 'var(--green-dark)' : 'var(--red)')}
+            ${metricCard('CTR', MF_formatPercent(ctr, 2), trendBadge(ctrTrend), ctr >= 1 ? 'var(--green-dark)' : 'var(--red)')}
+            ${metricCard('ACOS', MF_formatPercent(acos, 1), trendBadge(acosTrend, true), acos > 30 ? 'var(--red)' : (acos > 15 ? 'var(--yellow)' : 'var(--green-dark)'))}
+            ${metricCard('TACOS', MF_formatPercent(tacos, 1), `<span style="font-size:0.65rem;color:var(--text-muted);">Fat. total: ${fmtMoney(totalAllRevenue)}</span>`, tacos > 20 ? 'var(--red)' : (tacos > 10 ? 'var(--yellow)' : 'var(--green-dark)'))}
+            ${metricCard('Conversão Ads', MF_formatPercent(convRate, 2), trendBadge(cvrTrend), convRate >= 5 ? 'var(--green-dark)' : 'var(--red)')}
         </div>
         ${(() => {
             // Breakdown Ads × Orgânico × Total — só existe com dia em comum entre visitas e Ads
@@ -9001,19 +9100,19 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--blue); margin-right:6px;"></span>Ads</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(adsSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${adsCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(adsCvr)};">${MF_formatPercent(adsCvr, 2)}</span>
                     </div>
                     <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border);">
                         <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px;"></span>Orgânico</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace;">${fmt(organicSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${orgCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700; color:${colorFor(orgCvr)};">${MF_formatPercent(orgCvr, 2)}</span>
                     </div>
                     <div class="ana-channel-row" style="padding:8px 10px; font-size:0.82rem; border-top:1px solid var(--border); background:var(--bg-subtle, var(--row-alt));">
                         <span style="font-weight:700;">Total</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalVisits)}</span>
                         <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:700;">${fmt(totalSales)}</span>
-                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${totalCvr.toFixed(2)}%</span>
+                        <span style="text-align:right; font-family:'DM Mono',monospace; font-weight:800; color:${colorFor(totalCvr)};">${MF_formatPercent(totalCvr, 2)}</span>
                     </div>
                 </div>
                 ${insightHtml}
@@ -9023,7 +9122,7 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
         <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--navy);border-radius:4px;"><span style="font-size:0.65rem;color:rgba(255,255,255,0.5);">Campanha:</span><span style="font-size:0.78rem;font-weight:600;color:#fff;">${campaignName}</span></div>
             <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Estratégia:</span><span style="font-size:0.78rem;font-weight:600;">${campaignStrategy}</span></div>
-            ${campaignAcosTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--blue-light);border-radius:4px;"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ACOS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${parseFloat(acos) <= campaignAcosTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignAcosTarget}%</span></div>` : ''}
+            ${campaignAcosTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--blue-light);border-radius:4px;"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ACOS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${acos <= campaignAcosTarget ? 'var(--green-dark)' : 'var(--red)'};">${MF_formatPercent(campaignAcosTarget, 0)}</span></div>` : ''}
             ${campaignRoasTarget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Meta ROAS:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:${roas >= campaignRoasTarget ? 'var(--green-dark)' : 'var(--red)'};">${campaignRoasTarget.toFixed(1)}x</span></div>` : ''}
             ${campaignBudget ? `<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--row-alt);border-radius:4px;border:1px solid var(--border);"><span style="font-size:0.65rem;color:var(--text-muted);">Orçamento:</span><span style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;">${fmtMoney(campaignBudget)}</span></div>` : ''}
             ${adLevel ? `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--${adLevel.cor}-light);border-radius:4px;" title="Reputação que o Mercado Livre dá a este anúncio dentro da publicidade."><span style="width:6px;height:6px;border-radius:50%;background:var(--${adLevel.cor});"></span><span style="font-size:0.72rem;font-weight:600;">${adLevel.texto}</span></div>` : ''}
@@ -9081,10 +9180,6 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                 <div class="chart-card-body" style="height:200px;position:relative;">
                     <canvas id="${acosCanvasId}"></canvas>
                 </div>
-                <p class="text-small" style="margin:8px 0 0; color:var(--text-muted); line-height:1.4;">
-                    Barras: quanto do faturamento <b>vindo de Ads</b> foi para o anúncio.
-                    Linha: quanto do faturamento <b>total</b> (Ads + orgânico) foi para Ads.
-                </p>
             </div>`;
     }
 
@@ -9150,15 +9245,15 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                 </div>
                 <div style="height:12px;border-radius:6px;background:var(--border);overflow:hidden;display:flex;">
                     <div style="width:${adsPctTotal}%;background:var(--blue);display:flex;align-items:center;justify-content:center;">
-                        ${adsPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${adsPctTotal.toFixed(0)}%</span>` : ''}
+                        ${adsPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${MF_formatPercent(adsPctTotal, 0)}</span>` : ''}
                     </div>
                     <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;">
-                        ${orgPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${orgPctTotal.toFixed(0)}%</span>` : ''}
+                        ${orgPctTotal > 8 ? `<span style="font-size:0.5rem;color:#fff;font-weight:700;">${MF_formatPercent(orgPctTotal, 0)}</span>` : ''}
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:2px;">
-                    <span style="font-size:0.62rem;color:var(--blue);font-weight:600;">Ads ${adsPctTotal.toFixed(1)}%</span>
-                    <span style="font-size:0.62rem;color:var(--green-dark);font-weight:600;">Orgânico ${orgPctTotal.toFixed(1)}%</span>
+                    <span style="font-size:0.62rem;color:var(--blue);font-weight:600;">Ads ${MF_formatPercent(adsPctTotal, 1)}</span>
+                    <span style="font-size:0.62rem;color:var(--green-dark);font-weight:600;">Orgânico ${MF_formatPercent(orgPctTotal, 1)}</span>
                 </div>
             </div>`;
     }
@@ -9177,16 +9272,16 @@ function exibirAdsMetrics(adsData, containerId = "adsMetrics", activeDays = 30, 
                     <span style="font-size:0.72rem;color:var(--text-muted);">${fmt(totalOrders)} ads / ${fmt(totalOrganic)} orgânicas / ${fmt(totalSales)} total</span>
                 </div>
                 <div style="height:14px;border-radius:7px;background:var(--border);overflow:hidden;display:flex;">
-                    <div style="width:${adsSalesPct}%;background:var(--blue);border-radius:7px 0 0 7px;display:flex;align-items:center;justify-content:center;" title="Ads: ${adsSalesPct.toFixed(1)}%">
-                        ${adsSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${adsSalesPct.toFixed(0)}%</span>` : ''}
+                    <div style="width:${adsSalesPct}%;background:var(--blue);border-radius:7px 0 0 7px;display:flex;align-items:center;justify-content:center;" title="Ads: ${MF_formatPercent(adsSalesPct, 1)}">
+                        ${adsSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${MF_formatPercent(adsSalesPct, 0)}</span>` : ''}
                     </div>
-                    <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;" title="Orgânico: ${orgSalesPct.toFixed(1)}%">
-                        ${orgSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${orgSalesPct.toFixed(0)}%</span>` : ''}
+                    <div style="flex:1;background:var(--green);display:flex;align-items:center;justify-content:center;" title="Orgânico: ${MF_formatPercent(orgSalesPct, 1)}">
+                        ${orgSalesPct > 10 ? `<span style="font-size:0.55rem;color:#fff;font-weight:700;">${MF_formatPercent(orgSalesPct, 0)}</span>` : ''}
                     </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:3px;">
-                    <span style="font-size:0.65rem;color:var(--blue);font-weight:600;">Ads ${adsSalesPct.toFixed(1)}%</span>
-                    <span style="font-size:0.65rem;color:var(--green-dark);font-weight:600;">Orgânico ${orgSalesPct.toFixed(1)}%</span>
+                    <span style="font-size:0.65rem;color:var(--blue);font-weight:600;">Ads ${MF_formatPercent(adsSalesPct, 1)}</span>
+                    <span style="font-size:0.65rem;color:var(--green-dark);font-weight:600;">Orgânico ${MF_formatPercent(orgSalesPct, 1)}</span>
                 </div>
             </div>`;
     }
@@ -9464,12 +9559,15 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // Filtra por data real (ML retorna só dias com visita — slice por posição daria leitura errada)
     const _now = new Date();
     const _msDay = 86400000;
+    // ⚠️ MESMA régua de `somaJanela` e `MF_visitasDosUltimos`: dias civis, hoje de fora.
+    // A 1ª rodada da revisão converteu as outras duas e DEIXOU esta na conta antiga —
+    // dentro da mesma função. `total30` (que decide se o gráfico aparece e se sai o selo
+    // "Poucos dados") passou a discordar da tabela logo acima: anúncio com visitas só HOJE
+    // mostrava "30 dias 0" sem o selo, e anúncio com visitas só no dia 30 mostrava
+    // "30 dias 40" COM o selo. A janela (ini, fim) são as idades ini+1..fim.
     const inWindow = (item, daysAgoStart, daysAgoEnd) => {
-        if (!item.date) return false;
-        const t = new Date(item.date).getTime();
-        if (isNaN(t)) return false;
-        const ageDays = (_now.getTime() - t) / _msDay;
-        return ageDays >= daysAgoStart && ageDays < daysAgoEnd;
+        const idade = MF_idadeEmDias(item && item.date);
+        return idade !== null && idade >= daysAgoStart + 1 && idade <= daysAgoEnd;
     };
     const filterWindow = (start, end) => results.filter(r => inWindow(r, start, end));
 
@@ -9513,15 +9611,31 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // A série vem com 60 dias (para o resumo comparar 30 × 30 anteriores); o gráfico
     // desenha os últimos 30, que é o período que o card anuncia.
     const pontosTodos = MF_seriesDiarias(results, adsData && adsData.has_ads ? adsData.daily : null);
+    // Mesma régua de MF_visitasDosUltimos (dias civis, hoje fora): o gráfico e o resumo
+    // não podem contar "30 dias" diferente do score e das oportunidades.
     const pontos = pontosTodos.filter((p) => {
-        const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
-        return idade < 30;
+        const idade = MF_idadeEmDias(p.dia);
+        return idade !== null && idade >= 1 && idade <= 30;
     });
     const temVendas = pontos.some((p) => typeof p.vendas === 'number');
     // Disponíveis = o que a conta permite mostrar (sem Ads não há vendas nem conversão).
     // Ativas = as disponíveis que o vendedor não desligou.
     const seriesDisponiveis = MF_SERIES_VISITAS.filter((s) => s.chave === 'visitas' || temVendas);
-    const seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
+    let seriesAtivas = seriesDisponiveis.filter((s) => !MF_visOcultas.has(s.chave));
+    // ⚠️ Zero painéis daria `H = 0*(46+12) + (0-1)*14 = -14` — viewBox de altura NEGATIVA e
+    // gráfico em branco. O handler do clique impede desligar a última, mas ele não é o único
+    // caminho até aqui: `MF_visOcultas` é de módulo e SOBREVIVE à troca de anúncio. Desligar
+    // "visitas" num anúncio com Product Ads (sobram duas, permitido) e abrir em seguida um
+    // anúncio SEM Ads chega neste ponto com nenhuma série ativa, sem clique nenhum no meio.
+    // Nesse caso a escolha antiga simplesmente não se aplica: mostra o que existe.
+    // ⚠️ E ESQUECE a escolha para estas séries. Só reexibir o painel deixava a chave em
+    // MF_visOcultas, então a legenda seguia marcada como desligada ("Mostrar Visitas",
+    // aria-pressed=false) e o tooltip pulava a série — o vendedor via o gráfico desenhado,
+    // o botão dizendo que está oculto, e o hover sem valor nenhum. Uma tela, três versões.
+    if (!seriesAtivas.length) {
+        seriesDisponiveis.forEach((s) => MF_visOcultas.delete(s.chave));
+        seriesAtivas = seriesDisponiveis;
+    }
 
     let svgChart = '';
     if (pontos.length > 0 && total30 > 0) {
@@ -9536,11 +9650,11 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
             const vals = pontos.map((p) => p[s.chave]).filter((v) => typeof v === 'number');
             const max = vals.length ? Math.max(...vals) : 0;
             const d = MF_caminhoSerie(pontos, s.chave, PAD_E, larg, y0, ALT_PAINEL);
-            const maxTxt = s.chave === 'conversao' ? max.toFixed(1) + '%' : String(Math.round(max));
+            const maxTxt = MF_rotuloMaximo(max, s.chave);
             paineis += `
                 <g data-serie="${s.chave}">
                     <text x="${PAD_E}" y="${y0 - 3}" font-size="7.5" fill="var(--text-muted)" font-weight="600">${s.rotulo}</text>
-                    <text x="${W - PAD_D}" y="${y0 - 3}" font-size="7" fill="var(--text-muted)" text-anchor="end">máx ${maxTxt}</text>
+                    <text x="${W - PAD_D}" y="${y0 - 3}" font-size="7" fill="var(--text-muted)" text-anchor="end">${maxTxt}</text>
                     <line x1="${PAD_E}" y1="${y0 + ALT_PAINEL}" x2="${W - PAD_D}" y2="${y0 + ALT_PAINEL}" stroke="var(--border,#e5e7eb)" stroke-width="0.5"/>
                     ${d ? `<path d="${d}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` : ''}
                 </g>`;
@@ -9593,9 +9707,11 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     const somaJanela = (ini, fim) => {
         // Usa a série COMPLETA (60d): a janela anterior de "30 dias" mora fora dos 30 do
         // gráfico. Sem isso a comparação não existe.
+        // Dias civis, hoje fora: a janela "7 dias" são os dias 1..7, e a anterior 8..14.
+        // Mesma régua de MF_visitasDosUltimos — ver MF_idadeEmDias.
         const dentro = pontosTodos.filter((p) => {
-            const idade = (Date.now() - new Date(p.dia + 'T12:00:00').getTime()) / 86400000;
-            return idade >= ini && idade < fim;
+            const idade = MF_idadeEmDias(p.dia);
+            return idade !== null && idade >= ini + 1 && idade <= fim;
         });
         const v = dentro.reduce((s, p) => s + (typeof p.visitas === 'number' ? p.visitas : 0), 0);
         const ven = dentro.reduce((s, p) => s + (typeof p.vendas === 'number' ? p.vendas : 0), 0);
@@ -9616,13 +9732,24 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
     // empurrava o valor e cada linha começava num lugar diferente — a tabela parecia solta.
     // Com coluna separada, os números alinham à direita entre si e os selos começam todos
     // na mesma posição, mesmo quando uma linha não tem variação.
-    const variacaoHtml = (atual, anterior) => {
+    // Até onde a série realmente alcança. A API OMITE dia sem visita, então contar entradas
+    // não serve — o que vale é a idade do registro mais antigo.
+    const _coberturaDias = pontosTodos.reduce((max, p) => {
+        const idade = MF_idadeEmDias(p.dia);
+        return (idade !== null && idade > max) ? idade : max;
+    }, 0);
+    const variacaoHtml = (atual, anterior, fimAnterior) => {
+        // ⚠️ Sem dado que cubra a janela ANTERIOR inteira, a comparação é entre períodos de
+        // tamanhos diferentes e o selo mente. Um anúncio perfeitamente plano rendia "+3%"
+        // só porque a janela anterior tinha 29 dias contra os 30 da atual — e o vendedor não
+        // tem como saber disso olhando a tela. Sem base para comparar, não se compara.
+        if (typeof fimAnterior === 'number' && _coberturaDias < fimAnterior) return '';
         if (typeof atual !== 'number' || typeof anterior !== 'number' || anterior === 0) return '';
         const pct = ((atual - anterior) / anterior) * 100;
         if (Math.abs(pct) < 1) return '';
         const cor = pct > 0 ? 'var(--green-dark)' : 'var(--red-dark)';
         const bg = pct > 0 ? 'var(--green-light)' : 'var(--red-light)';
-        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</span>`;
+        return `<span style="font-size:0.6rem; font-weight:700; padding:1px 4px; border-radius:4px; color:${cor}; background:${bg}; white-space:nowrap;">${pct > 0 ? '+' : ''}${MF_formatPercent(pct, 0)}</span>`;
     };
     // Por métrica: uma coluna pro número (direita) e uma pro selo (largura fixa).
     const colunas = 'minmax(48px, auto) ' + seriesAtivas.map(() => 'minmax(0, 1fr) 42px').join(' ');
@@ -9638,7 +9765,7 @@ function exibirTendenciaVisitas(visitsData, containerId = "visitsTrend", adsData
                 return `<span class="text-small" style="color:var(--text-muted); white-space:nowrap;">${j.rotulo}</span>`
                     + seriesAtivas.map((s) => `
                         <span style="font-family:var(--font-mono,'DM Mono',monospace); font-weight:600; font-size:0.9rem; color:var(--text); text-align:right; white-space:nowrap;">${fmtMetrica(s.chave, at[s.chave])}</span>
-                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave])}</span>`).join('');
+                        <span style="text-align:left;">${variacaoHtml(at[s.chave], ant[s.chave], j.fimAnt)}</span>`).join('');
             }).join('')}
         </div>`;
 
@@ -9778,7 +9905,6 @@ function MF_ativarGraficoVisitas(raiz) {
     const vb = (svg.getAttribute('viewBox') || '0 0 300 100').split(/\s+/).map(Number);
     const W = vb[2] || 300, PAD_E = 4, PAD_D = 4;
     const larg = W - PAD_E - PAD_D;
-    const escondidas = new Set();
 
     const fmtDia = (iso) => {
         const p = String(iso).split('-');
@@ -9808,7 +9934,10 @@ function MF_ativarGraficoVisitas(raiz) {
         cab.textContent = fmtDia(p.dia);
         tip.appendChild(cab);
         for (const s of MF_SERIES_VISITAS) {
-            if (escondidas.has(s.chave)) continue;
+            // MF_visOcultas é o estado REAL do que o vendedor desligou. Antes havia um Set
+            // local sempre vazio aqui: o painel sumia da tela e o tooltip seguia listando
+            // a série, dia a dia.
+            if (MF_visOcultas.has(s.chave)) continue;
             if (!(s.chave in p)) continue;
             const linha = document.createElement('div');
             linha.style.cssText = 'display:flex; align-items:center; gap:6px;';
@@ -9852,7 +9981,12 @@ function MF_ativarGraficoVisitas(raiz) {
             // sobraram, que voltam a dividir a altura entre si.
             if (MF_visOcultas.has(chave)) MF_visOcultas.delete(chave); else MF_visOcultas.add(chave);
             // Nunca deixar o card sem nenhum painel: o último aceso não desliga.
-            if (MF_visOcultas.size >= MF_SERIES_VISITAS.length) { MF_visOcultas.delete(chave); return; }
+            // ⚠️ Conta as DISPONÍVEIS, não as três: anúncio sem Product Ads só tem
+            // "visitas", e comparar com 3 deixava a única série ser desligada — aí o
+            // redesenho fazia H = 0*(46+12) + (0-1)*14 = -14 e saía um viewBox de altura
+            // NEGATIVA, com o gráfico em branco.
+            const disponiveis = raiz.querySelectorAll('.mf-vis-toggle').length || MF_SERIES_VISITAS.length;
+            if (MF_visOcultas.size >= disponiveis) { MF_visOcultas.delete(chave); return; }
             if (typeof window.MF_redesenhaVisitas === 'function') window.MF_redesenhaVisitas();
         });
     });
@@ -11347,7 +11481,7 @@ function MF_renderEscadaCompat(state) {
                 ? ''
                 : upDaFamilia
                     ? `<div class="mf-compat-alcance" style="margin-top:10px; padding:8px 10px; background:var(--bg-subtle,#f1f5f9); border-left:3px solid var(--text-muted);">
-                           <p class="text-small">Não deu para conferir quantos anúncios isto atinge. Este anúncio faz parte de um grupo de variações, então vai valer para todos eles.
+                           <p class="text-small" title="Não conseguimos listar os anúncios do grupo agora. Como este anúncio faz parte de um grupo de variações, a gravação vale para todos eles.">Vale para todo o grupo de variações — não deu para listar quais.
                                <button class="mf-link-acao" onclick="window.mfCompatConferirAlcanceDeNovo()">Tentar de novo</button>
                            </p>
                        </div>`
@@ -11976,10 +12110,13 @@ async function proxyGet(rota) {
    Contagens dos chips (com cache em sessionStorage, 10 min)
    ========================================================================= */
 // Chave separada por modo: mock e real não podem compartilhar cache de contagens.
-const COUNTS_KEY = CONFIG.COUNTS_CACHE_KEY + (MOCK ? ':mock' : '');
+// Função, não constante: a chave precisa do VENDEDOR e ele só é conhecido depois do
+// boot. Como constante calculada no load, as contagens de uma conta valiam para a
+// seguinte — os chips diriam "8 perdendo exposição" sobre a loja errada.
+function countsKey() { return CONFIG.COUNTS_CACHE_KEY + '_' + (state.sellerId || 'sem-conta') + (MOCK ? ':mock' : ''); }
 function getCachedCounts() {
   try {
-    const raw = sessionStorage.getItem(COUNTS_KEY);
+    const raw = sessionStorage.getItem(countsKey());
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj || !obj.ts) return null;
@@ -11988,7 +12125,7 @@ function getCachedCounts() {
   } catch (e) { return null; }
 }
 function setCachedCounts(counts) {
-  try { sessionStorage.setItem(COUNTS_KEY, JSON.stringify({ ts: Date.now(), counts })); } catch (e) {}
+  try { sessionStorage.setItem(countsKey(), JSON.stringify({ ts: Date.now(), counts })); } catch (e) {}
 }
 
 async function fetchCounts(sellerId) {
@@ -12162,14 +12299,14 @@ async function loadSignalSets(sellerId, counts) {
   for (const sig of SIGNAL_SETS) {
     const cnt = Number((counts && counts[sig.countKey]) || 0);
     if (cnt <= 0) { state.signalSets[sig.id] = new Set(); state.signalSetsIncomplete[sig.id] = false; continue; }  // chip diz 0 -> não chama
-    const cached = getCachedJson('mf_sel_sig2_' + sig.id);
+    const cached = getCachedJson('mf_sel_sig2_' + sellerId + '_' + sig.id);
     if (cached && Array.isArray(cached.ids)) {
       state.signalSets[sig.id] = new Set(cached.ids);
       state.signalSetsIncomplete[sig.id] = !!cached.incomplete;
       renderCurrentRows(); continue;
     }
     const found = await fetchSignalIds(sellerId, sig.filter);
-    setCachedJson('mf_sel_sig2_' + sig.id, found);
+    setCachedJson('mf_sel_sig2_' + sellerId + '_' + sig.id, found);
     state.signalSets[sig.id] = new Set(found.ids);
     state.signalSetsIncomplete[sig.id] = !!found.incomplete;
     renderCurrentRows(); // enriquece a página assim que cada sinal fica pronto
@@ -12181,14 +12318,14 @@ async function loadSignalSets(sellerId, counts) {
    ========================================================================= */
 async function loadQuestions(sellerId) {
   if (!CONFIG.SHOW_QUESTIONS) return;   // PORT F4: sem rota no proxy ainda
-  const cached = getCachedJson('mf_sel_questions');
+  const cached = getCachedJson('mf_sel_questions_' + sellerId);
   if (cached) { state.questionsMap = cached; renderCurrentRows(); return; }
   try {
     const resp = await mlGet(`questions/search?seller_id=${sellerId}&status=UNANSWERED&limit=50`);
     const map = {};
     (resp.questions || []).forEach((qq) => { if (qq && qq.item_id) map[qq.item_id] = (map[qq.item_id] || 0) + 1; });
     state.questionsMap = map;
-    setCachedJson('mf_sel_questions', map);
+    setCachedJson('mf_sel_questions_' + sellerId, map);
     renderCurrentRows();
   } catch (e) { /* 403/erro (ex.: whitelist antiga do serve.js) -> segue sem badges de pergunta */ }
 }
@@ -12202,7 +12339,7 @@ async function loadQuestions(sellerId) {
    ========================================================================= */
 async function loadSales30(sellerId) {
   if (!CONFIG.SHOW_SALES30) return;   // PORT F4: sem rota no proxy ainda
-  const cached = getCachedJson('mf_sel_sales30');
+  const cached = getCachedJson('mf_sel_sales30_' + sellerId);
   if (cached) { state.sales30Map = cached.map; state.sales30Incomplete = !!cached.incomplete; renderCurrentRows(); return; }
   try {
     const from = new Date(Date.now() - CONFIG.SALES_WINDOW_DAYS * 864e5).toISOString();
@@ -12220,7 +12357,7 @@ async function loadSales30(sellerId) {
     const incomplete = total > offset && offset >= CONFIG.SALES30_MAX_PAGES * 50;
     state.sales30Map = map;
     state.sales30Incomplete = incomplete;
-    setCachedJson('mf_sel_sales30', { map, incomplete });
+    setCachedJson('mf_sel_sales30_' + sellerId, { map, incomplete });
     renderCurrentRows();
   } catch (e) { /* sem escopo de pedidos / erro -> segue sem conversão; previsão cai no ritmo desde a criação */ }
 }
@@ -12352,7 +12489,7 @@ async function loadVisitsForPage(ids) {
    ========================================================================= */
 async function loadModerations(sellerId) {
   if (!CONFIG.SHOW_MODERATION || !sellerId) return;
-  const cached = getCachedJson('mf_sel_moderation');
+  const cached = getCachedJson('mf_sel_moderation_' + sellerId);
   if (cached && cached.map) { state.moderationMap = cached.map; renderCurrentRows(); return; }
   try {
     const lista = await proxyGet(`/api/moderations/items?seller_id=${encodeURIComponent(sellerId)}&limit=50`);
@@ -12375,7 +12512,7 @@ async function loadModerations(sellerId) {
     // IDs sem detalhe buscado (acima do teto) continuam marcados como moderados
     ids.slice(CONFIG.MODERATION_DETAIL_CAP).forEach((id) => { if (!map[id]) map[id] = { reason: '', remedy: '' }; });
     state.moderationMap = map;
-    setCachedJson('mf_sel_moderation', { map: map });
+    setCachedJson('mf_sel_moderation_' + sellerId, { map: map });
     renderCurrentRows();
   } catch (e) { /* sem moderação disponível: o painel segue sem esse sinal */ }
 }
@@ -12389,7 +12526,7 @@ async function loadModerations(sellerId) {
    ========================================================================= */
 async function loadPromocoes(sellerId) {
   if (!CONFIG.SHOW_PROMOCOES || !sellerId) return;
-  const cached = getCachedJson('mf_sel_promo');
+  const cached = getCachedJson('mf_sel_promo_' + sellerId);
   if (cached && cached.map) { state.promoMap = cached.map; renderCurrentRows(); return; }
   try {
     const d = await proxyGet(`/api/discounted-items?seller_id=${encodeURIComponent(sellerId)}`);
@@ -12397,7 +12534,7 @@ async function loadPromocoes(sellerId) {
     (d && Array.isArray(d.items) ? d.items : []).forEach((i) => { if (i && i.id) map[i.id] = i; });
     state.promoMap = map;
     state.promoTruncado = !!(d && d.truncated);
-    setCachedJson('mf_sel_promo', { map: map });
+    setCachedJson('mf_sel_promo_' + sellerId, { map: map });
     renderCurrentRows();
   } catch (e) { /* sem promoções disponíveis: o painel segue com o preço do item */ }
 }
@@ -12412,7 +12549,7 @@ async function loadPromocoes(sellerId) {
    ========================================================================= */
 async function loadFichaTecnica(sellerId) {
   if (!CONFIG.SHOW_FICHA || !sellerId) return;
-  const cached = getCachedJson('mf_sel_ficha');
+  const cached = getCachedJson('mf_sel_ficha_' + sellerId);
   if (cached && cached.map) { state.fichaMap = cached.map; renderCurrentRows(); return; }
   try {
     const d = await proxyGet(`/api/catalog-quality?seller_id=${encodeURIComponent(sellerId)}&include_items=true`);
@@ -12430,7 +12567,7 @@ async function loadFichaTecnica(sellerId) {
       });
     });
     state.fichaMap = map;
-    setCachedJson('mf_sel_ficha', { map: map });
+    setCachedJson('mf_sel_ficha_' + sellerId, { map: map });
     renderCurrentRows();
     loadAttrNames();   // traduz os códigos da página atual
   } catch (e) { /* sem detalhe de ficha: o sinal antigo (tag) continua valendo */ }
@@ -12627,13 +12764,22 @@ function quickFilterAtivo() { return !!(state.discountOnly || state.freeShipUnde
 // "Com desconto", com busca ou com um chip (que também usa labels=) a conta não fecha,
 // e aí a varredura completa assume.
 function podeFiltrarFreteNoServidor() {
-  return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search);
+  // ⚠️ `listingType`/`logisticType` entram aqui porque a URL montada por
+  // `buscaFreteAbaixoDoPiso` não os carrega: sem esta guarda o vendedor filtrava
+  // "Clássico", recebia anúncios de todo tipo e o select continuava mostrando a escolha.
+  // Mesma régua de `filtroForaDoRanking()`, que já tratava os dois como filtros que o
+  // caminho do servidor não conhece.
+  return !!(state.freeShipUnder && !state.discountOnly && !state.activeChip && !state.search
+    && !state.listingType && !state.logisticType);
 }
 // "Com desconto" também sai pronto da ML — pela Central de Promoções, não pela busca
 // de itens (que não filtra desconto). A rota devolve os anúncios em campanha com o
 // preço promocional; aqui basta hidratar esses ids e aplicar o status escolhido.
 function podeFiltrarDescontoNoServidor() {
-  return !!(state.discountOnly && !state.freeShipUnder && !state.activeChip && !state.search);
+  // Idem: a Central de Promoções devolve ids e o hidratador só reaplica o STATUS —
+  // Tipo e Logística sumiriam em silêncio. Ver podeFiltrarFreteNoServidor.
+  return !!(state.discountOnly && !state.freeShipUnder && !state.activeChip && !state.search
+    && !state.listingType && !state.logisticType);
 }
 async function buscaAnunciosComDesconto(atual) {
   const vivo = () => (typeof atual === 'function' ? atual() : true);
@@ -12644,7 +12790,7 @@ async function buscaAnunciosComDesconto(atual) {
   const mapa = {};
   promos.forEach((i) => { mapa[i.id] = i; });
   state.promoMap = Object.assign({}, state.promoMap, mapa);
-  setCachedJson('mf_sel_promo', { map: state.promoMap });
+  setCachedJson('mf_sel_promo_' + state.sellerId, { map: state.promoMap });
 
   const ids = promos.map((i) => i.id).slice(0, CONFIG.OFFSET_CAP);
   const itens = [];
@@ -12686,7 +12832,10 @@ async function buscaFreteAbaixoDoPiso(atual) {
   return { itens: achados, varridos: vistos };
 }
 function scanKey() {
-  return JSON.stringify([state.status, state.search, state.searchParam, state.activeChip,
+  // O VENDEDOR entra na chave pelo mesmo motivo do cache do ranking: trocar de conta
+  // recarrega a página na mesma aba e o sessionStorage sobrevive. Sem ele, a varredura de
+  // uma conta seria dada como válida para a outra — os mesmos filtros, outra loja.
+  return JSON.stringify([state.sellerId, state.status, state.search, state.searchParam, state.activeChip,
     state.listingType, state.logisticType, state.discountOnly, state.freeShipUnder, MOCK]);
 }
 function passaNosRecortes(it) {
@@ -13728,7 +13877,14 @@ async function loadPage() {
     // paginada sobre ele. Chip, tipo e logística o ranking não conhece — com qualquer um
     // deles ligado a ordem sai da varredura local, que já aplica os filtros. Sem isso, os
     // filtros viravam no-ops silenciosos justamente na visão padrão.
-    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()) {
+    // ⚠️ `!state.ordemDegradada` é o que impede a RECURSÃO: os dois insucessos abaixo
+    // terminam em `return loadPage()`, e sem consultar a degradação a condição continuava
+    // verdadeira na volta — laço infinito. No caso do ranking vazio nem havia rede pra
+    // segurar o laço, porque `state.ranking = []` é truthy e o memo respondia na hora:
+    // a aba travava em "Carregando seus anúncios…" logo na tela inicial de quem ainda não
+    // vendeu. Com a rota em 404, o laço virava tempestade contra o proxy.
+    if (state.order === ORDER_MAIS_VENDIDOS && !state.search && !filtroForaDoRanking()
+        && !state.ordemDegradada) {
       let ranking;
       try {
         ranking = await loadSalesRanking();
@@ -14015,6 +14171,10 @@ function setBannerNextLoad(kind, msg) { state.pendingBanner = { kind: kind, msg:
    Controles de filtro
    ========================================================================= */
 function setStatusToggle(status) {
+  // A chave do ranking leva o STATUS, então trocar de status é uma pergunta nova: quem
+  // degradou por não ter venda entre os pausados pode ter campeões entre os ativos. Sem
+  // limpar aqui, a degradação valeria pro resto da sessão e a ordem padrão nunca voltaria.
+  if (state.status !== status) state.ordemDegradada = null;
   state.status = status;
   document.querySelectorAll('#statusGroup button').forEach((b) => {
     b.classList.toggle('on', b.getAttribute('data-status') === status);
@@ -14095,6 +14255,17 @@ function csvFromItems(items, filename) {
 function exportCsv() {
   // Recorte de conta inteira: a varredura já tem TODOS os anúncios que batem —
   // a planilha sai completa, sem chamada nova (antes saía só o pedaço da página).
+  // ⚠️ Recorte ativo SEM varredura confiável não pode cair no `exportAllCsv()` lá embaixo:
+  // ele pagina `buildListUrl()`, que não conhece `discountOnly`/`freeShipUnder`, e o
+  // vendedor baixaria os primeiros N anúncios da CONTA INTEIRA num arquivo rotulado como o
+  // recorte, com a faixa "Mostrando só: Com desconto" ainda na tela. `scanAccount` grava
+  // `chave: null` de propósito quando alguma parte da varredura falhou — é justamente o
+  // caso em que a lista não representa o recorte. Planilha errada é pior que planilha
+  // nenhuma: ela vira decisão de preço e de estoque.
+  if (quickFilterAtivo() && !(state.scan && state.scan.chave === scanKey())) {
+    setBanner('warn', 'A busca deste recorte não terminou por completo, então a planilha sairia sem parte dos anúncios. Use o botão Atualizar e tente de novo em seguida.');
+    return;
+  }
   if (quickFilterAtivo() && state.scan && state.scan.chave === scanKey()) {
     const items = state.scan.itens;
     if (!items.length) { setBanner('info', 'Não há anúncios nesse recorte para colocar na planilha.'); return; }
@@ -14262,6 +14433,12 @@ function refreshCounts() {
   // loadSalesRanking devolve state.ranking antes de olhar o cache — o "Atualizar" nunca
   // conseguia refazer a ordenação e a lista ficava presa no ranking da primeira carga.
   state.ranking = null; state.rankingInfo = null; state.rankingChave = null;
+  // A degradacao sai junto: `ordemDegradada` e o que impede a recursao, mas se ficasse de
+  // pe aqui o botao "Atualizar" nao teria efeito nenhum sobre a ordem — e o banner manda
+  // justamente clicar nele. Um 500 passageiro no boot prenderia a visao padrao na ordem da
+  // ML pela sessao inteira. Sem risco de laco: a degradacao e reescrita antes do
+  // `return loadPage()` quando a rota falha de novo.
+  state.ordemDegradada = null;
   state.moderationMap = {}; state.fichaMap = {}; state.promoMap = {};
   invalidarScan();   // preço/frete podem ter mudado: a varredura guardada não vale mais
   loadModerations(state.sellerId);
@@ -14338,12 +14515,19 @@ function wireControls() {
   });
   // busca (Enter ou clique na lupa): link/ID colado -> análise direta; texto livre -> filtra
   // lastSubmit: Enter num input type=search dispara keydown E o evento 'search' — sem
-  // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª)
+  // isto a mesma busca ia duas vezes pra ML (e a 2ª volta apagava o aviso da 1ª).
+  // ⚠️ O guard é por INSTANTE, não permanente: os dois eventos gêmeos chegam no mesmo
+  // milissegundo, mas a segunda tentativa do vendedor vem segundos depois. Comparando só o
+  // texto, uma busca que falhou (proxy fora do ar, 429) não podia ser repetida — a lupa e o
+  // Enter ficavam mudos até ele mudar alguma letra.
+  const JANELA_EVENTO_GEMEO_MS = 700;
   let lastSubmit = null;
+  let lastSubmitEm = 0;
   function submitSearch() {
     const v = $('#searchInput').value.trim();
-    if (v === lastSubmit) return;
+    if (v === lastSubmit && (Date.now() - lastSubmitEm) < JANELA_EVENTO_GEMEO_MS) return;
     lastSubmit = v;
+    lastSubmitEm = Date.now();
     const pid = parseItemId(v);
     // PORT F4: manda o texto ORIGINAL (rawInput) — link de catálogo/edição
     // carrega mais contexto que o id extraído e o parse do analyzer entende.
@@ -14374,6 +14558,7 @@ function wireControls() {
   // limpar filtros
   $('#clearBtn').addEventListener('click', () => {
     lastSubmit = null;
+    state.ordemDegradada = null; // "Limpar filtros" é recomeço: a ordem padrão tenta de novo
     state.status = 'active'; state.order = ORDER_MAIS_VENDIDOS;
     state.search = ''; state.searchParam = null; resetSearchLadder();
     state.statusRestore = null; state.statusManual = false; state.activeChip = null; state.prevStatus = null;
