@@ -125,20 +125,6 @@ function ymdAddDays(date, n) {
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
-function deltaArrow(delta) {
-  if (delta > 0) return '▲';
-  if (delta < 0) return '▼';
-  return '•';
-}
-
-function deltaClass(delta, inverted = false) {
-  // inverted=true para métricas onde menor = melhor (ex: TACOS, ACOS)
-  if (Math.abs(delta) < 1e-9) return 'flat';
-  const positive = delta > 0;
-  if (inverted) return positive ? 'neg' : 'pos';
-  return positive ? 'pos' : 'neg';
-}
-
 // Saudação por hora local
 function saudacao() {
   const h = new Date().getHours();
@@ -274,6 +260,25 @@ function rtGetChecklist(sid) {
 
 function rtSetChecklist(sid, items) {
   _set('dailyChecklist', sid, { date: todayStr(), items });
+}
+
+// Conquista é marco, não termômetro: uma vez batida, fica batida.
+// Antes tudo era calculado só com o período selecionado, então trocar de 90d
+// pra 7d re-bloqueava "R$ 100.000 faturados". Marco que se perde não é marco.
+// Vale só pros cumulativos (receita, vendas, streak); os de ESTADO — reputação,
+// MercadoLíder, Loja Oficial — continuam refletindo o presente, porque afirmar
+// "você é verde" de quem caiu pra amarelo seria mentira.
+function rtGetUnlocked(sid) {
+  const m = _get('achUnlocked', sid, {});
+  return (m && typeof m === 'object') ? m : {};
+}
+
+function rtMarkUnlocked(sid, id) {
+  if (!sid || !id) return;
+  const m = rtGetUnlocked(sid);
+  if (m[id]) return;
+  m[id] = todayStr();
+  _set('achUnlocked', sid, m);
 }
 
 function rtGetSeenInsights(sid) {
@@ -422,8 +427,8 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
   });
 
   // 5. Tração orgânica — queda em visitas e conversão orgânica vs período anterior
-  let trac = MAX; // neutro sem snapshot
-  let tracHint = 'Esse é seu primeiro acesso ao dashboard nesse período — vou ter comparativo a partir da próxima visita.';
+  let trac = MAX; // neutro sem base de comparação
+  let tracHint = 'Estou medindo o período anterior pra comparar — aparece em instantes.';
 
   if (prevSnap) {
     // Visitas (até 12 pts)
@@ -437,7 +442,9 @@ function computeHealthBreakdown(agg, totals, prevSnap, streak) {
       else visitsPts = 12;
     }
 
-    // Conversão orgânica (até 13 pts)
+    // Conversão orgânica (até 13 pts) — unidades ÷ visitas orgânicas, a MESMA
+    // base do card Visão Geral e do snapshot. Já foi base mista (pedidos no
+    // snapshot × unidades aqui) e o delta media troca de régua, não tração.
     let convPts = 13;
     const orgOrders = Number(agg.organic_orders) || 0;
     const orgVisitsNow = Math.max(0, visitsNow - (Number(agg.total_clicks) || 0));
@@ -1005,18 +1012,23 @@ function buildInsights(ctx) {
     cta: { label: 'Ver Auditoria de Tags', tool: 'tags' }
   });
 
-  // Conversão Ads
+  // Conversão Ads — calculada dos dois lados (unidades ÷ cliques). O avg_cvr do
+  // ML fica desatualizado depois da reconciliação e o snapshot já guarda a
+  // versão calculada: comparar um com o outro media a troca de fórmula.
+  const cvrAgora = () => {
+    const cl = Number(agg.total_clicks) || 0;
+    return cl > 0 ? ((Number(agg.total_orders) || 0) / cl * 100) : 0;
+  };
   list.push({
     id: 'trend-cvr-ads-down',
     when: () => {
       if (!hasPrev) return false;
-      const now = agg.avg_cvr || 0;
-      // Recalcula CVR anterior se possível
+      const now = cvrAgora();
       const prevCvr = Number(prevSnap.cvr) || 0;
       return prevCvr > 0 && (prevCvr - now) >= 0.5;
     },
     text: () => {
-      const now = agg.avg_cvr || 0;
+      const now = cvrAgora();
       const prevCvr = Number(prevSnap.cvr) || 0;
       return `Conversão de Ads caiu <b>${fmt(Math.abs(now - prevCvr), 2)}pp</b> (${fmt(prevCvr, 2)}% → ${fmt(now, 2)}%). Cliques sem virar venda = preço/ficha/foto não convencendo. Audite os anúncios com mais cliques.`;
     },
@@ -1077,14 +1089,29 @@ function buildInsights(ctx) {
 
 function pickInsight(ctx, sid) {
   const all = buildInsights(ctx).filter(i => i.when());
-  const seen = rtGetSeenInsights(sid);
+  if (!all.length) return null;
   const today = todayStr();
+
+  // O insight é DO DIA: uma vez escolhido, fica. Antes a escolha era refeita a
+  // cada render — e renderDashboard roda 2 ou 3 vezes por carregamento (dados
+  // de Ads, depois pedidos, depois comparativo). Como cada render marcava o
+  // insight como visto e o próximo preferia os não-vistos, o texto trocava
+  // sozinho na frente do usuário e o estoque de 17 insights virava ~6 dias.
+  const fixed = _get('insightOfDay', sid, null);
+  if (fixed && fixed.date === today) {
+    const still = all.find(i => i.id === fixed.id);
+    if (still) return still;
+  }
+
+  const seen = rtGetSeenInsights(sid);
   // 1) prefere insights nunca vistos
   const fresh = all.filter(i => !seen[i.id]);
-  if (fresh.length) return fresh[0];
-  // 2) menos recentes primeiro
-  all.sort((a, b) => (seen[a.id] || '0') < (seen[b.id] || '0') ? -1 : 1);
-  return all[0] || null;
+  const chosen = fresh.length
+    ? fresh[0]
+    // 2) menos recentes primeiro
+    : [...all].sort((a, b) => (seen[a.id] || '0') < (seen[b.id] || '0') ? -1 : 1)[0];
+  if (chosen) _set('insightOfDay', sid, { date: today, id: chosen.id });
+  return chosen || null;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1114,10 +1141,10 @@ function buildAlerts(agg, totals, prevSnap, sid) {
   if ((agg.overall_roas || 0) < 1 && (agg.total_cost || 0) > 50) {
     out.push({ id: 'roas-sub-1', level: 'crit', text: `ROAS ${fmt(agg.overall_roas, 2)}x — perdendo dinheiro`, cta: { label: 'auditar', tool: 'planner' } });
   }
-  // Gasto disparou (vs anterior)
+  // Gasto disparou (vs período anterior — prevSnap é a janela equivalente medida)
   if (prevSnap && prevSnap.cost > 50 && (agg.total_cost || 0) > prevSnap.cost * 1.6) {
     const pct = Math.round(((agg.total_cost - prevSnap.cost) / prevSnap.cost) * 100);
-    out.push({ id: `cost-spike-${todayStr()}`, level: 'warn', text: `Gasto +${pct}% vs visita anterior`, cta: { label: 'investigar', tool: 'planner' } });
+    out.push({ id: `cost-spike-${todayStr()}`, level: 'warn', text: `Gasto +${pct}% vs período anterior`, cta: { label: 'investigar', tool: 'planner' } });
   }
   // Conta sem ads
   if (totals.itemsWithAds === 0 && totals.activeItems > 0) {
@@ -1138,7 +1165,10 @@ function buildAlerts(agg, totals, prevSnap, sid) {
 
 function buildOpportunities(agg, totals, prevSnap, streak) {
   const ops = [];
-  const target = (window._mfdTacosTarget || 15);
+  // null = o usuário não definiu meta. Antes o default era 15% e o app dizia
+  // "sua meta é 15%" — um número que ninguém escolheu.
+  const rawTarget = Number(window._mfdTacosTarget);
+  const target = (isFinite(rawTarget) && rawTarget > 0) ? rawTarget : null;
 
   // Campanhas todas pausadas (top priority)
   const campaigns = STATE.campaigns || [];
@@ -1212,12 +1242,25 @@ function buildOpportunities(agg, totals, prevSnap, streak) {
     });
   }
 
-  // 7. TACOS muito alto
-  if ((agg.avg_tacos || 0) > target * 1.4) {
+  // 7. TACOS subiu — comparativo, nunca faixa prescrita.
+  // Não existe TACOS "saudável" universal: depende de margem, categoria e
+  // estratégia. O que dá pra afirmar é o MOVIMENTO contra a própria conta.
+  const tacosNow = Number(agg.avg_tacos) || 0;
+  const tacosPrev = Number(prevSnap && prevSnap.tacos) || 0;
+  if (tacosNow > 0 && tacosPrev > 0 && (tacosNow - tacosPrev) >= 2) {
     ops.push({
       ico: '⚖️', tone: 'warn',
-      title: `TACOS ${fmt(agg.avg_tacos, 1)}% acima da meta`,
-      meta: `Sua meta é ${target}%. Reduzir TACOS sem perder volume = mais lucro líquido sem precisar vender mais.`,
+      title: `TACOS subiu ${fmt(tacosNow - tacosPrev, 1)}pp vs o período anterior`,
+      meta: `Saiu de <b>${fmt(tacosPrev, 1)}%</b> pra <b>${fmt(tacosNow, 1)}%</b> — sua receita está custando mais em Ads. Vale ver se foi aumento de gasto ou queda de receita.`,
+      score: 70, tool: 'planner'
+    });
+  } else if (target != null && tacosNow > target) {
+    // Só com meta que VOCÊ configurou (window._mfdTacosTarget). Sem meta, o app
+    // não inventa uma.
+    ops.push({
+      ico: '⚖️', tone: 'warn',
+      title: `TACOS ${fmt(tacosNow, 1)}% acima da sua meta`,
+      meta: `Você definiu ${fmt(target, 1)}% como meta. Reduzir TACOS sem perder volume = mais lucro líquido sem precisar vender mais.`,
       score: 70, tool: 'planner'
     });
   }
@@ -1630,8 +1673,18 @@ function kpiCell({ label, hint, value, valueTitle, valueClass = '', delta = '', 
 // opts.inverted: true se menor = melhor (ex: TACOS, custo). Default false.
 // opts.absolute: true se delta deve ser mostrado como diferença absoluta (ROAS, CTR), não %.
 function deltaBadge(now, prev, opts = {}) {
-  if (prev == null || isNaN(prev) || prev === 0) {
+  if (prev == null || isNaN(prev)) {
     return `<span class="mfd-delta neutral" title="Sem dado anterior pra comparar">—</span>`;
+  }
+  // Sair do zero não tem percentual (divisão por zero), mas é a notícia mais
+  // importante que pode acontecer com um vendedor — dizer "sem dado anterior"
+  // escondia justamente a primeira venda, o primeiro real faturado.
+  if (prev === 0) {
+    if (!(Number(now) > 0)) {
+      return `<span class="mfd-delta neutral" title="Zerado nos dois períodos">—</span>`;
+    }
+    const tone = opts.inverted ? 'neg' : 'pos';
+    return `<span class="mfd-delta ${tone}" title="Era zero no período anterior">▲ do zero</span>`;
   }
   const delta = opts.absolute ? (now - prev) : ((now - prev) / Math.abs(prev) * 100);
   const inv = !!opts.inverted;
@@ -1660,6 +1713,61 @@ function patchOrganicVsCard() {
   if (fresh) card.replaceWith(fresh);
 }
 
+// Pura e testável: as três conversões do card, TODAS na mesma base (unidades
+// vendidas — a mesma coisa que as linhas "Vendas" mostram), mais a régua por
+// pedido do Seller Central como informação separada.
+//
+// Antes o total vinha de PEDIDOS (com cancelados dentro) e o orgânico de
+// "pedidos totais − unidades de Ads": três populações num card só. O orgânico
+// saía MAIOR que o total — a parte maior que o todo — e nenhum dos numeradores
+// aparecia na tela pro vendedor conferir. Agora total = orgânico + Ads e a
+// média ponderada fecha com o número de cima.
+//
+// Cada campo volta null quando não dá pra afirmar. Nunca zero por falta de dado.
+function computeConversions({ totalVisits, adsClicks, totalUnits, orgUnits, adsUnits, pedidos }) {
+  const out = { total: null, organic: null, ads: null, byOrder: null, orgVisits: 0, reason: null };
+  const visits = Number(totalVisits) || 0;
+  const clicks = Number(adsClicks) || 0;
+  if (visits <= 0) { out.reason = 'sem-visitas'; return out; }
+  const orgVisits = visits - clicks;
+  if (orgVisits <= 0) { out.reason = 'visitas-abaixo-dos-cliques'; return out; }
+  out.orgVisits = orgVisits;
+
+  const total   = (Number(totalUnits) || 0) / visits * 100;
+  const organic = (Number(orgUnits) || 0) / orgVisits * 100;
+  const ads     = clicks > 0 ? ((Number(adsUnits) || 0) / clicks * 100) : null;
+  // Visita de anúncio de catálogo é contada na página do catálogo, não no item —
+  // em conta muito baseada em catálogo o denominador vem subcontado e a conta
+  // estoura 100%. Melhor não mostrar do que mostrar impossível.
+  if (total > 100 || organic > 100 || (ads != null && ads > 100)) {
+    out.reason = 'acima-de-100';
+    return out;
+  }
+  out.total = total;
+  out.organic = organic;
+  out.ads = ads;
+
+  if (pedidos != null && Number(pedidos) >= 0) {
+    const byOrder = Number(pedidos) / visits * 100;
+    if (byOrder <= 100) out.byOrder = byOrder;
+  }
+  return out;
+}
+
+// Pedidos da MESMA população da receita (sem cancelados) — é o que o proxy
+// devolve em revenue.orders desde 26/08/26. Proxy antigo só tinha total_orders,
+// que inclui cancelados: aceitamos como aproximação e o hint avisa.
+function grossOrdersOf(od) {
+  if (!od) return { pedidos: null, semCancelados: false };
+  if (od.revenue && typeof od.revenue.orders === 'number') {
+    return { pedidos: od.revenue.orders, semCancelados: true };
+  }
+  if (typeof od.total_orders === 'number') {
+    return { pedidos: od.total_orders, semCancelados: false };
+  }
+  return { pedidos: null, semCancelados: false };
+}
+
 function renderOrganicVsAds(agg) {
   const adsRev   = Number(agg.total_revenue) || 0;
   const orgRev   = Number(agg.organic_revenue) || 0;
@@ -1671,11 +1779,18 @@ function renderOrganicVsAds(agg) {
   const orgTicket = orgOrders > 0 ? orgRev / orgOrders : 0;
   const totalTicket = totalOrders > 0 ? totalRev / totalOrders : 0;
 
-  const adsCvr = Number(agg.avg_cvr) || 0;
   const adsClicks = Number(agg.total_clicks) || 0;
   const adsCost = Number(agg.total_cost) || 0;
   const adsRoas = adsRev > 0 && adsCost > 0 ? adsRev / adsCost : 0;
   const tacos = totalRev > 0 ? (adsCost / totalRev * 100) : 0;
+  // A reconciliação por pedidos reescreve total_orders (min com as unidades
+  // reais) mas o avg_cvr do ML fica com o valor antigo — usar ele aqui mostrava
+  // um número que a própria explicação da célula não confirma. Calculamos.
+  const adsHasTraffic = adsClicks > 0;
+
+  // Receita/vendas medidas por pedidos com a coleta truncada: o valor é PISO.
+  const revParcial = agg.revenue_complete === false;
+  const maisDe = revParcial ? '+' : '';
 
   // Deltas vs período anterior
   const prev = STATE.prevSnapshot || {};
@@ -1695,20 +1810,20 @@ function renderOrganicVsAds(agg) {
   const prevAdsTicket = prevAdsOrders > 0 ? prevAdsRev / prevAdsOrders : 0;
   const prevOrgTicket = prevOrgOrders > 0 ? prevOrgRev / prevOrgOrders : 0;
   const prevTotalTicket = prevSales > 0 ? prevTotalRev / prevSales : 0;
-  const prevOrgConv = Number(prev.organic_conversion) || 0;
   const prevVisits = Number(prev.visits) || 0;
-  const prevOverallConv = prevVisits > 0 ? (prevSales / prevVisits * 100) : 0;
+  // Conversões anteriores na MESMA base de agora (unidades ÷ visitas)
+  const prevOrgVisits = Math.max(0, prevVisits - prevClicks);
+  const prevTotalConv = (prevVisits > 0 && prevSales > 0) ? (prevSales / prevVisits * 100) : 0;
+  const prevOrgConv = (prevOrgVisits > 0 && prevOrgOrders > 0) ? (prevOrgOrders / prevOrgVisits * 100) : 0;
+  const prevAdsConv = (prevClicks > 0 && prevAdsOrders > 0) ? (prevAdsOrders / prevClicks * 100) : prevCvr;
 
-  // Conversão via visitas (se disponível)
+  // ── Conversões (todas em unidades — mesma base das linhas "Vendas") ──
   const visits = STATE.visitsData;
-  let orgConvText = '—';
-  let overallConvText = '—';
-  let orgConvNow = 0;
-  let overallConvNow = 0;
+  const { pedidos, semCancelados } = grossOrdersOf(STATE.ordersData);
+  let conv = { total: null, organic: null, ads: null, byOrder: null };
   let visitsHint = '';
-  let overallConvDelta = '';
-  let overallConvHint = '% das visitas que viraram venda. Vendas totais ÷ visitas totais. Precisa de dados de visita.';
-  let orgConvHint = 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.';
+  const semVenda = totalOrders === 0 && totalRev === 0;
+
   if (STATE.visitsLoading) {
     visitsHint = 'Calculando...';
   } else if (visits && visits.total_visits > 0) {
@@ -1720,47 +1835,46 @@ function renderOrganicVsAds(agg) {
         ? `${fmtInt(totalVisits)} visitas nos ${fmtInt(visits.sampled_items)} primeiros anúncios (de ${fmtInt(visits.total_items_account)}) — conversão indisponível em contas com 1.000+ anúncios`
         : `${fmtInt(totalVisits)} visitas (coleta parcial agora) — atualize a página pra calcular a conversão`;
     } else {
-      const orgVisits = totalVisits - adsClicks;
-      // Numerador da conversão total: PEDIDOS (vendas brutas) quando disponível —
-      // mesma métrica do card "Conversão de visitas" do Seller Central. Unidades
-      // (1 pedido pode ter N) inflavam o número vs o painel do ML (10,4% vs 14,9%).
-      const grossOrders = (STATE.ordersData && typeof STATE.ordersData.total_orders === 'number')
-        ? STATE.ordersData.total_orders : null;
-      const totalConvCalc = (grossOrders != null ? grossOrders : totalOrders) / totalVisits * 100;
-      // Orgânico = total − Ads, na MESMA base da conversão total: as três conversões
-      // precisam fechar entre si pro usuário (orgânico ≤/≥ total ≤/≥ Ads, média
-      // ponderada bate) — base mista (pedidos no total, unidades no orgânico)
-      // deixava orgânico "maior" que o total e parecia bug.
-      const orgSalesConv = grossOrders != null ? Math.max(0, grossOrders - adsOrders) : orgOrders;
-      const orgConvCalc = orgVisits > 0 ? (orgSalesConv / orgVisits * 100) : Infinity;
-      if (orgVisits <= 0 || totalConvCalc > 100 || orgConvCalc > 100) {
-        // Visitas reportadas não cobrem nem os cliques de Ads (anúncio de catálogo
-        // conta a visita na página do catálogo, não no item) — qualquer conversão
-        // calculada daqui sairia inflada/absurda. Melhor não mostrar.
+      conv = computeConversions({
+        totalVisits, adsClicks,
+        totalUnits: totalOrders, orgUnits: orgOrders, adsUnits: adsOrders,
+        pedidos
+      });
+      if (conv.reason === 'visitas-abaixo-dos-cliques' || conv.reason === 'acima-de-100') {
         visitsHint = `${fmtInt(totalVisits)} visitas registradas pra ${fmtInt(adsClicks)} cliques de Ads — visitas de catálogo não contam no anúncio; conversão indisponível`;
       } else {
-        overallConvNow = totalConvCalc;
-        overallConvText = fmtPct(overallConvNow, 2);
-        orgConvNow = orgConvCalc;
-        orgConvText = fmtPct(orgConvNow, 2);
         visitsHint = visits.accountWide
           ? `${fmtInt(totalVisits)} visitas na conta inteira no período`
           : `${fmtInt(totalVisits)} visitas em ${fmtInt(visits.sampled_items)} ${visits.sampled_items === 1 ? 'anúncio ativo' : 'anúncios ativos'}`;
-
-        // Delta só compara bases iguais: pedidos vs pedidos (snapshot.orders) ou
-        // unidades vs unidades (fallback antigo) — nunca mistura
-        const prevOrders = Number(prev.orders) || 0;
-        const prevConvSameBase = (grossOrders != null)
-          ? ((prevOrders > 0 && prevVisits > 0) ? (prevOrders / prevVisits * 100) : 0)
-          : prevOverallConv;
-        overallConvDelta = prevConvSameBase ? deltaBadge(overallConvNow, prevConvSameBase, { absolute: true, suffix: 'pp' }) : '';
-        if (grossOrders != null) {
-          overallConvHint = '% das visitas que viraram pedido. Pedidos ÷ visitas totais — mesmo número do card "Conversão de visitas" do Seller Central (lá são visitas únicas; pode variar um pouco).';
-          orgConvHint = 'Pedidos orgânicos (pedidos totais − vendas por Ads) ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso.';
-        }
       }
     }
   }
+
+  const spinnerHTML = STATE.visitsLoading ? ' <span class="mfd-vs-spinner"></span>' : '';
+  // Sem nenhuma venda o card já diz "sem vendas no período" — repetir "0,00%"
+  // duas vezes logo abaixo parece defeito, não informação.
+  const convText = (v) => (semVenda || v == null) ? '—' : fmtPct(v, 2);
+
+  const overallConvText = convText(conv.total);
+  const orgConvText = convText(conv.organic);
+  const adsConvText = (semVenda || conv.ads == null) ? '—' : fmtPct(conv.ads, 2);
+
+  const overallConvDelta = (conv.total != null && prevTotalConv)
+    ? deltaBadge(conv.total, prevTotalConv, { absolute: true, suffix: 'pp' }) : '';
+  const orgConvDelta = (conv.organic != null && prevOrgConv)
+    ? deltaBadge(conv.organic, prevOrgConv, { absolute: true, suffix: 'pp' }) : '';
+  const adsConvDelta = (conv.ads != null && prevAdsConv)
+    ? deltaBadge(conv.ads, prevAdsConv, { absolute: true, suffix: 'pp' }) : '';
+
+  // A régua do Mercado Livre (por pedido) só faz sentido com venda: "0,00% por
+  // pedido" abaixo de "sem vendas no período" é ruído, não informação.
+  const mostraPorPedido = conv.byOrder != null && !semVenda && conv.byOrder > 0;
+  const overallConvHint = 'De cada 100 visitas, quantas viraram unidade vendida. Vendas totais ÷ visitas totais — o mesmo "Vendas" que está aqui do lado.'
+    + (mostraPorPedido
+      ? ` O Mercado Livre conta por PEDIDO (um pedido pode levar várias unidades): por lá dá ${fmtPct(conv.byOrder, 2)}${semCancelados ? '' : ', contando pedidos cancelados junto'}.`
+      : '');
+  const orgConvHint = 'Vendas orgânicas ÷ visitas orgânicas (visitas totais − cliques de Ads). Mede se o anúncio vende quando o cliente cai nele sem impulso pago.';
+  const convSub = mostraPorPedido ? `${fmtPct(conv.byOrder, 2)} por pedido` : '';
 
   const pctOf = (a, b) => b > 0 ? +(a / b * 100).toFixed(1) : 0;
   const orgRevPct = pctOf(orgRev, totalRev);
@@ -1780,28 +1894,35 @@ function renderOrganicVsAds(agg) {
     lede = `Receita balanceada: <b>${fmt(orgRevPct, 1)}%</b> orgânico + <b>${fmt(adsRevPct, 1)}%</b> Ads.`;
   }
 
-  const spinnerHTML = STATE.visitsLoading ? ' <span class="mfd-vs-spinner"></span>' : '';
+  // O seletor de período fica logo acima do card, mas o título precisa dizer
+  // sozinho a que janela os números se referem — quem lê primeiro os números
+  // não tinha como saber se eram 7 ou 90 dias.
+  const janela = `últimos ${STATE.period} dias`;
+  const parcialAviso = revParcial
+    ? `Receita e vendas são um PISO: não deu pra ler todos os pedidos do período (conta com muito volume). O número real é maior.`
+    : '';
 
   return `
     <div class="mfd-card mfd-vs-card">
       <div class="mfd-card-header">
-        <div class="mfd-card-title"><span class="ico">📊</span>Visão geral do período</div>
+        <div class="mfd-card-title"><span class="ico">📊</span>Visão geral · ${escapeHtml(janela)}</div>
         ${visitsHint ? `<small style="font-size:.72rem;color:var(--text-muted);">${escapeHtml(visitsHint)}</small>` : ''}
       </div>
+      ${parcialAviso ? `<div class="mfd-vs-lede" style="color:var(--yellow-dark,#8A5A05);">⚠️ ${escapeHtml(parcialAviso)}</div>` : ''}
       <div class="mfd-vs-lede">${lede}</div>
       <div class="mfd-vs-grid mfd-vs-grid-3">
         <div class="mfd-vs-col mfd-vs-total">
           <div class="mfd-vs-col-header"><span class="mfd-vs-icon">📊</span><b>Total</b></div>
           <div class="mfd-vs-metric">
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Soma do que entrou via Ads e via orgânico no período.')}</span>
-            <span class="mfd-vs-value" title="${fmtMoney(totalRev)}">${fmtMoneyCompact(totalRev)}</span>
+            <span class="mfd-vs-value" title="${fmtMoney(totalRev)}">${fmtMoneyCompact(totalRev)}${maisDe}</span>
             <div class="mfd-vs-bar"><div class="mfd-vs-bar-fill total" style="width:100%"></div></div>
             <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">100%</span>${deltaBadge(totalRev, prevTotalRev)}</div>
           </div>
           <div class="mfd-vs-kpi-row">
-            ${kpiCell({ label: 'Vendas', hint: 'Total de unidades vendidas no período (Ads + orgânico).', value: fmtCompact(totalOrders), delta: deltaBadge(totalOrders, prevSales) })}
+            ${kpiCell({ label: 'Vendas', hint: 'Total de unidades vendidas no período (Ads + orgânico). É o numerador da Conversão aqui do lado.', value: fmtCompact(totalOrders) + maisDe, delta: deltaBadge(totalOrders, prevSales) })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda. Receita total ÷ vendas totais.', value: fmtMoneyCompact(totalTicket), valueTitle: fmtMoney(totalTicket), delta: deltaBadge(totalTicket, prevTotalTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: overallConvHint, value: `${overallConvText}${spinnerHTML}`, delta: overallConvDelta })}
+            ${kpiCell({ label: 'Conversão', hint: overallConvHint, value: `${overallConvText}${spinnerHTML}`, delta: overallConvDelta, sub: convSub })}
             ${kpiCell({ label: 'Custo Ads', hint: 'Quanto você gastou em Ads no período (cliques × CPC médio).', value: fmtMoneyCompact(adsCost), valueTitle: fmtMoney(adsCost), delta: deltaBadge(adsCost, prevCost, { inverted: true }) })}
           </div>
         </div>
@@ -1809,20 +1930,22 @@ function renderOrganicVsAds(agg) {
           <div class="mfd-vs-col-header"><span class="mfd-vs-icon">🌱</span><b>Orgânico</b></div>
           <div class="mfd-vs-metric">
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Receita das vendas que aconteceram SEM impulsionamento de Ads — vieram de busca natural, listagem, catálogo.')}</span>
-            <span class="mfd-vs-value" title="${fmtMoney(orgRev)}">${fmtMoneyCompact(orgRev)}</span>
+            <span class="mfd-vs-value" title="${fmtMoney(orgRev)}">${fmtMoneyCompact(orgRev)}${maisDe}</span>
             <div class="mfd-vs-bar"><div class="mfd-vs-bar-fill organic" style="width:${orgRevPct}%"></div></div>
             <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${fmt(orgRevPct, 1)}% do total</span>${deltaBadge(orgRev, prevOrgRev)}</div>
           </div>
           <div class="mfd-vs-kpi-row">
-            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas sem Ads no período.', value: fmtCompact(orgOrders), delta: deltaBadge(orgOrders, prevOrgOrders), sub: `${fmt(orgOrdPct, 1)}% do total` })}
+            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas sem Ads no período. É o numerador da Conversão aqui do lado.', value: fmtCompact(orgOrders) + maisDe, delta: deltaBadge(orgOrders, prevOrgOrders), sub: `${fmt(orgOrdPct, 1)}% do total` })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda orgânica. Receita orgânica ÷ vendas orgânicas.', value: fmtMoneyCompact(orgTicket), valueTitle: fmtMoney(orgTicket), delta: deltaBadge(orgTicket, prevOrgTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: orgConvHint, value: `${orgConvText}${spinnerHTML}`, delta: (orgConvNow && prevOrgConv) ? deltaBadge(orgConvNow, prevOrgConv, { absolute: true, suffix: 'pp' }) : '' })}
+            ${kpiCell({ label: 'Conversão', hint: orgConvHint, value: `${orgConvText}${spinnerHTML}`, delta: orgConvDelta })}
           </div>
         </div>
         <div class="mfd-vs-col mfd-vs-ads">
           <div class="mfd-vs-col-header"><span class="mfd-vs-icon">🎯</span><b>Ads</b></div>
-          ${agg.organic_only && adsRev === 0 && adsCost === 0 ? `
-          <div class="mfd-empty" style="margin-top:10px;">Você ainda não usa Product Ads — sua receita é 100% orgânica. Campanhas aceleram produtos que já vendem sozinhos.</div>
+          ${(adsRev === 0 && adsCost === 0 && adsClicks === 0) ? `
+          <div class="mfd-empty" style="margin-top:10px;">${agg.organic_only
+            ? 'Você ainda não usa Product Ads — sua receita é 100% orgânica. Campanhas aceleram produtos que já vendem sozinhos.'
+            : 'Suas campanhas não tiveram gasto nem clique nesse período — não há o que medir aqui. Experimente um período maior ou reative as campanhas.'}</div>
           ` : `
           <div class="mfd-vs-metric">
             <span class="mfd-vs-label">${kpiLabel('Receita', 'Receita das vendas que vieram de Ads — Mercado Livre marca a venda como impulsionada quando o cliente clicou no anúncio pago.')}</span>
@@ -1831,9 +1954,9 @@ function renderOrganicVsAds(agg) {
             <div class="mfd-vs-pct-row"><span class="mfd-vs-pct">${fmt(adsRevPct, 1)}% do total</span>${deltaBadge(adsRev, prevAdsRev)}</div>
           </div>
           <div class="mfd-vs-kpi-row mfd-vs-kpi-row-ads">
-            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas via Ads.', value: fmtCompact(adsOrders), delta: deltaBadge(adsOrders, prevAdsOrders), sub: `${fmt(adsOrdPct, 1)}% do total` })}
+            ${kpiCell({ label: 'Vendas', hint: 'Unidades vendidas via Ads. É o numerador da Conversão aqui do lado.', value: fmtCompact(adsOrders), delta: deltaBadge(adsOrders, prevAdsOrders), sub: `${fmt(adsOrdPct, 1)}% do total` })}
             ${kpiCell({ label: 'Ticket', hint: 'Valor médio por venda via Ads.', value: fmtMoneyCompact(adsTicket), valueTitle: fmtMoney(adsTicket), delta: deltaBadge(adsTicket, prevAdsTicket) })}
-            ${kpiCell({ label: 'Conversão', hint: 'Cliques que viraram venda. Vendas Ads ÷ cliques Ads.', value: fmtPct(adsCvr, 2), delta: deltaBadge(adsCvr, prevCvr, { absolute: true, suffix: 'pp' }) })}
+            ${kpiCell({ label: 'Conversão', hint: 'Cliques que viraram venda. Vendas Ads ÷ cliques Ads — as duas parcelas estão na tela.', value: adsConvText, delta: adsConvDelta })}
             ${kpiCell({ label: 'CTR', hint: 'Click-through rate: % das pessoas que viram o anúncio e clicaram. Cliques ÷ impressões.', value: fmtPct(Number(agg.avg_ctr) || 0, 2), delta: deltaBadge(Number(agg.avg_ctr) || 0, prevCtr, { absolute: true, suffix: 'pp' }) })}
             ${kpiCell({ label: 'ROAS', hint: 'Return on Ad Spend: pra cada R$ 1 gasto em Ads, quanto retornou em receita. Receita Ads ÷ Custo Ads.', value: `${fmt(adsRoas, 2)}x`, delta: deltaBadge(adsRoas, prevRoas, { absolute: true, suffix: 'x' }) })}
             ${kpiCell({ label: 'TACOS', hint: 'Total Advertising Cost of Sales: % do faturamento total (Ads + orgânico) que vai pra Ads. Custo Ads ÷ Receita total.', value: fmtPct(tacos, 2), delta: deltaBadge(tacos, prevTacos, { absolute: true, suffix: 'pp', inverted: true }) })}
@@ -1932,171 +2055,6 @@ function renderAlerts(alerts) {
           <button class="mfd-alert-x" data-dismiss-alert="${escapeHtml(a.id)}" title="Dispensar">×</button>
         </div>
       `).join('')}
-    </div>
-  `;
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// SECTION 12 — Render: KPI BAR
-// ══════════════════════════════════════════════════════════════════════
-
-// Linha secundária de KPIs — métricas operacionais já no payload /ads-aggregated
-function renderSecondaryKpis(agg) {
-  const totalRev = (agg.total_revenue || 0) + (agg.organic_revenue || 0);
-  const sales = (agg.total_orders || 0) + (agg.organic_orders || 0);
-  const ticket = sales > 0 ? totalRev / sales : 0;
-  const ctr = agg.avg_ctr || 0;
-  const cvr = agg.avg_cvr || 0;
-  const cpc = agg.avg_cpc || 0;
-  const adsPct = agg.ads_sales_pct || 0;
-
-  // Tone helpers (thresholds genéricos honestos pra ML)
-  const ctrTone   = ctr === 0 ? '' : ctr < 0.5 ? 'crit' : ctr < 1 ? 'warn' : ctr >= 2 ? 'good' : '';
-  const ctrLabel  = ctr === 0 ? null : ctr < 0.5 ? 'baixo' : ctr < 1 ? 'normal' : ctr >= 2 ? 'bom' : 'normal';
-  const cvrTone   = cvr === 0 ? '' : cvr < 1 ? 'crit' : cvr < 3 ? 'warn' : 'good';
-  const cvrLabel  = cvr === 0 ? null : cvr < 1 ? 'baixo' : cvr < 3 ? 'normal' : 'bom';
-  const adsTone   = adsPct === 0 ? '' : adsPct < 20 ? 'warn' : adsPct < 65 ? 'good' : 'warn';
-  const adsLabel  = adsPct === 0 ? null : adsPct < 20 ? 'subutilizado' : adsPct < 65 ? 'saudável' : 'alta dependência';
-
-  const kpis = [
-    {
-      label: 'Ticket médio', ico: '🧾',
-      value: ticket > 0 ? fmtMoneyCompact(ticket) : '—',
-      help: 'Quanto, em média, vale cada venda. Total faturado dividido pelo número de vendas.'
-    },
-    {
-      label: 'Conversão (CVR)', ico: '🎯',
-      value: cvr > 0 ? fmtPct(cvr, 2) : '—',
-      help: 'Taxa de conversão de Product Ads — % dos cliques que viram venda. O nível bom varia por categoria e faixa de preço.',
-      tone: cvrTone, deltaText: cvrLabel, isHealth: true
-    },
-    {
-      label: 'CTR', ico: '👁️',
-      value: ctr > 0 ? fmtPct(ctr, 2) : '—',
-      help: 'Click-through rate dos seus ads — % das pessoas que viram seu anúncio e clicaram. Mede atratividade do título e da imagem.',
-      tone: ctrTone, deltaText: ctrLabel, isHealth: true
-    },
-    {
-      label: 'CPC médio', ico: '💸',
-      value: cpc > 0 ? fmtMoney(cpc) : '—',
-      help: 'Custo médio por clique nos ads. Você paga só quando alguém clica.'
-    },
-    {
-      label: '% via ads', ico: '📊',
-      value: adsPct > 0 ? fmtPct(adsPct, 0) : '—',
-      help: 'Que parte da sua receita veio de Product Ads. Quanto maior, mais o faturamento depende de impulso pago.',
-      tone: adsTone, deltaText: adsLabel, isHealth: true
-    }
-  ];
-
-  return `
-    <div class="mfd-kpi-bar mfd-kpi-bar-secondary">
-      ${kpis.map(k => renderKpi(k)).join('')}
-    </div>
-  `;
-}
-
-function renderKpiBar(agg, totals, prevSnap, healthScore) {
-  const totalRev = (agg.total_revenue || 0) + (agg.organic_revenue || 0);
-  const sales = (agg.total_orders || 0) + (agg.organic_orders || 0);
-  const tacos = agg.avg_tacos || 0;
-  const roas = agg.overall_roas || 0;
-  // Sem gasto em Ads no período, TACOS/ROAS não se aplicam — "0%"/"0x" parece métrica ruim
-  const hasAdsSpend = (agg.total_cost || 0) > 0;
-  // Receita por pedidos com paginação no cap: valor é piso, não total
-  const kpiRevSuffix = agg.revenue_complete === false ? '+' : '';
-
-  const revPrev = prevSnap ? ((prevSnap.revenue || 0) + (prevSnap.organic_revenue || 0)) : null;
-  const salesPrev = prevSnap ? (prevSnap.sales || 0) : null;
-  const tacosPrev = prevSnap ? (prevSnap.tacos || 0) : null;
-  const roasPrev  = prevSnap ? (prevSnap.roas || 0) : null;
-
-  const revDelta = revPrev != null && revPrev > 0 ? ((totalRev - revPrev) / revPrev) * 100 : null;
-  const salesDelta = salesPrev != null && salesPrev > 0 ? ((sales - salesPrev) / salesPrev) * 100 : null;
-  const tacosDelta = tacosPrev != null ? (tacos - tacosPrev) : null;
-  const roasDelta  = roasPrev  != null ? (roas  - roasPrev)  : null;
-
-  const kpis = [
-    {
-      label: 'Receita',
-      ico: '💰',
-      value: fmtMoneyCompact(totalRev) + kpiRevSuffix,
-      help: 'Total que você faturou no período (vendas via ads + vendas orgânicas).',
-      delta: revDelta,
-      deltaText: revDelta != null ? `${deltaArrow(revDelta)} ${fmt(Math.abs(revDelta), 1)}%` : null,
-      deltaInverted: false,
-      tone: revDelta == null ? '' : (revDelta > 0 ? 'good' : revDelta < 0 ? 'crit' : ''),
-      sparklineDataKey: 'revenue'
-    },
-    {
-      label: 'Vendas',
-      ico: '🛒',
-      value: fmtCompact(sales) + kpiRevSuffix,
-      help: 'Quantidade de unidades vendidas no período (somando ads e orgânicas).',
-      delta: salesDelta,
-      deltaText: salesDelta != null ? `${deltaArrow(salesDelta)} ${fmt(Math.abs(salesDelta), 1)}%` : null,
-      deltaInverted: false,
-      tone: salesDelta == null ? '' : (salesDelta > 0 ? 'good' : salesDelta < 0 ? 'crit' : ''),
-      sparklineDataKey: 'units'
-    },
-    {
-      label: 'TACOS',
-      ico: '⚖️',
-      value: hasAdsSpend ? fmtPct(tacos, 1) : '—',
-      help: 'Total ACOS — quanto da sua receita TOTAL (ads + orgânica) foi gasto em ads. Quanto menor, melhor.',
-      delta: hasAdsSpend ? tacosDelta : null,
-      deltaText: hasAdsSpend && tacosDelta != null ? `${deltaArrow(tacosDelta)} ${fmt(Math.abs(tacosDelta), 2)}pp` : null,
-      deltaInverted: true,
-      tone: !hasAdsSpend || tacosDelta == null ? '' : (tacosDelta < 0 ? 'good' : tacosDelta > 0.5 ? 'warn' : ''),
-      sparklineDataKey: 'tacos'
-    },
-    {
-      label: 'ROAS',
-      ico: '📈',
-      value: hasAdsSpend ? fmt(roas, 2) + 'x' : '—',
-      help: 'Return on Ad Spend — quanto cada R$ 1 investido em ads gerou em vendas. ROAS 4x = cada R$ 1 virou R$ 4. Abaixo de 1x você está pagando pra vender.',
-      delta: hasAdsSpend ? roasDelta : null,
-      deltaText: hasAdsSpend && roasDelta != null ? `${deltaArrow(roasDelta)} ${fmt(Math.abs(roasDelta), 2)}x` : null,
-      deltaInverted: false,
-      tone: !hasAdsSpend || roasDelta == null ? '' : (roasDelta > 0 ? 'good' : roasDelta < 0 ? 'crit' : ''),
-      sparklineDataKey: 'roas'
-    },
-    {
-      label: 'Health Score',
-      ico: '❤️',
-      value: String(Math.round(healthScore)),
-      help: 'Nota da saúde geral da sua conta (0 a 100). Combina eficiência de ads, cobertura de catálogo, sua consistência de uso e tendência de receita.',
-      delta: null,
-      deltaText: classFromScore(healthScore).label,
-      tone: 'purple',
-      isHealth: true
-    }
-  ];
-
-  return `
-    <div class="mfd-kpi-bar">
-      ${kpis.map(k => renderKpi(k)).join('')}
-    </div>
-  `;
-}
-
-function renderKpi(k) {
-  const deltaClassName = k.delta == null ? 'flat' : deltaClass(k.delta, k.deltaInverted);
-  const helpDot = k.help
-    ? `<span class="mfd-kpi-help" tabindex="0" data-help="${escapeHtml(k.help)}" title="${escapeHtml(k.help)}">?</span>`
-    : '';
-  // Para KPIs estáticos (isHealth) que usam tone pra colorir badge
-  const toneToBadge = { good: 'pos', warn: 'neutral', crit: 'neg', purple: 'flat' };
-  const badgeClass = k.isHealth
-    ? (toneToBadge[k.tone] || 'flat')
-    : deltaClassName;
-  return `
-    <div class="mfd-kpi ${k.tone || ''}">
-      <div class="mfd-kpi-label"><span class="ico">${k.ico}</span>${escapeHtml(k.label)}${helpDot}</div>
-      <div class="mfd-kpi-value">${k.value}</div>
-      ${k.deltaText
-        ? `<div><span class="mfd-kpi-delta ${badgeClass}">${k.deltaText}</span>${!k.isHealth ? `<span class="mfd-kpi-delta-label">${STATE.prevSnapshot && STATE.prevSnapshot._synthetic ? 'vs período anterior' : 'vs visita anterior'}</span>` : ''}</div>`
-        : ''}
     </div>
   `;
 }
@@ -2341,149 +2299,6 @@ function drawSalesChart(daily) {
   });
 }
 
-// Donut: concentração de gasto entre os top anúncios
-let _mfdSpendDonutInstance = null;
-
-function renderSpendDonutCard() {
-  return `
-    <div class="mfd-card mfd-chart-card">
-      <div class="mfd-card-header">
-        <div class="mfd-card-title"><span class="ico">🎯</span>Pra onde vai seu gasto em Ads</div>
-      </div>
-      <div class="mfd-spend-donut-wrap">
-        <div class="mfd-donut-container"><canvas id="mfd-spend-donut"></canvas></div>
-        <div id="mfd-spend-donut-legend" class="mfd-donut-legend"></div>
-      </div>
-    </div>
-  `;
-}
-
-function drawSpendDonut(items) {
-  const canvas = document.getElementById('mfd-spend-donut');
-  if (!canvas || !window.Chart) return;
-  if (_mfdSpendDonutInstance) { _mfdSpendDonutInstance.destroy(); _mfdSpendDonutInstance = null; }
-  const arr = (items || []).filter(it => (it.cost || 0) > 0).slice(0, 5);
-  if (!arr.length) return;
-
-  const palette = ['#0066ff', '#00d68f', '#8b5cf6', '#f59e0b', '#ff3b5c'];
-  const labels = arr.map((it, i) => {
-    const t = it.title || it.item_id || ('Item ' + (i+1));
-    return t.length > 32 ? t.slice(0, 32) + '…' : t;
-  });
-  const values = arr.map(it => +(it.cost || 0));
-  const total = values.reduce((s, n) => s + n, 0);
-
-  const ctx = canvas.getContext('2d');
-  _mfdSpendDonutInstance = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: palette.slice(0, arr.length),
-        borderColor: '#fff',
-        borderWidth: 3,
-        hoverOffset: 6
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      cutout: '64%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: 'rgba(15,23,42,0.94)', padding: 10, cornerRadius: 8,
-          titleFont: { family: 'DM Sans', size: 12 },
-          bodyFont:  { family: 'DM Mono', size: 12, weight: 'bold' },
-          callbacks: {
-            label: (c) => {
-              const pct = total > 0 ? (c.parsed / total) * 100 : 0;
-              return `${fmtMoney(c.parsed)} (${fmt(pct, 0)}%)`;
-            }
-          }
-        }
-      }
-    }
-  });
-
-  // Legenda lateral
-  const legend = document.getElementById('mfd-spend-donut-legend');
-  if (legend) {
-    legend.innerHTML = arr.map((it, i) => {
-      const cost = it.cost || 0;
-      const pct = total > 0 ? (cost / total) * 100 : 0;
-      const t = it.title || it.item_id || ('Item ' + (i+1));
-      return `
-        <div class="mfd-donut-leg-row">
-          <span class="mfd-donut-leg-dot" style="background:${palette[i]}"></span>
-          <div class="mfd-donut-leg-body">
-            <div class="mfd-donut-leg-title" title="${escapeHtml(t)}">${escapeHtml(t.length > 40 ? t.slice(0, 40) + '…' : t)}</div>
-            <div class="mfd-donut-leg-meta"><b>${fmtMoneyCompact(cost)}</b> · ${fmt(pct, 0)}% do gasto</div>
-          </div>
-        </div>
-      `;
-    }).join('');
-    // Centro do donut: total
-    const center = document.createElement('div');
-    center.className = 'mfd-donut-center';
-    center.innerHTML = `<span class="mfd-donut-center-vl">${fmtMoneyCompact(total)}</span><span class="mfd-donut-center-lb">total gasto</span>`;
-    const wrap = document.querySelector('.mfd-donut-container');
-    const old = wrap?.querySelector('.mfd-donut-center');
-    if (old) old.remove();
-    if (wrap) wrap.appendChild(center);
-  }
-}
-
-function renderCampaignsCard(campaigns) {
-  if (!Array.isArray(campaigns) || !campaigns.length) {
-    return `
-      <div class="mfd-card">
-        <div class="mfd-card-header">
-          <div class="mfd-card-title"><span class="ico">📣</span>Suas campanhas</div>
-        </div>
-        <div class="mfd-empty">Nenhuma campanha de Product Ads detectada. Crie a primeira pelo Mercado Livre ou abra o Planejador de Ads.</div>
-      </div>
-    `;
-  }
-  const active = campaigns.filter(c => (c.status || '').toLowerCase() === 'active');
-  const paused = campaigns.filter(c => (c.status || '').toLowerCase() !== 'active');
-
-  const row = (c) => {
-    const isActive = (c.status || '').toLowerCase() === 'active';
-    const stratMap = { 'profitability': 'rentabilidade', 'visibility': 'visibilidade', 'increase_traffic': 'tráfego' };
-    const strat = stratMap[String(c.strategy || '').toLowerCase()] || c.strategy || '—';
-    const targets = [];
-    if (c.acos_target) targets.push(`ACOS alvo ${fmt(c.acos_target, 0)}%`);
-    if (c.roas_target) targets.push(`ROAS alvo ${fmt(c.roas_target, 1)}x`);
-    if (c.budget && (c.budget.amount || c.budget)) {
-      const amount = c.budget.amount || c.budget;
-      targets.push(`budget ${fmtMoneyCompact(amount)}`);
-    }
-    return `
-      <div class="mfd-camp-item ${isActive ? 'active' : 'paused'}">
-        <div class="mfd-camp-status">${isActive ? '<span class="dot active"></span>ativa' : '<span class="dot paused"></span>' + escapeHtml(({ paused: 'pausada', hold: 'em espera', idle: 'inativa', pending: 'pendente' })[String(c.status || '').toLowerCase()] || 'pausada')}</div>
-        <div class="mfd-camp-body">
-          <div class="mfd-camp-name" title="${escapeHtml(c.name || '')}">${escapeHtml(c.name || ('Campanha ' + c.campaign_id))}</div>
-          <div class="mfd-camp-meta">${escapeHtml(strat)}${targets.length ? ' · ' + targets.map(escapeHtml).join(' · ') : ''}</div>
-        </div>
-      </div>
-    `;
-  };
-
-  return `
-    <div class="mfd-card">
-      <div class="mfd-card-header">
-        <div class="mfd-card-title"><span class="ico">📣</span>Suas campanhas</div>
-        <span style="font-size:.72rem;color:var(--text-muted);font-weight:600;">${active.length} ativa${active.length === 1 ? '' : 's'} · ${paused.length} pausada${paused.length === 1 ? '' : 's'}</span>
-      </div>
-      <div class="mfd-camp-list">
-        ${[...active, ...paused].slice(0, 8).map(row).join('')}
-      </div>
-      ${campaigns.length > 8 ? `<div class="mfd-camp-more">+${campaigns.length - 8} ${campaigns.length - 8 === 1 ? 'outra' : 'outras'} no Planejador de Ads</div>` : ''}
-    </div>
-  `;
-}
-
 let _mfdChartInstance = null;
 function drawRevenueChart(daily) {
   const canvas = document.getElementById('mfd-revenue-chart');
@@ -2579,27 +2394,35 @@ function drawRevenueChart(daily) {
     }
   });
 
-  // Summary stats
-  const sumAds = adsRev.reduce((s, n) => s + n, 0);
-  const sumOrg = orgRev.reduce((s, n) => s + n, 0);
-  const sumCost = cost.reduce((s, n) => s + n, 0);
+  // Summary stats — leem do MESMO agregado que o card Visão Geral usa.
+  //
+  // Antes somavam a série diária, que vem sempre do agregado por campanha,
+  // enquanto o total do card pode vir do summary por anúncio ou dos pedidos.
+  // Resultado: dois "Total faturado" com valores diferentes na mesma página.
+  // A série continua sendo a série (é a forma do período); o número fechado
+  // tem uma fonte só.
+  const agg = (STATE.data && STATE.data.aggregated) || {};
+  const sumAds = Number(agg.total_revenue) || 0;
+  const sumOrg = Number(agg.organic_revenue) || 0;
+  const sumCost = Number(agg.total_cost) || 0;
   const totalRev = sumAds + sumOrg;
   const adsShare = totalRev > 0 ? (sumAds / totalRev) * 100 : 0;
   const lift = sumCost > 0 ? sumAds / sumCost : 0;
+  const maisDe = agg.revenue_complete === false ? '+' : '';
   const summary = document.getElementById('mfd-chart-summary');
   if (summary) {
     summary.innerHTML = `
       <div>
         <div class="mfd-chart-stat-lb">Total faturado</div>
-        <div class="mfd-chart-stat-vl">${fmtMoneyCompact(totalRev)}</div>
+        <div class="mfd-chart-stat-vl">${fmtMoneyCompact(totalRev)}${maisDe}</div>
       </div>
       <div>
         <div class="mfd-chart-stat-lb">Ads → Receita</div>
-        <div class="mfd-chart-stat-vl pos">${fmt(lift, 2)}x</div>
+        <div class="mfd-chart-stat-vl pos">${sumCost > 0 ? fmt(lift, 2) + 'x' : '—'}</div>
       </div>
       <div>
         <div class="mfd-chart-stat-lb">% via ads</div>
-        <div class="mfd-chart-stat-vl">${fmt(adsShare, 0)}%</div>
+        <div class="mfd-chart-stat-vl">${totalRev > 0 ? fmt(adsShare, 0) + '%' : '—'}</div>
       </div>
     `;
   }
@@ -3056,6 +2879,17 @@ function buildAchievements(agg, totals, history, streak, seller) {
     { id: 'official',    ico: '🏬', title: 'Loja Oficial',              desc: 'Sua conta é Loja Oficial registrada no Mercado Livre', hit: !!(STATE.brandInfo && STATE.brandInfo.isOfficial), target: 1, actual: STATE.brandInfo?.isOfficial ? 1 : 0, unit: 'status', kind: 'binary' }
   ];
 
+  // Marcos cumulativos ficam desbloqueados pra sempre; os de estado (reputação,
+  // tier, loja oficial) seguem o presente. Ver rtGetUnlocked.
+  const ESTADO = new Set(['rep_green', 'mercadolider', 'platinum', 'positive95', 'official']);
+  const sid = STATE.sellerId;
+  const unlocked = rtGetUnlocked(sid);
+  list.forEach(a => {
+    if (ESTADO.has(a.id)) return;
+    if (a.hit) rtMarkUnlocked(sid, a.id);
+    else if (unlocked[a.id]) { a.hit = true; a.unlockedAt = unlocked[a.id]; }
+  });
+
   // Sort: completed first (gold trophies), then by progress %
   list.forEach(a => {
     a.progress = a.hit ? 1 : (a.kind === 'binary' ? a.actual : Math.min(1, a.actual / a.target));
@@ -3174,7 +3008,10 @@ function buildWeekdayPattern(daily) {
   const buckets = labels.map(l => ({ label: l, revenue: 0, sales: 0, count: 0 }));
   for (const d of daily) {
     if (!d.date) continue;
-    const dt = new Date(d.date + 'T12:00:00');
+    // slice(0,10): o ML às vezes manda ISO completo e concatenar 'T12:00:00'
+    // num ISO produz Invalid Date — o card inteiro silenciava sem avisar.
+    // Mesmo tratamento que os três gráficos já fazem.
+    const dt = new Date(String(d.date).slice(0, 10) + 'T12:00:00');
     if (isNaN(dt.getTime())) continue;
     const wd = dt.getDay(); // 0 = Dom
     const rev = (+(d.total_amount || 0)) + (+(d.organic_units_amount || 0));
@@ -4289,9 +4126,9 @@ function renderDashboard() {
         ${renderHealthCard(score, breakdown)}
         ${renderReputationCard(seller)}
       </div>
+      ${renderPeriodBar()}
       ${renderOrganicVsAds(agg)}
       ${insight ? renderDailyInsight(insight) : ''}
-      ${renderPeriodBar()}
       ${renderSinceLastVisitBanner(buildSinceLastVisitChanges(history, agg, score, streak))}
       ${renderAlerts(alerts)}
       ${renderSummaryCard(agg, totals, data.daily_aggregated || [], prevSnap, STATE.period, seller)}
@@ -4488,6 +4325,99 @@ async function waitForFreshToken(oldToken, deadlineMs = 8000) {
   return false;
 }
 
+// Reconcilia o agregado do Mercado Ads com a soma de pedidos e devolve um
+// agregado NOVO (não muta a entrada).
+//
+// Uma função só, usada pelo período atual E pelo anterior. Antes eram duas
+// implementações parecidas em lugares diferentes do arquivo, e quando elas
+// divergiam — caso real: coleta truncada, em que o período atual ficava na
+// régua do Mercado Ads e o anterior na dos pedidos — o comparativo media a
+// diferença entre as DUAS FÓRMULAS, não entre os dois períodos. Foi assim que
+// "Receita ▲ +75,3%" apareceu com receita idêntica dos dois lados.
+//
+// Regra: com a soma de pedidos COMPLETA, ela é o fato contábil — total =
+// pedidos, ads = min(ads, total), orgânico = total − ads. TRUNCADA, ela é só um
+// piso: pode melhorar o orgânico, nunca derrubar o que o Ads reportou.
+function reconciliarComPedidos(agg, revenue) {
+  const a = Object.assign({}, agg || {});
+  if (!revenue || typeof revenue.amount !== 'number') return a;
+  const adsRev0 = Number(a.total_revenue) || 0;
+  const adsUn0  = Number(a.total_orders) || 0;
+
+  if (revenue.complete !== false) {
+    const total = revenue.amount;
+    const totalUn = revenue.units || 0;
+    a.total_revenue   = Math.min(adsRev0, total);
+    a.total_orders    = Math.min(adsUn0, totalUn);
+    a.organic_revenue = Math.max(0, total - a.total_revenue);
+    a.organic_orders  = Math.max(0, totalUn - a.total_orders);
+    a.organic_from_orders = true;
+    a.revenue_complete = true;
+  } else {
+    const orgFromOrders = Math.max(0, revenue.amount - adsRev0);
+    if (orgFromOrders > (Number(a.organic_revenue) || 0)) {
+      a.organic_revenue = orgFromOrders;
+      a.organic_orders  = Math.max(0, (revenue.units || 0) - adsUn0);
+      a.organic_from_orders = true;
+    }
+    // Incondicional: o número é um piso mesmo quando o orgânico não melhorou.
+    a.revenue_complete = false;
+  }
+
+  const total = (Number(a.total_revenue) || 0) + (Number(a.organic_revenue) || 0);
+  const cost = Number(a.total_cost) || 0;
+  a.avg_tacos     = total > 0 ? (cost / total) * 100 : 0;
+  a.ads_sales_pct = total > 0 ? ((Number(a.total_revenue) || 0) / total) * 100 : 0;
+  a.overall_roas  = cost > 0 ? (Number(a.total_revenue) || 0) / cost : 0;
+  return a;
+}
+
+// Regrava o snapshot do dia a partir do estado JÁ consolidado (agg reconciliado
+// + visitas). Chamado por quem terminar por último.
+//
+// Antes o snapshot era gravado com o número CRU do ML Ads e só regravado quando
+// a reconciliação por pedidos rodava. Quando ela não rodava (coleta truncada,
+// /orders-count fora do ar, aba fechada antes de responder), o dia ficava salvo
+// numa régua e o dia seguinte em outra — e o delta media a troca de fonte, não
+// o negócio. Daí "Orgânico ▲ +170%" com receita idêntica dos dois lados.
+function consolidarSnapshot(snap, sid, period) {
+  if (!snap || !sid) return;
+  const a = (STATE.data && STATE.data.aggregated) || {};
+  const v = STATE.visitsData;
+  snap.revenue         = Number(a.total_revenue) || 0;
+  snap.organic_revenue = Number(a.organic_revenue) || 0;
+  snap.cost            = Number(a.total_cost) || 0;
+  snap.ads_orders      = Number(a.total_orders) || 0;
+  snap.organic_orders  = Number(a.organic_orders) || 0;
+  snap.sales           = snap.ads_orders + snap.organic_orders;
+  snap.tacos           = Number(a.avg_tacos) || 0;
+  snap.roas            = Number(a.overall_roas) || 0;
+  snap.clicks          = Number(a.total_clicks) || 0;
+  snap.impressions     = Number(a.total_impressions) || 0;
+  // Calculado, não o avg_cvr do ML: a reconciliação corta ads_orders e o
+  // avg_cvr fica com o valor velho.
+  snap.cvr = snap.clicks > 0 ? (snap.ads_orders / snap.clicks * 100) : 0;
+  // Carimbo da régua: 'orders' = ancorado nos pedidos (fato contábil da conta),
+  // 'ads' = só o que o Mercado Ads reportou. Guardado pra que comparação entre
+  // réguas diferentes possa ser recusada em vez de virar número.
+  snap.src = (a.organic_from_orders || a.organic_only) ? 'orders' : 'ads';
+  snap.partial = a.revenue_complete === false;
+
+  const visitasOk = v && v.total_visits > 0 && !v.capped && !v.incomplete;
+  snap.visits = visitasOk ? v.total_visits : 0;
+  const orgVisits = visitasOk ? Math.max(0, v.total_visits - snap.clicks) : 0;
+  // Unidades ÷ visitas orgânicas — MESMA base do card e do Health Score
+  const orgConv = orgVisits > 0 ? (snap.organic_orders / orgVisits * 100) : 0;
+  snap.organic_conversion = orgConv > 100 ? 0 : orgConv; // >100% = visitas subcontadas (catálogo)
+
+  const od = STATE.ordersData;
+  if (od && od.revenue && typeof od.revenue.orders === 'number') snap.orders = od.revenue.orders;
+  else if (od && typeof od.total_orders === 'number') snap.orders = od.total_orders;
+
+  rtSaveSnapshot(sid, period, snap);
+  rtUpdateRecords(sid, Object.assign({ date: todayStr() }, snap));
+}
+
 async function loadAndRender(period, forceRefresh, _isAuthRetry) {
   STATE.period = period;
   STATE.loading = true;
@@ -4556,31 +4486,14 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       countsUnknown
     };
 
-    // Snapshot anterior (antes de salvar hoje)
-    STATE.prevSnapshot = sidLocal ? rtGetPrevSnapshot(sidLocal, todayStr(), period) : null;
-
-    // Snapshot de hoje
-    if (sidLocal) {
-      const snap = {
-        revenue:         aggData.aggregated?.total_revenue || 0,
-        organic_revenue: aggData.aggregated?.organic_revenue || 0,
-        cost:            aggData.aggregated?.total_cost || 0,
-        sales:           (aggData.aggregated?.total_orders || 0) + (aggData.aggregated?.organic_orders || 0),
-        ads_orders:      aggData.aggregated?.total_orders || 0,
-        organic_orders:  aggData.aggregated?.organic_orders || 0,
-        tacos:           aggData.aggregated?.avg_tacos || 0,
-        roas:            aggData.aggregated?.overall_roas || 0,
-        clicks:          aggData.aggregated?.total_clicks || 0,
-        impressions:     aggData.aggregated?.total_impressions || 0,
-        cvr:             aggData.aggregated?.avg_cvr || 0,
-        visits:          0,  // será atualizado depois quando visitsData chegar (em fetchOrganicVisits.then)
-        organic_conversion: 0
-      };
-      STATE._currentSnap = snap;
-      rtSaveSnapshot(sidLocal, period, snap);
-      rtUpdateRecords(sidLocal, Object.assign({ date: todayStr() }, snap));
-      rtUpdateStreak(sidLocal);
-    }
+    // Snapshot da VISITA anterior — alimenta o banner "Desde sua última visita",
+    // streak e recordes. NÃO serve de base pros deltas do card: com período de
+    // 30 dias, "ontem" e "hoje" compartilham 29 dias, e o delta some no ruído.
+    STATE.prevLocalSnapshot = sidLocal ? rtGetPrevSnapshot(sidLocal, todayStr(), period) : null;
+    // Base dos deltas: o período anterior de verdade, medido logo abaixo pela
+    // mesma pipeline. Até chegar, os deltas mostram "—" em vez de um número que
+    // compara janelas sobrepostas.
+    STATE.prevSnapshot = null;
 
     STATE.data = {
       aggregated:       aggData.aggregated || {},
@@ -4589,6 +4502,16 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       totals,
       fetchedAt: Date.now()
     };
+
+    // Snapshot de hoje — esqueleto; consolidarSnapshot() lê de STATE.data, então
+    // só depois dele. Vai ser regravado quando visitas e pedidos chegarem.
+    if (sidLocal) {
+      const snap = { visits: 0, organic_conversion: 0 };
+      STATE._currentSnap = snap;
+      consolidarSnapshot(snap, sidLocal, period);
+      rtUpdateStreak(sidLocal);
+    }
+
     STATE.loading = false;
     renderDashboard();
 
@@ -4601,22 +4524,7 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         if (reqId !== STATE._reqSeq) return; // período mudou no meio — descarta
         STATE.visitsLoading = false;
         STATE.visitsData = v;
-        // Atualiza snapshot com visits + org conversion (não confiável com amostra parcial)
-        if (reqSnap && v) {
-          const adsClicks = aggData.aggregated?.total_clicks || 0;
-          const orgVisits = (v.capped || v.incomplete) ? 0 : Math.max(0, v.total_visits - adsClicks);
-          // Mesma base do render: pedidos (total − vendas Ads) quando disponível,
-          // senão unidades orgânicas — histórico coerente com o que o card mostra
-          const gross = (STATE.ordersData && typeof STATE.ordersData.total_orders === 'number')
-            ? STATE.ordersData.total_orders : null;
-          const adsOrd = aggData.aggregated?.total_orders || 0;
-          const orgSales = gross != null ? Math.max(0, gross - adsOrd) : (aggData.aggregated?.organic_orders || 0);
-          const orgConvSnap = orgVisits > 0 ? (orgSales / orgVisits * 100) : 0;
-          reqSnap.visits = v.total_visits;
-          // >100% = visitas subcontadas (catálogo) — não polui o histórico
-          reqSnap.organic_conversion = orgConvSnap > 100 ? 0 : orgConvSnap;
-          rtSaveSnapshot(sidLocal, period, reqSnap);
-        }
+        consolidarSnapshot(reqSnap, sidLocal, period);
         patchOrganicVsCard();
         patchHealthCard();
       }).catch(() => {
@@ -4637,21 +4545,7 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
       fetchOrdersCount(sidLocal, period, needsOrdersRevenue).then(d => {
         if (reqId !== STATE._reqSeq) return;
         STATE.ordersLoading = false;
-        STATE.ordersData = d; // null = indisponível (conversões caem pro cálculo por unidades)
-        if (reqSnap && d && typeof d.total_orders === 'number') {
-          reqSnap.orders = d.total_orders;
-          // Se as visitas já chegaram, refaz a conversão orgânica do snapshot na
-          // base de pedidos (total − Ads) — quem resolve por último consolida
-          const v = STATE.visitsData;
-          if (v && v.total_visits > 0 && !v.capped && !v.incomplete) {
-            const adsClicks = aggData.aggregated?.total_clicks || 0;
-            const adsOrd = aggData.aggregated?.total_orders || 0;
-            const orgVisits = Math.max(0, v.total_visits - adsClicks);
-            const orgConvSnap = orgVisits > 0 ? (Math.max(0, d.total_orders - adsOrd) / orgVisits * 100) : 0;
-            reqSnap.organic_conversion = orgConvSnap > 100 ? 0 : orgConvSnap;
-          }
-          rtSaveSnapshot(sidLocal, period, reqSnap);
-        }
+        STATE.ordersData = d; // null = indisponível (a régua por pedido some do card)
         let revenueApplied = false;
         if (d && d.revenue && typeof d.revenue.amount === 'number' &&
             (organicFallback || d.revenue.amount > 0)) {
@@ -4687,76 +4581,56 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
             // total do dashboard = total dos pedidos; ads = min(ads, total);
             // orgânico = total − ads. Pedidos truncados no cap = piso: só
             // melhora o orgânico, nunca derruba o summary.
-            const a = STATE.data.aggregated;
-            if (d.revenue.complete !== false) {
-              const totalReal = d.revenue.amount;
-              const totalUnits = d.revenue.units || 0;
-              const adsRev = Math.min(a.total_revenue || 0, totalReal);
-              const orgRev = Math.max(0, totalReal - adsRev);
-              const adsUnits = Math.min(a.total_orders || 0, totalUnits);
-              const changed = Math.abs(orgRev - (a.organic_revenue || 0)) > 0.01 ||
-                Math.abs(adsRev - (a.total_revenue || 0)) > 0.01;
-              if (changed) {
-                a.total_revenue = adsRev;
-                a.total_orders = adsUnits;
-                a.organic_revenue = orgRev;
-                a.organic_orders = Math.max(0, totalUnits - adsUnits);
-                a.avg_tacos = totalReal > 0 ? ((a.total_cost || 0) / totalReal) * 100 : 0;
-                a.ads_sales_pct = totalReal > 0 ? (adsRev / totalReal) * 100 : 0;
-                a.overall_roas = (a.total_cost || 0) > 0 ? adsRev / a.total_cost : 0;
-                a.organic_from_orders = true;
-                a.revenue_complete = true;
-                const byDate = new Map((d.daily || []).map(day => [day.date, day]));
-                STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
-                  const o = byDate.get(day.date);
-                  byDate.delete(day.date);
-                  const orderRev = o ? (o.revenue || 0) : 0;
-                  const orderUnits = o ? (o.units || 0) : 0;
-                  return Object.assign({}, day, {
-                    organic_units_amount: Math.max(0, orderRev - (day.total_amount || 0)),
-                    organic_units_quantity: Math.max(0, orderUnits - (day.units_quantity || 0))
-                  });
+            const antes = STATE.data.aggregated;
+            const depois = reconciliarComPedidos(antes, d.revenue);
+            // Compara receita E unidades: receitas iguais com unidades
+            // diferentes deixavam a contagem de vendas na régua do ML Ads
+            // enquanto a receita já estava na dos pedidos.
+            const mudou =
+              Math.abs((depois.total_revenue || 0) - (antes.total_revenue || 0)) > 0.01 ||
+              Math.abs((depois.organic_revenue || 0) - (antes.organic_revenue || 0)) > 0.01 ||
+              (depois.total_orders || 0) !== (antes.total_orders || 0) ||
+              (depois.organic_orders || 0) !== (antes.organic_orders || 0) ||
+              depois.revenue_complete !== antes.revenue_complete;
+            if (mudou) {
+              STATE.data.aggregated = depois;
+              revenueApplied = true;
+            }
+            // A série diária só é reescrita quando a soma de pedidos está
+            // completa: com coleta truncada, os dias que não vieram virariam
+            // zero e o gráfico ganharia um vale falso no começo do período.
+            if (mudou && d.revenue.complete !== false) {
+              // Chave normalizada nos dois lados: o /orders-count devolve
+              // YYYY-MM-DD e o ML às vezes manda ISO completo. Sem o slice,
+              // nenhum dia casava e o gráfico ganhava datas duplicadas.
+              const dayKey = (x) => String(x || '').slice(0, 10);
+              const byDate = new Map((d.daily || []).map(day => [dayKey(day.date), day]));
+              STATE.data.daily_aggregated = (STATE.data.daily_aggregated || []).map(day => {
+                const o = byDate.get(dayKey(day.date));
+                byDate.delete(dayKey(day.date));
+                const orderRev = o ? (o.revenue || 0) : 0;
+                const orderUnits = o ? (o.units || 0) : 0;
+                return Object.assign({}, day, {
+                  organic_units_amount: Math.max(0, orderRev - (day.total_amount || 0)),
+                  organic_units_quantity: Math.max(0, orderUnits - (day.units_quantity || 0))
                 });
-                for (const o of byDate.values()) {
-                  STATE.data.daily_aggregated.push({
-                    date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
-                    organic_units_amount: o.revenue || 0,
-                    units_quantity: 0,
-                    organic_units_quantity: o.units || 0
-                  });
-                }
-                STATE.data.daily_aggregated.sort((x, y) => x.date.localeCompare(y.date));
-                revenueApplied = true;
+              });
+              for (const o of byDate.values()) {
+                STATE.data.daily_aggregated.push({
+                  date: o.date, cost: 0, clicks: 0, prints: 0, total_amount: 0,
+                  organic_units_amount: o.revenue || 0,
+                  units_quantity: 0,
+                  organic_units_quantity: o.units || 0
+                });
               }
-            } else {
-              const adsRev = a.total_revenue || 0;
-              const orgFromOrders = Math.max(0, d.revenue.amount - adsRev);
-              if (orgFromOrders > (a.organic_revenue || 0)) {
-                a.organic_revenue = orgFromOrders;
-                a.organic_orders = Math.max(0, (d.revenue.units || 0) - (a.total_orders || 0));
-                const totalRevAll = adsRev + orgFromOrders;
-                a.avg_tacos = totalRevAll > 0 ? ((a.total_cost || 0) / totalRevAll) * 100 : 0;
-                a.ads_sales_pct = totalRevAll > 0 ? (adsRev / totalRevAll) * 100 : 0;
-                a.organic_from_orders = true;
-                a.revenue_complete = false;
-                revenueApplied = true;
-              }
+              STATE.data.daily_aggregated.sort((x, y) => String(x.date).localeCompare(String(y.date)));
             }
           }
         }
+        // Consolida SEMPRE, mesmo sem reconciliação: o snapshot precisa refletir
+        // o estado final do dia, com o carimbo da régua usada.
+        consolidarSnapshot(reqSnap, sidLocal, period);
         if (revenueApplied) {
-          const aggNow = STATE.data.aggregated;
-          if (reqSnap) {
-            reqSnap.revenue = aggNow.total_revenue || 0;
-            reqSnap.ads_orders = aggNow.total_orders || 0;
-            reqSnap.roas = aggNow.overall_roas || 0;
-            reqSnap.organic_revenue = aggNow.organic_revenue || 0;
-            reqSnap.organic_orders = aggNow.organic_orders || 0;
-            reqSnap.sales = (aggNow.total_orders || 0) + (aggNow.organic_orders || 0);
-            reqSnap.tacos = aggNow.avg_tacos || 0;
-            rtSaveSnapshot(sidLocal, period, reqSnap);
-            rtUpdateRecords(sidLocal, Object.assign({ date: todayStr() }, reqSnap));
-          }
           renderDashboard(); // re-render completo já com a receita reconciliada
         } else {
           patchOrganicVsCard();
@@ -4768,18 +4642,19 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         patchOrganicVsCard();
       });
 
-      // Comparativo "vs período anterior" pra conta sem Mercado Ads: o snapshot
-      // local da visita anterior não existe (ou foi salvo zerado pelo bug do
-      // aggregated null) — sem ele, todos os deltas viram "—". Busca os pedidos
-      // do período equivalente ANTERIOR e monta um prev sintético com dados reais.
-      const prevLocal = STATE.prevSnapshot;
-      // Prev local inutilizável: inexistente, zerado (histórico do bug), ou VELHO —
-      // visita anterior fora da janela do período compara janelas disjuntas e não
-      // representa "o período anterior" que o usuário espera ver
-      const prevLocalEmpty = !prevLocal ||
-        (((prevLocal.revenue || 0) + (prevLocal.organic_revenue || 0) + (prevLocal.sales || 0)) === 0) ||
-        (prevLocal.date && daysBetween(prevLocal.date, todayStr()) > period);
-      if (needsOrdersRevenue && prevLocalEmpty) {
+      // Comparativo "vs período anterior" — SEMPRE medido de verdade.
+      //
+      // Antes, o padrão era o snapshot da visita anterior e isso só caía pro
+      // período real quando o snapshot estava vazio ou velho. Com período de 30
+      // dias, "os últimos 30 dias vistos ontem" e "os últimos 30 dias vistos
+      // hoje" têm 29 dias em comum: um crescimento real de 50% aparecia como
+      // +1,7%. Quanto mais fiel o usuário, pior o comparativo que ele recebia.
+      //
+      // Agora a janela anterior é buscada pela MESMA pipeline (pedidos + Ads +
+      // visitas), então as duas pontas do delta usam a mesma régua. Se a busca
+      // falhar, prevSnapshot fica null e os deltas mostram "—" — melhor do que
+      // comparar janelas sobrepostas.
+      {
         const { from: curFrom } = periodToDates(period);
         const prevRange = { from: shiftYmd(curFrom, -period), to: shiftYmd(curFrom, -1) };
         // Período anterior COMPLETO (pedidos + Ads + visitas): sem o split de Ads,
@@ -4791,41 +4666,47 @@ async function loadAndRender(period, forceRefresh, _isAuthRetry) {
         ]).then(([pd, pAggData, pVis]) => {
           if (reqId !== STATE._reqSeq) return;
           if (!(pd && pd.revenue && typeof pd.revenue.amount === 'number' && pd.revenue.amount > 0)) return;
-          // Mesma âncora do período atual: total = pedidos; ads = min(summary, total)
-          const pa = (pAggData && pAggData.aggregated) || {};
-          const totalPrev = pd.revenue.amount;
-          const totalUnitsPrev = pd.revenue.units || 0;
-          const adsRevPrev = Math.min(pa.total_revenue || 0, totalPrev);
-          const adsUnitsPrev = Math.min(pa.total_orders || 0, totalUnitsPrev);
-          const costPrev = pa.total_cost || 0;
-          const clicksPrev = pa.total_clicks || 0;
+          // EXATAMENTE a mesma função do período atual. Quando as duas pontas do
+          // delta passam pela mesma fórmula, o número mede o negócio; quando
+          // passavam por fórmulas diferentes, media a troca de régua.
+          const pa = reconciliarComPedidos((pAggData && pAggData.aggregated) || {}, pd.revenue);
+          const adsRevPrev = Number(pa.total_revenue) || 0;
+          const orgRevPrev = Number(pa.organic_revenue) || 0;
+          const totalPrev = adsRevPrev + orgRevPrev;
+          const adsUnitsPrev = Number(pa.total_orders) || 0;
+          const orgUnitsPrevCalc = Number(pa.organic_orders) || 0;
+          const totalUnitsPrev = adsUnitsPrev + orgUnitsPrevCalc;
+          const costPrev = Number(pa.total_cost) || 0;
+          const clicksPrev = Number(pa.total_clicks) || 0;
           const visitsPrev = (pVis && !pVis.capped && !pVis.incomplete && pVis.total_visits > 0) ? pVis.total_visits : 0;
-          const grossOrdersPrev = (typeof pd.total_orders === 'number') ? pd.total_orders : 0;
-          // Conversão orgânica anterior na MESMA base do render (pedidos − Ads ÷ visitas − cliques)
+          const grossOrdersPrev = grossOrdersOf(pd).pedidos || 0;
+          const orgUnitsPrev = orgUnitsPrevCalc;
+          // Conversão orgânica anterior em UNIDADES — mesma base do card de hoje
           let orgConvPrev = 0;
-          if (visitsPrev > 0 && grossOrdersPrev > 0) {
+          if (visitsPrev > 0) {
             const orgVisitsPrev = Math.max(0, visitsPrev - clicksPrev);
-            const orgSalesPrev = Math.max(0, grossOrdersPrev - adsUnitsPrev);
-            orgConvPrev = orgVisitsPrev > 0 ? (orgSalesPrev / orgVisitsPrev * 100) : 0;
+            orgConvPrev = orgVisitsPrev > 0 ? (orgUnitsPrev / orgVisitsPrev * 100) : 0;
             if (orgConvPrev > 100) orgConvPrev = 0; // visitas subcontadas (catálogo)
           }
           STATE.prevSnapshot = {
-            _synthetic: true, // não é visita real — banner "desde sua última visita" ignora
+            _synthetic: true, // janela anterior medida, não visita registrada
             date: prevRange.to,
             revenue: adsRevPrev,
-            organic_revenue: Math.max(0, totalPrev - adsRevPrev),
+            organic_revenue: orgRevPrev,
             cost: costPrev,
             sales: totalUnitsPrev,
             orders: grossOrdersPrev,
             ads_orders: adsUnitsPrev,
-            organic_orders: Math.max(0, totalUnitsPrev - adsUnitsPrev),
+            organic_orders: orgUnitsPrev,
             tacos: totalPrev > 0 ? (costPrev / totalPrev) * 100 : 0,
             roas: costPrev > 0 ? adsRevPrev / costPrev : 0,
             clicks: clicksPrev,
             impressions: pa.total_impressions || 0,
-            cvr: pa.avg_cvr || 0,
+            // Calculado, não o avg_cvr do ML: adsUnitsPrev passou pelo min()
+            cvr: clicksPrev > 0 ? (adsUnitsPrev / clicksPrev * 100) : 0,
             visits: visitsPrev,
-            organic_conversion: orgConvPrev
+            organic_conversion: orgConvPrev,
+            partial: pd.revenue.complete === false
           };
           renderDashboard();
         }).catch(() => {});
@@ -5058,5 +4939,19 @@ window.MFD.fmtMoneyCompact = fmtMoneyCompact;
 window.MFD.escapeHtml = escapeHtml;
 window.MFD.STATE = STATE;
 window.MFD.todayStr = todayStr;
+// Superfície pra teste automatizado (test/visao-geral-do-periodo.test.js) e
+// debug no console do Bubble. Nada aqui é regra de decisão de negócio — são as
+// funções de cálculo que o card já executa no navegador de qualquer jeito.
+window.MFD._test = {
+  computeConversions,
+  grossOrdersOf,
+  deltaBadge,
+  renderOrganicVsAds,
+  consolidarSnapshot,
+  computeHealthBreakdown,
+  buildWeekdayPattern,
+  buildAchievements,
+  pickInsight
+};
 
 })();

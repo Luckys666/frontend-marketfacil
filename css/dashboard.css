@@ -2811,8 +2811,16 @@
   font-size: 0.7rem;
   color: #94a3b8;
   font-weight: 600;
-  white-space: nowrap;
+  /* Quebra em vez de vazar: com nowrap, "25,9% do total" saía por cima da
+     célula vizinha assim que o widget passava a apertar (medido em 700px de
+     largura de container). A coluna Total ganhou um segundo sub — "X% por
+     pedido" — e sem isso o vazamento passaria a acontecer também nela. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  max-width: 100%;
 }
+.mfd-vs-kpi-footer { min-width: 0; }
 .mfd-vs-kpi-sub-spacer { display: inline-block; min-width: 0; }
 .mfd-vs-value.sm {
   font-size: 1.02rem;
