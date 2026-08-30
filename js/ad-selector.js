@@ -245,6 +245,31 @@ function el(html) { const d = document.createElement('div'); d.innerHTML = html;
    ========================================================================= */
 const MFSEL_PROXY = 'https://mlb-proxy-fdb71524fd60.herokuapp.com';
 
+/* =========================================================================
+   HOST — em que tela este painel está rodando
+   O Seletor nasceu dentro da Análise de Anúncios e ficou com o DOM dela
+   chumbado (.ana-wrapper, #resultsContainer, handleAnalysisClick). O Agente
+   de Palavras-Chave usa o MESMO painel com outra raiz e outro destino de
+   clique — duplicar o arquivo faria a régua de escala/cache viver em dois
+   lugares que divergem com o tempo.
+   Sem window.MFSEL_HOST, tudo resolve para o que resolvia antes: a Análise
+   não sente nada. Isso é coberto por teste, não é intenção.
+   ⚠️ HOST.resultsId pode ser null (o Agente não tem resultsContainer) —
+   guardar o getElementById antes de usar, senão um null.style mata o boot.
+   ========================================================================= */
+const HOST = Object.assign({
+  root: '.ana-wrapper',
+  resultsId: 'resultsContainer',
+  onSelect: function () { if (typeof window.handleAnalysisClick === 'function') window.handleAnalysisClick(); },
+}, (typeof window !== 'undefined' && window.MFSEL_HOST) || {});
+
+// O container onde o host desenha o resultado do clique. No Agente ele não existe
+// (resultsId: null) — devolver null aqui é o que deixa os `if (rc)` que já existiam
+// no arquivo continuarem valendo, sem espalhar guarda nova por 5 lugares.
+function hostResultsEl() {
+  return HOST.resultsId ? document.getElementById(HOST.resultsId) : null;
+}
+
 // Token do ML via workflow do app (mesma fonte do analyzer). Cache curto em
 // memória; renovação é do backend — aqui NUNCA se renova token (regra do projeto).
 let mfselTokCache = { v: null, ts: 0 };
@@ -2310,7 +2335,7 @@ function enterAnalysis(analyzeId, title, thumb, selKey, opts) {
   if (hdr) hdr.style.display = 'none';
   window.scrollTo(0, 0);
   $('#backBtn').addEventListener('click', exitAnalysis);
-  const rc = document.getElementById('resultsContainer');
+  const rc = hostResultsEl();
   if (rc) rc.style.display = '';
   if (!opts.skipTrigger) {
     // Preenche o input legado (escondido) e chama handleAnalysisClick() SEM
@@ -2319,7 +2344,7 @@ function enterAnalysis(analyzeId, title, thumb, selKey, opts) {
     // type:'mlb' e quebraria a análise por produto (MLBU).
     const inputEl = document.getElementById('input-url');
     if (inputEl) inputEl.value = opts.rawInput || analyzeId;
-    if (typeof window.handleAnalysisClick === 'function') window.handleAnalysisClick();
+    HOST.onSelect(analyzeId, opts);
   }
 }
 function exitAnalysis() {
@@ -2330,7 +2355,7 @@ function exitAnalysis() {
   if (hdr) hdr.style.display = '';
   // PORT F4: a análise fica no DOM mas some da tela — voltar não refaz nada;
   // um render tardio da análise (se ainda estava carregando) cai invisível.
-  const rc = document.getElementById('resultsContainer');
+  const rc = hostResultsEl();
   if (rc) rc.style.display = 'none';
   const li = document.getElementById('loadingIndicator');
   if (li) li.style.display = 'none';
@@ -2799,11 +2824,11 @@ async function boot() {
   // (input de colar link) volta EXATAMENTE como era — aditivo de verdade.
   const root = document.getElementById('mfselRoot');
   if (!root) return;
-  const wrapper = root.closest('.ana-wrapper');
+  const wrapper = root.closest(HOST.root);
   const legacyFallback = () => {
     root.hidden = true;
     if (wrapper) wrapper.classList.remove('mfsel-on');
-    const rc = document.getElementById('resultsContainer');
+    const rc = hostResultsEl();
     if (rc) rc.style.display = '';
   };
 
@@ -2839,7 +2864,7 @@ async function boot() {
           ? 'Precisamos da sua conta do Mercado Livre conectada para listar seus anúncios.'
           : 'O Mercado Livre pediu uma pausa nas consultas — é rápido.';
       }
-      const rc = document.getElementById('resultsContainer');
+      const rc = hostResultsEl();
       if (rc) rc.style.display = 'none';
       renderError(err);                    // "conta desconectada" ou "muitas consultas"
       return;
@@ -2859,7 +2884,7 @@ async function boot() {
     enterAnalysis(deepItem, '', '', deepItem, { skipTrigger: true });
   } else {
     // painel em primeiro plano: o texto inicial do analyzer fica fora da tela
-    const rc = document.getElementById('resultsContainer');
+    const rc = hostResultsEl();
     if (rc) rc.style.display = 'none';
   }
 
