@@ -549,12 +549,201 @@ async function aplicar(itemId, itens, campos, detail, token) {
   return { ok: true, salvos: attributes.length, erro: null, atualizado: devolvido };
 }
 
+/* ---------- Orquestração ---------- */
+// O Agente é a segunda casa do Seletor. Isto precisa rodar ANTES do ad-selector.js.
+// O painel vive num wrapper com a MESMA classe de escopo que ele usa na Análise
+// (ver build/keyword-agent-bubble.html): assim as 258 regras de css/ad-selector.css
+// valem aqui sem que uma linha delas mude — o CSS do Seletor está LIVE.
+// `resultsId: null` porque esta página não tem #resultsContainer; hostResultsEl()
+// devolve null e os `if (rc)` do seletor seguem valendo.
+window.MFSEL_HOST = {
+  root: '.ana-wrapper',
+  resultsId: null,
+  onSelect: function (itemId) { window.MFFicha.abrirFichaIA(itemId); },
+};
+
+async function tokenDoML() {
+  const r = await fetch('https://app.marketfacil.com.br/api/1.1/wf/getAccessToken2');
+  if (!r.ok) return null;
+  const d = await r.json();
+  return (d && d.response && d.response.access_token) || null;
+}
+
+async function proxyGet(rota, token) {
+  const r = await fetch(MFFICHA_PROXY + rota, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  return r.json();
+}
+
+const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null };
+
+async function abrirFichaIA(itemId) {
+  const view = document.getElementById('ficha-ia-view');
+  const body = document.getElementById('ficha-ia-body');
+  const painel = document.getElementById('ficha-ia-painel');
+  if (!view || !body) return;
+  if (painel) painel.hidden = true;
+  view.hidden = false;
+  body.innerHTML = '<div class="fia-carregando">Lendo a ficha deste anúncio…</div>';
+
+  // Família: cada variação tem a sua ficha. Sem escolher qual, não há o que sugerir —
+  // e gravar na variação errada é pior que não gravar.
+  if (/^ML[A-Z]U\d+$/i.test(String(itemId))) {
+    body.innerHTML = `
+      <div class="fia-estado">
+        <div class="fia-estado-icone">🎨</div>
+        <p class="fia-estado-titulo">Esse produto tem variações</p>
+        <p class="fia-estado-texto">Cada variação tem a própria ficha técnica. Volte para a lista e abra a variação que você quer melhorar.</p>
+      </div>`;
+    return;
+  }
+
+  try {
+    estadoFicha.token = estadoFicha.token || await tokenDoML();
+    if (!estadoFicha.token) {
+      if (typeof window.MF_renderError === 'function') window.MF_renderError(body, 'no_ml_account');
+      return;
+    }
+    const detalhe = await proxyGet('/api/fetch-item?item_id=' + encodeURIComponent(itemId), estadoFicha.token);
+    const detail = Array.isArray(detalhe) ? (detalhe[0] && detalhe[0].body) : detalhe;
+    if (!detail || !detail.id) throw new Error('sem detalhe');
+
+    if (detail.user_product_id) {
+      const nota = document.getElementById('ficha-ia-head');
+      // Um mesmo produto pode servir mais de um anúncio — a edição propaga entre eles,
+      // por desenho do ML. Não é destrutivo, mas surpreende quem não sabe.
+      if (nota) nota.innerHTML = '<p class="fia-aviso">Este anúncio faz parte de um grupo de variações. O que você salvar aqui vale para esta variação.</p>';
+    }
+
+    const cats = await proxyGet('/api/attributes/' + encodeURIComponent(detail.category_id), estadoFicha.token);
+    // adoption_status só existe em anúncio ATIVO — sem ele, a régua cai pro tags.required
+    // da categoria e a tela NÃO afirma que a etapa está completa.
+    let obrigatorios = null;
+    try {
+      const q = await proxyGet('/api/catalog-quality?item_id=' + encodeURIComponent(detail.id), estadoFicha.token);
+      const req = q && q.adoption_status && q.adoption_status.required;
+      if (req) {
+        const ids = [].concat(req.attributes || [], req.missing_attributes || []).filter(Boolean);
+        if (ids.length) obrigatorios = new Set(ids);
+      }
+    } catch (e) { /* sem a lista da ML, vale a da categoria */ }
+
+    const descricao = (detail.descriptions && detail.descriptions.plain_text) || detail.plain_text || '';
+    estadoFicha.itemId = detail.id;
+    estadoFicha.detail = detail;
+    estadoFicha.campos = camposElegiveis(cats, detail, obrigatorios);
+
+    const payload = montarPayload({
+      detail, descricao, categoryAttributes: cats, obrigatoriosML: obrigatorios,
+      palavrasQueFaltam: window.MFFicha._palavrasQueFaltam || [],
+      siteId: (String(detail.site_id || 'MLB')).toUpperCase(),
+    });
+
+    // Cache por anúncio + assinatura da ficha: voltar pra lista e reabrir o mesmo anúncio
+    // não paga a IA de novo. Salvar um campo muda a assinatura e a chave se invalida.
+    const chave = chaveCache(detail.id, estadoFicha.campos);
+    let r = cacheSugestoes.get(chave);
+    if (!r) {
+      body.innerHTML = '<div class="fia-carregando">A IA está lendo o texto do seu anúncio…</div>';
+      r = await buscarSugestoes(payload, estadoFicha.userId || (window.globalUserId || ''));
+      // Falha não entra em cache — senão o botão "tentar de novo" devolveria a mesma falha.
+      if (r.estado === 'ok') cacheSugestoes.set(chave, r);
+    }
+    renderPainel('ficha-ia-body', {
+      estado: r.estado, dados: r.dados, campos: estadoFicha.campos,
+      placar: contarPlacar(estadoFicha.campos),
+    });
+    ligarBotoes();
+  } catch (e) {
+    renderPainel('ficha-ia-body', { estado: 'falha', dados: null, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
+    ligarBotoes();
+  }
+}
+
+// Sem onclick inline: aspas no valor fechariam a string quando o browser decodifica.
+function ligarBotoes() {
+  const body = document.getElementById('ficha-ia-body');
+  if (!body) return;
+  body.addEventListener('click', async (ev) => {
+    const alvo = ev.target;
+    if (!alvo) return;
+    if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
+    if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
+    if (alvo.classList.contains('fia-aplicar-um')) { await salvar(umCampo(alvo.dataset.campo, !!alvo.dataset.nova)); return; }
+  });
+}
+
+function valorDigitado(campoId, nova) {
+  const seletor = nova
+    ? '.fia-valor[data-campo="' + campoId + '"][data-nova="1"]'
+    : '.fia-valor[data-campo="' + campoId + '"]:not([data-nova])';
+  const input = document.querySelector(seletor);
+  return input ? String(input.value || '').trim() : '';
+}
+
+/**
+ * O lote junta SÓ o que tem base no anúncio.
+ * Ficam de fora, por desenho: campo caro (muda o link — não tem checkbox) e palavra nova
+ * (checkbox é `.fia-check-nova`, classe diferente de propósito). Se um dia alguém trocar a
+ * classe e as duas caírem no mesmo seletor, um clique passa a afirmar característica que o
+ * anúncio nunca disse — por isso o seletor aqui é explícito e o teste trava isso.
+ */
+function marcadosNoLote() {
+  const itens = [];
+  document.querySelectorAll('.fia-check:not(.fia-check-nova)').forEach((c) => {
+    if (!c.checked || c.dataset.nova) return;
+    const id = c.dataset.campo;
+    itens.push({ id, valor: valorDigitado(id, false) });
+  });
+  return itens;
+}
+
+function umCampo(id, nova) {
+  return id ? [{ id, valor: valorDigitado(id, nova) }] : [];
+}
+
+async function salvar(itens) {
+  const body = document.getElementById('ficha-ia-body');
+  if (!body || !itens.length) return;
+  const r = await aplicar(estadoFicha.itemId, itens, estadoFicha.campos, estadoFicha.detail, estadoFicha.token);
+  if (!r.ok) {
+    const aviso = document.createElement('div');
+    aviso.className = 'fia-erro';
+    aviso.textContent = r.erro;
+    body.insertBefore(aviso, body.firstChild);
+    return;
+  }
+  // Estado local acompanha o que foi salvo: o placar sobe na hora, sem refetch.
+  for (const item of itens) {
+    const campo = estadoFicha.campos.find((c) => c.id === item.id);
+    if (campo) { campo.preenchido = true; campo.valor_atual = item.valor; }
+    const attrs = (estadoFicha.detail.attributes = estadoFicha.detail.attributes || []);
+    const idx = attrs.findIndex((a) => a && a.id === item.id);
+    if (idx >= 0) attrs[idx].value_name = item.valor;
+    else attrs.push({ id: item.id, value_name: item.valor });
+  }
+  abrirFichaIA(estadoFicha.itemId);
+}
+
+function voltarParaLista() {
+  const view = document.getElementById('ficha-ia-view');
+  const painel = document.getElementById('ficha-ia-painel');
+  if (view) view.hidden = true;
+  if (painel) painel.hidden = false;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('ficha-ia-voltar');
+  if (btn) btn.addEventListener('click', voltarParaLista);
+});
+
 window.MFFicha = {
   motivoBloqueado, renomeiaVariacao, mudaOLink, camposElegiveis, montarPayload,
   formatarPalavrasQueFaltam,
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
   linhaPalavraNova, rotuloFonte, chaveCache, _cache: cacheSugestoes,
   montarAtributo, aplicar, traduzirErro, erroParcial,
+  abrirFichaIA, voltarParaLista, _palavrasQueFaltam: [],
   escapeHtml, chaveTexto, atributoPreenchido, valorAtual,
   _PROXY: MFFICHA_PROXY,
 };

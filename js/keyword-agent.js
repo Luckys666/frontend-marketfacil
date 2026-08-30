@@ -651,6 +651,13 @@ async function handleAnalyzeKeywords() {
 
     // Build word-centric analysis
     const missingWords = buildMissingWordsMap(keywords, globalIndexedWords);
+
+    // As palavras que faltam alimentam o preenchimento da ficha — é o mesmo objetivo do
+    // Agente desde sempre: palavra que falta entra nos CAMPOS, não no título.
+    // Passa a entrada CRUA (`[palavra, { count, categories, phrases }]`): o proxy precisa
+    // dos combos pra mostrar as buscas que cada palavra abre, e da categoria pra barrar
+    // `concorrencia`. Quem decide o bloqueio é o servidor, não este arquivo.
+    if (window.MFFicha) window.MFFicha._palavrasQueFaltam = missingWords.slice(0, 30);
     const totalSuggestions = Object.values(keywords).reduce((s, t) => s + (t?.length || 0), 0);
     const totalCategories = Object.keys(keywords).filter(k => keywords[k]?.length > 0).length;
 

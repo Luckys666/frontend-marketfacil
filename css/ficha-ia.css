@@ -1,0 +1,69 @@
+/* Ficha Técnica com IA — Proposta U (Light Trading).
+   Vars (--blue, --green, --red, --navy, --text, --text-muted, --bg-subtle) vêm do
+   keyword-agent.css, que entra antes deste no bundle. */
+.kw-wrapper .fia-voltar { background: none; border: 0; color: var(--blue, #0066ff); font-weight: 600; font-size: .85rem; cursor: pointer; padding: 8px 0; }
+.kw-wrapper .fia-carregando { padding: 24px; text-align: center; color: var(--text-muted, #64748b); font-size: .9rem; }
+.kw-wrapper .fia-mono { font-family: 'DM Mono', monospace; }
+
+.kw-wrapper .fia-placar { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; background: var(--navy, #0f172a); border-radius: 10px; color: #fff; }
+.kw-wrapper .fia-placar-num { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 700; }
+.kw-wrapper .fia-placar-lbl { font-size: .82rem; opacity: .8; }
+.kw-wrapper .fia-placar-ok { margin-left: auto; font-size: .82rem; font-weight: 600; color: var(--green, #00d68f); }
+
+.kw-wrapper .fia-secao { margin-bottom: 20px; }
+.kw-wrapper .fia-secao-titulo { font-size: .92rem; font-weight: 600; margin-bottom: 10px; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-sem-base { opacity: .78; }
+
+.kw-wrapper .fia-linha { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.kw-wrapper .fia-linha-topo { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.kw-wrapper .fia-nome { font-weight: 600; font-size: .86rem; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-marca { margin-left: auto; }
+.kw-wrapper .fia-check { width: 16px; height: 16px; accent-color: var(--blue, #0066ff); cursor: pointer; }
+.kw-wrapper .fia-selo { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.kw-wrapper .fia-selo-obrig { color: #b91c1c; border: 1px solid #fecaca; background: #fef2f2; }
+.kw-wrapper .fia-selo-extra { color: var(--blue, #0066ff); border: 1px solid #c9dcff; background: #eff6ff; cursor: help; }
+
+.kw-wrapper .fia-antes { font-size: .76rem; color: var(--text-muted, #64748b); margin-bottom: 4px; }
+.kw-wrapper .fia-valor { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .86rem; font-family: inherit; }
+.kw-wrapper .fia-valor:focus { outline: none; border-color: var(--blue, #0066ff); box-shadow: 0 0 0 3px rgba(0,102,255,.12); }
+
+.kw-wrapper .fia-chars { margin-left: 6px; font-size: .7rem; color: var(--text-muted, #64748b); }
+.kw-wrapper .fia-ganho { margin-top: 5px; font-size: .74rem; font-weight: 600; color: var(--green, #00a06b); }
+
+/* Uma linha de origem POR PALAVRA — composição de fontes diferentes mostra as duas. */
+.kw-wrapper .fia-evidencia { margin-top: 6px; }
+.kw-wrapper .fia-origem { display: flex; gap: 5px; flex-wrap: wrap; align-items: baseline; font-size: .73rem; line-height: 1.5; }
+.kw-wrapper .fia-origem-palavra { font-weight: 700; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-origem-seta { color: #94a3b8; }
+.kw-wrapper .fia-fonte { color: var(--green, #00a06b); font-weight: 600; white-space: nowrap; }
+.kw-wrapper .fia-trecho { color: var(--text-muted, #64748b); font-style: italic; word-break: break-word; }
+
+/* Lista 4 — palavras novas. Visualmente diferente de propósito: não é fato do anúncio. */
+.kw-wrapper .fia-secao-novas { border-top: 2px dashed #cbd5e1; padding-top: 14px; }
+.kw-wrapper .fia-nova { border-style: dashed; background: #fcfcfd; }
+.kw-wrapper .fia-check-nova { width: 16px; height: 16px; accent-color: #8b5cf6; cursor: pointer; }
+.kw-wrapper .fia-combos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+.kw-wrapper .fia-combo { font-size: .7rem; padding: 2px 8px; border-radius: 999px; background: #f5f3ff; color: #6d28d9; }
+.kw-wrapper .fia-alerta-nova { margin-top: 6px; font-size: .73rem; color: #92400e; }
+.kw-wrapper .fia-placar-tokens { font-size: .82rem; font-weight: 600; color: var(--green, #00d68f); cursor: help; }
+
+.kw-wrapper .fia-aplicar-um { margin-top: 8px; padding: 5px 12px; font-size: .76rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); background: #fff; color: var(--blue, #0066ff); border-radius: 6px; cursor: pointer; }
+.kw-wrapper .fia-aplicar-um:hover { background: #eff6ff; }
+.kw-wrapper .fia-lote { display: block; width: 100%; padding: 12px; margin: 4px 0 20px; font-size: .92rem; font-weight: 700; border: 0; border-radius: 8px; background: var(--blue, #0066ff); color: #fff; cursor: pointer; }
+.kw-wrapper .fia-lote:hover { background: #0052cc; }
+
+.kw-wrapper .fia-aviso { font-size: .78rem; line-height: 1.45; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
+.kw-wrapper .fia-erro { font-size: .82rem; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+.kw-wrapper .fia-chip { display: inline-block; font-size: .76rem; padding: 3px 9px; margin: 0 5px 5px 0; border-radius: 999px; background: var(--bg-subtle, #f1f5f9); color: var(--text-muted, #64748b); }
+
+.kw-wrapper .fia-estado { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 28px 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; }
+.kw-wrapper .fia-estado-icone { font-size: 40px; line-height: 1; margin-bottom: 10px; }
+.kw-wrapper .fia-estado-titulo { font-size: 1rem; font-weight: 700; margin: 0 0 6px; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-estado-texto { font-size: .86rem; color: var(--text-muted, #64748b); max-width: 460px; margin: 0 0 14px; line-height: 1.45; }
+.kw-wrapper .fia-retry { padding: 9px 18px; font-size: .84rem; font-weight: 600; border: 0; border-radius: 8px; background: var(--navy, #0f172a); color: #fff; cursor: pointer; }
+
+@media (max-width: 720px) {
+  .kw-wrapper .fia-placar { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .kw-wrapper .fia-placar-ok { margin-left: 0; }
+  .kw-wrapper .fia-lote { position: sticky; bottom: 8px; box-shadow: 0 4px 14px rgba(15,23,42,.18); }
+}
