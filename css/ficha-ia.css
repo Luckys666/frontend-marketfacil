@@ -67,3 +67,5 @@
   .kw-wrapper .fia-placar-ok { margin-left: 0; }
   .kw-wrapper .fia-lote { position: sticky; bottom: 8px; box-shadow: 0 4px 14px rgba(15,23,42,.18); }
 }
+
+.kw-wrapper .fia-ok { font-size: .82rem; font-weight: 600; color: #065f46; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }

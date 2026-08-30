@@ -2881,7 +2881,10 @@ async function boot() {
     if (ip && /^MLB[U]?\d+$/i.test(ip)) deepItem = ip.toUpperCase();
   } catch (e) { /* noop */ }
   if (deepItem) {
-    enterAnalysis(deepItem, '', '', deepItem, { skipTrigger: true });
+    // skipTrigger só vale onde o host JÁ renderizou sozinho (a Análise chama
+    // initAnalyzerPage no load). Em outro host ninguém rodou nada: sem disparar o
+    // onSelect o vendedor via a barra "voltar" sobre uma tela vazia.
+    enterAnalysis(deepItem, '', '', deepItem, { skipTrigger: HOST.resultsId !== null });
   } else {
     // painel em primeiro plano: o texto inicial do analyzer fica fora da tela
     const rc = hostResultsEl();
@@ -2925,6 +2928,11 @@ async function boot() {
        tem fundo sólido — o que passar por baixo dele "some");
    (3) largura da tabela IGUAL fechada × expandida;
    (4) mobile sem scroll horizontal da página. */
+// O host (Agente de Palavras-Chave) tem o próprio botão "Voltar para a lista" e precisa
+// tirar o painel do modo análise — que é o que redesenha as linhas. Sem isto o vendedor
+// via a barra de análise vazia e tinha que clicar num segundo voltar.
+window.MFSelExitAnalysis = exitAnalysis;
+
 function mfLayoutCheck() {
   const out = { ok: true, problemas: [] };
   const table = document.querySelector('table.grid');

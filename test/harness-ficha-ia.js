@@ -19,6 +19,11 @@ function mkEl(id) {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     setAttribute(k, v) { this._attrs[k] = v; }, getAttribute(k) { return this._attrs[k] || null; },
     appendChild(n) { this.children.push(n); return n; }, removeChild() {},
+    // salvar() insere o aviso de erro/sucesso no topo do container. Sem estes dois o
+    // caminho inteiro de salvar morria no harness — e foi só o teste de integração,
+    // que chama salvar() de verdade, que percebeu.
+    insertBefore(n) { this.children.unshift(n); return n; },
+    get firstChild() { return this.children[0] || null; },
     addEventListener() {}, removeEventListener() {}, click() {}, focus() {}, remove() {},
     querySelector() { return null; }, querySelectorAll() { return []; }, closest() { return null; },
   };

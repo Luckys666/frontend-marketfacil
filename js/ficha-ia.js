@@ -148,7 +148,12 @@ function formatarPalavrasQueFaltam(lista) {
       palavra: String(palavra),
       combos: Array.isArray(dados.phrases) ? dados.phrases.slice(0, 5) : (dados.combos || []),
       buscas: Number(dados.count || dados.buscas) || 0,
-      categoria: String(cats[0] || ''),
+      // TODAS as categorias, não a primeira. Uma palavra costuma aparecer em várias, e
+      // mandar só `cats[0]` (ordem de inserção) deixava uma marca de concorrente que
+      // também apareceu em "utilidades" chegar rotulada como utilidade — passando por
+      // cima do bloqueio que existe justamente pra ela. Quem decide é o proxy.
+      categorias: cats.map(String),
+      categoria: String(cats[0] || ''),   // compat: o proxy antigo lia este campo
     };
   }).filter((p) => p.palavra);
 }
@@ -533,17 +538,38 @@ async function aplicar(itemId, itens, campos, detail, token) {
     return { ok: false, salvos: 0, erro: 'Não deu pra salvar agora — verifique sua conexão e tente de novo.' };
   }
 
-  const primeiro = porId.get(String(attributes[0].id));
+  // Qual campo o ML recusou? A ML aponta em `cause[].references` ("item.attributes[2]"
+  // ou o id do atributo). Sem procurar, um lote de 5 campos com erro na Marca dizia
+  // "Cor: tamanho fora do permitido" — e o vendedor ia consertar o campo errado.
+  const campoDoErro = (errData) => {
+    const cause = errData && (Array.isArray(errData.cause) ? errData.cause[0] : errData.cause);
+    const refs = [].concat((cause && cause.references) || [], String((cause && cause.message) || ''));
+    for (const attr of attributes) {
+      if (refs.some((r) => String(r).toUpperCase().includes(String(attr.id).toUpperCase()))) {
+        return porId.get(String(attr.id));
+      }
+    }
+    const idx = refs.map((r) => /attributes\[(\d+)\]/.exec(String(r))).find(Boolean);
+    if (idx && attributes[Number(idx[1])]) return porId.get(String(attributes[Number(idx[1])].id));
+    return attributes.length === 1 ? porId.get(String(attributes[0].id)) : null;
+  };
+
   if (!resp.ok) {
     let msg = 'Não foi possível salvar agora.';
-    try { msg = traduzirErro(await resp.json(), primeiro) || msg; } catch (_) { /* corpo não-JSON */ }
+    try {
+      const err = await resp.json();
+      // Sem saber o campo, a mensagem fala do lote — melhor que apontar o errado.
+      msg = traduzirErro(err, campoDoErro(err) || { name: 'Um dos campos' }) || msg;
+    } catch (_) { /* corpo não-JSON */ }
     return { ok: false, salvos: 0, erro: msg };
   }
   let devolvido = null;
   try { devolvido = await resp.json(); } catch (_) { /* 200 sem corpo */ }
   // 200 no cabeçalho não é sucesso: o proxy roteia família em duas pernas e devolve a
   // recusa DENTRO do corpo. Sem ler isso, a tela mentiria pro vendedor.
-  const parcial = erroParcial(devolvido, primeiro);
+  const alvoParcial = campoDoErro((devolvido && (devolvido._family_task_error || devolvido._item_put_error)) || {})
+    || (attributes.length === 1 ? porId.get(String(attributes[0].id)) : { name: 'Um dos campos' });
+  const parcial = erroParcial(devolvido, alvoParcial);
   if (parcial) return { ok: false, salvos: 0, erro: parcial };
 
   return { ok: true, salvos: attributes.length, erro: null, atualizado: devolvido };
@@ -569,13 +595,28 @@ async function tokenDoML() {
   return (d && d.response && d.response.access_token) || null;
 }
 
+// O user_id do app (mint/A2), que as rotas de IA usam como Bearer. O keyword-agent tem
+// a mesma chamada, mas o `globalUserId` dele é `let` dentro do bloco do arquivo e nunca
+// chega em window — ler window.globalUserId daqui devolvia undefined e TODA chamada de
+// IA saía com "Bearer " vazio, que o proxy recusa com 400.
+async function obterUserId() {
+  if (estadoFicha.userId) return estadoFicha.userId;
+  try {
+    const r = await fetch('https://app.marketfacil.com.br/api/1.1/wf/get-user-id', { method: 'POST' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    estadoFicha.userId = (d && d.response && d.response.user_id) || (d && d.user_id) || null;
+    return estadoFicha.userId;
+  } catch (e) { return null; }
+}
+
 async function proxyGet(rota, token) {
   const r = await fetch(MFFICHA_PROXY + rota, { headers: { Authorization: 'Bearer ' + token } });
   if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
   return r.json();
 }
 
-const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null };
+const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null };
 
 async function abrirFichaIA(itemId) {
   const view = document.getElementById('ficha-ia-view');
@@ -585,6 +626,18 @@ async function abrirFichaIA(itemId) {
   if (painel) painel.hidden = true;
   view.hidden = false;
   body.innerHTML = '<div class="fia-carregando">Lendo a ficha deste anúncio…</div>';
+
+  // O anúncio da vez é gravado ANTES de qualquer await. Sem isto, uma falha na primeira
+  // abertura deixava `itemId` null (o "Tentar de novo" nunca funcionaria) e, pior: depois
+  // de ver o anúncio A, uma falha ao abrir o B fazia o retry recarregar o A — e o próximo
+  // salvamento escrevia no anúncio errado.
+  estadoFicha.itemId = itemId || null;
+  estadoFicha.detail = null;
+  estadoFicha.campos = [];
+  // O aviso de família é do anúncio ANTERIOR até a gente saber deste. Limpar aqui evita
+  // um anúncio solto herdar "faz parte de um grupo de variações" do que veio antes.
+  const cabecalho = document.getElementById('ficha-ia-head');
+  if (cabecalho) cabecalho.innerHTML = '';
 
   // Família: cada variação tem a sua ficha. Sem escolher qual, não há o que sugerir —
   // e gravar na variação errada é pior que não gravar.
@@ -605,7 +658,13 @@ async function abrirFichaIA(itemId) {
       return;
     }
     const detalhe = await proxyGet('/api/fetch-item?item_id=' + encodeURIComponent(itemId), estadoFicha.token);
-    const detail = Array.isArray(detalhe) ? (detalhe[0] && detalhe[0].body) : detalhe;
+    // O /api/fetch-item devolve [{ code, body, description }]: a descrição é IRMÃ do
+    // `body`, não filha. Lendo `detail.descriptions.plain_text` (que não existe em item
+    // nenhum) a descrição vinha SEMPRE vazia — e como ela é a fonte de evidência mais
+    // rica, quase toda sugestão morria na régua e a tela dizia "não achei base" em
+    // anúncio com descrição cheia.
+    const envelope = Array.isArray(detalhe) ? detalhe[0] : null;
+    const detail = envelope ? envelope.body : detalhe;
     if (!detail || !detail.id) throw new Error('sem detalhe');
 
     if (detail.user_product_id) {
@@ -628,7 +687,8 @@ async function abrirFichaIA(itemId) {
       }
     } catch (e) { /* sem a lista da ML, vale a da categoria */ }
 
-    const descricao = (detail.descriptions && detail.descriptions.plain_text) || detail.plain_text || '';
+    const d = (envelope && envelope.description) || detail.description || {};
+    const descricao = d.plain_text || d.text || '';
     estadoFicha.itemId = detail.id;
     estadoFicha.detail = detail;
     estadoFicha.campos = camposElegiveis(cats, detail, obrigatorios);
@@ -645,25 +705,42 @@ async function abrirFichaIA(itemId) {
     let r = cacheSugestoes.get(chave);
     if (!r) {
       body.innerHTML = '<div class="fia-carregando">A IA está lendo o texto do seu anúncio…</div>';
-      r = await buscarSugestoes(payload, estadoFicha.userId || (window.globalUserId || ''));
+      const uid = await obterUserId();
+      if (!uid) {
+        renderPainel('ficha-ia-body', { estado: 'sessao', dados: null, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
+        return;
+      }
+      r = await buscarSugestoes(payload, uid);
       // Falha não entra em cache — senão o botão "tentar de novo" devolveria a mesma falha.
       if (r.estado === 'ok') cacheSugestoes.set(chave, r);
     }
+    estadoFicha.resposta = r.estado === 'ok' ? r.dados : null;
     renderPainel('ficha-ia-body', {
       estado: r.estado, dados: r.dados, campos: estadoFicha.campos,
       placar: contarPlacar(estadoFicha.campos),
     });
     ligarBotoes();
   } catch (e) {
-    renderPainel('ficha-ia-body', { estado: 'falha', dados: null, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
+    // 401 do ML é conta desconectada, não instabilidade: dizer "tente de novo" manda o
+    // vendedor bater na mesma porta pra sempre. É a régua da §8.3 da spec.
+    const estado = (e && (e.status === 401 || e.status === 403)) ? 'sessao'
+      : (e && e.status === 429) ? 'ocupado'
+      : 'falha';
+    renderPainel('ficha-ia-body', { estado, dados: null, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
     ligarBotoes();
   }
 }
 
 // Sem onclick inline: aspas no valor fechariam a string quando o browser decodifica.
+// O #ficha-ia-body sobrevive ao render (renderPainel só troca innerHTML), então cada
+// chamada empilhava mais um listener no MESMO elemento. Como salvar() reabre a ficha, o
+// segundo clique em "Aplicar só este" disparava DOIS PUTs no anúncio, o terceiro quatro,
+// e assim por diante. Delegação se liga uma vez.
+let _botoesLigados = false;
 function ligarBotoes() {
   const body = document.getElementById('ficha-ia-body');
-  if (!body) return;
+  if (!body || _botoesLigados) return;
+  _botoesLigados = true;
   body.addEventListener('click', async (ev) => {
     const alvo = ev.target;
     if (!alvo) return;
@@ -722,7 +799,29 @@ async function salvar(itens) {
     if (idx >= 0) attrs[idx].value_name = item.valor;
     else attrs.push({ id: item.id, value_name: item.valor });
   }
-  abrirFichaIA(estadoFicha.itemId);
+  // Re-render com o que JÁ está na mão: reabrir chamaria fetch-item + attributes +
+  // catalog-quality e MAIS uma chamada paga de IA — e o cache não salva, porque a chave
+  // inclui o valor dos campos, que acabou de mudar. Salvar 5 campos um a um custaria 5
+  // chamadas de IA. O que sai da tela é só o que foi gravado.
+  const salvos = new Set(itens.map((i) => String(i.id)));
+  if (estadoFicha.resposta) {
+    estadoFicha.resposta = {
+      ...estadoFicha.resposta,
+      sugestoes: (estadoFicha.resposta.sugestoes || []).filter((x) => !salvos.has(String(x.id))),
+      palavras_novas_sugeridas: (estadoFicha.resposta.palavras_novas_sugeridas || []).filter((x) => !salvos.has(String(x.id))),
+      sem_base: (estadoFicha.resposta.sem_base || []).filter((x) => !salvos.has(String(x.id))),
+    };
+  }
+  renderPainel('ficha-ia-body', {
+    estado: 'ok',
+    dados: estadoFicha.resposta || { ok: true, sugestoes: [], palavras_novas_sugeridas: [], sem_base: [], descartadas: 0 },
+    campos: estadoFicha.campos,
+    placar: contarPlacar(estadoFicha.campos),
+  });
+  const ok = document.createElement('div');
+  ok.className = 'fia-ok';
+  ok.textContent = r.salvos === 1 ? '1 campo preenchido agora.' : r.salvos + ' campos preenchidos agora.';
+  body.insertBefore(ok, body.firstChild);
 }
 
 function voltarParaLista() {
@@ -730,6 +829,11 @@ function voltarParaLista() {
   const painel = document.getElementById('ficha-ia-painel');
   if (view) view.hidden = true;
   if (painel) painel.hidden = false;
+  // O clique que abriu a ficha passou pelo enterAnalysis do Seletor, que escondeu o
+  // #panelView e mostrou o #analysisView. Só desesconder a ficha deixava o vendedor na
+  // barra de análise, tendo que clicar num SEGUNDO "voltar" pra ver a lista de novo —
+  // e é o exitAnalysis quem redesenha as linhas.
+  if (typeof window.MFSelExitAnalysis === 'function') window.MFSelExitAnalysis();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -744,6 +848,10 @@ window.MFFicha = {
   linhaPalavraNova, rotuloFonte, chaveCache, _cache: cacheSugestoes,
   montarAtributo, aplicar, traduzirErro, erroParcial,
   abrirFichaIA, voltarParaLista, _palavrasQueFaltam: [],
+  // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos
+  // de 30/08 se esconderam enquanto a suíte de lógica pura ficava verde.
+  ligarBotoes, salvar, obterUserId,
+  _estado: function () { return estadoFicha; },
   escapeHtml, chaveTexto, atributoPreenchido, valorAtual,
   _PROXY: MFFICHA_PROXY,
 };

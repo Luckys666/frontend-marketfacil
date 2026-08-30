@@ -12,7 +12,21 @@ const path = require('path');
 const raiz = path.join(__dirname, '..');
 const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8').trim();
 
-const html = ler('build', 'keyword-agent-bubble.html');
+let html = ler('build', 'keyword-agent-bubble.html');
+
+// ⚠️ O painel do Seletor NÃO se monta sozinho: ad-selector.js espera encontrar o shell
+// (#panelView, #filtersToggle, #searchInput, #chipsCard…) já no DOM. wireControls()
+// chama addEventListener em #filtersToggle sem guarda — com o shell ausente ele lança,
+// o boot cai no legacyFallback e o painel some sem erro na tela.
+// Mesmo arquivo que o bundle da Análise usa (build-analyzer.js), pra não divergirem.
+const selectorShell = ler('build', 'selector-shell.html');
+const marcador = '<!--SELECTOR-SHELL-->';
+if (html.indexOf(marcador) === -1) {
+  throw new Error('keyword-agent-bubble.html perdeu o marcador ' + marcador + ' — o painel nao subiria.');
+}
+// O wrapper leva a mesma classe de escopo do CSS do Seletor (.ana-wrapper .mfsel).
+html = html.replace(marcador,
+  '<div class="ana-wrapper mfsel-on" id="ficha-ia-painel">' + selectorShell + '</div>');
 const fichaJs = ler('js', 'ficha-ia.js');
 const selectorJs = ler('js', 'ad-selector.js');
 const agenteJs = ler('js', 'keyword-agent.js');

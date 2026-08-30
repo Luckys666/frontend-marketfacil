@@ -44,8 +44,13 @@ console.log('\n== os containers antigos continuam no template ==');
   .forEach((id) => check('#' + id + ' segue no HTML', html.includes('id="' + id + '"')));
 
 console.log('\n== e os containers novos entraram ==');
-['mfselRoot', 'ficha-ia-view', 'ficha-ia-body']
-  .forEach((id) => check('#' + id + ' existe', html.includes('id="' + id + '"')));
+['ficha-ia-view', 'ficha-ia-body']
+  .forEach((id) => check('#' + id + ' existe no template', html.includes('id="' + id + '"')));
+// O #mfselRoot NÃO fica no template: ele vem do shell compartilhado (selector-shell.html)
+// na hora do build, porque o mesmo shell alimenta o bundle da Análise. O template só
+// marca o lugar — e o bundle é quem tem que sair completo.
+check('o template marca o lugar do shell', html.includes('<!--SELECTOR-SHELL-->'));
+check('#mfselRoot existe no BUNDLE (é lá que o painel procura)', bundle.includes('id="mfselRoot"'));
 
 console.log('\n== ordem do bundle: MFSEL_HOST antes do seletor ==');
 {
