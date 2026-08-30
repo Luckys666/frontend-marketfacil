@@ -429,11 +429,132 @@ function secaoSemBase(lista) {
     </div>`;
 }
 
+/* ---------- Escrita ---------- */
+function montarAtributo(item, campo) {
+  const valor = String(item.valor || '').trim();
+  if (item.value_id) return { id: item.id, value_id: String(item.value_id), value_name: valor };
+  const exato = ((campo && campo.values) || []).find((v) => v && chaveTexto(v.name) === chaveTexto(valor));
+  if (exato) return { id: item.id, value_id: String(exato.id), value_name: exato.name };
+  return { id: item.id, value_name: valor };
+}
+
+/**
+ * Traduz a recusa em algo que o vendedor entende e consegue agir.
+ * A recusa do NOSSO proxy vem pronta em `error` com um `code` conhecido — usar o texto
+ * dele em vez de reescrever; ele sabe o motivo exato.
+ */
+function traduzirErro(errData, campo) {
+  const nome = (campo && campo.name) || 'campo';
+  if (!errData) return 'Erro desconhecido.';
+
+  const codigoProxy = String(errData.code || '');
+  if (/^(child_pk_|attr_|category_unavailable_in_family|item_unavailable|title_not_editable)/.test(codigoProxy)) {
+    const pronta = String(errData.error || '').trim();
+    if (pronta) return pronta;
+  }
+
+  const cause = Array.isArray(errData.cause) ? errData.cause[0] : null;
+  const code = String((cause && cause.code) || errData.ml_error || errData.error || '');
+  const msg = String((cause && cause.message) || errData.message || '');
+
+  if (/Same attributes are used in/i.test(msg)) {
+    return `${nome} é definido em cada variação deste anúncio. Edite pela tela de variações no Mercado Livre.`;
+  }
+  if (/value_not_in_allowed_values/i.test(code)) return `${nome}: escolha uma opção da lista de sugestões — texto livre não é aceito aqui.`;
+  if (/required|missing/i.test(code)) return `${nome} é obrigatório — precisa ser preenchido.`;
+  if (/invalid_length|too_long|too_short|max_length|min_length/i.test(code)) return `${nome}: tamanho fora do permitido.`;
+  if (/invalid_format/i.test(code)) return `${nome}: formato não aceito pelo Mercado Livre.`;
+  if (/duplicated|already_exists/i.test(code)) return `${nome}: esse valor já está em uso em outro anúncio seu.`;
+  if (/read[_\s-]?only/i.test(code)) return `${nome} não pode ser alterado depois que o anúncio foi publicado.`;
+  if (/forbidden|not_allowed|not_authorized/i.test(code)) return `${nome}: esse campo não pode ser alterado nesse anúncio.`;
+  // Nunca devolver o texto cru do ML: ele fala "atributo", às vezes em espanhol.
+  return `Não foi possível salvar ${nome} agora.`;
+}
+
+function erroParcial(payload, campo) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload._family_task_error) {
+    const e = payload._family_task_error;
+    const cause = Array.isArray(e.cause) ? e.cause[0] : null;
+    if (/PA_UNAUTHORIZED|policy[_\s-]?agent/i.test(String(e.code || '')) || /PolicyAgent/i.test(String(e.message || (cause && cause.message) || ''))) {
+      return `${(campo && campo.name) || 'Esse campo'} é controlado pela família deste anúncio e o Mercado Livre não autorizou a edição por aqui. Edite direto no painel do Mercado Livre.`;
+    }
+    return traduzirErro(e, campo);
+  }
+  if (payload._item_put_error) return traduzirErro(payload._item_put_error, campo);
+  return null;
+}
+
+/**
+ * Aplica um ou vários campos. Quarto ponto de escrita do app, e passa pela MESMA régua
+ * dos outros três: campo bloqueado não vira requisição.
+ */
+async function aplicar(itemId, itens, campos, detail, token) {
+  const porId = new Map((campos || []).map((c) => [String(c.id), c]));
+  const attributes = [];
+  const posicaoNoPut = new Map();
+  let precisaConfirmar = false;
+
+  for (const item of (itens || [])) {
+    const campo = porId.get(String(item.id));
+    const motivo = motivoBloqueado(campo, detail);
+    if (motivo) {
+      const nome = (campo && campo.name) || 'Esse campo';
+      const texto = motivo === 'familia'
+        ? `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo — edite no Mercado Livre.`
+        : motivo === 'variacao'
+          ? `${nome} é definido em cada variação — edite pela tela de variações.`
+          : `${nome} é preenchido pelo próprio Mercado Livre.`;
+      return { ok: false, salvos: 0, erro: texto };
+    }
+    if (renomeiaVariacao(campo, detail)) precisaConfirmar = true;
+    // Um campo, um valor. A lista com base no anúncio e a de palavras novas podem propor
+    // valores diferentes pro MESMO campo; mandar os dois faz a ML gravar um e descartar o
+    // outro em silêncio, e o vendedor vê na tela um valor que ele não escolheu.
+    // Vence o último — que é o que ele marcou por último.
+    const montado = montarAtributo(item, campo);
+    if (posicaoNoPut.has(item.id)) attributes[posicaoNoPut.get(item.id)] = montado;
+    else { posicaoNoPut.set(item.id, attributes.length); attributes.push(montado); }
+  }
+  if (!attributes.length) return { ok: false, salvos: 0, erro: 'Nenhum campo marcado.' };
+
+  const corpo = precisaConfirmar
+    ? { attributes, confirm_rename_variation: true }
+    : { attributes };
+
+  let resp;
+  try {
+    resp = await fetch(MFFICHA_PROXY + '/api/fetch-item-update?item_id=' + encodeURIComponent(itemId), {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo),
+    });
+  } catch (e) {
+    return { ok: false, salvos: 0, erro: 'Não deu pra salvar agora — verifique sua conexão e tente de novo.' };
+  }
+
+  const primeiro = porId.get(String(attributes[0].id));
+  if (!resp.ok) {
+    let msg = 'Não foi possível salvar agora.';
+    try { msg = traduzirErro(await resp.json(), primeiro) || msg; } catch (_) { /* corpo não-JSON */ }
+    return { ok: false, salvos: 0, erro: msg };
+  }
+  let devolvido = null;
+  try { devolvido = await resp.json(); } catch (_) { /* 200 sem corpo */ }
+  // 200 no cabeçalho não é sucesso: o proxy roteia família em duas pernas e devolve a
+  // recusa DENTRO do corpo. Sem ler isso, a tela mentiria pro vendedor.
+  const parcial = erroParcial(devolvido, primeiro);
+  if (parcial) return { ok: false, salvos: 0, erro: parcial };
+
+  return { ok: true, salvos: attributes.length, erro: null, atualizado: devolvido };
+}
+
 window.MFFicha = {
   motivoBloqueado, renomeiaVariacao, mudaOLink, camposElegiveis, montarPayload,
   formatarPalavrasQueFaltam,
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
   linhaPalavraNova, rotuloFonte, chaveCache, _cache: cacheSugestoes,
+  montarAtributo, aplicar, traduzirErro, erroParcial,
   escapeHtml, chaveTexto, atributoPreenchido, valorAtual,
   _PROXY: MFFICHA_PROXY,
 };
