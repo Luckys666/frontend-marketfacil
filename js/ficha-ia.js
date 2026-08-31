@@ -309,7 +309,7 @@ function linhaSugestao(item, comCheckbox) {
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
         ${selo}
         <span class="fia-marca">${marca}</span>
-        <span class="fia-chars fia-mono">${item.caracteres || String(item.valor).length}/30</span>
+        ${selosDeTamanho(item)}
       </div>
       ${antesDepois}
       <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" value="${escapeHtml(item.valor)}" />
@@ -328,7 +328,7 @@ function linhaPalavraNova(item) {
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" />
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
         <span class="fia-marca">🔍</span>
-        <span class="fia-chars fia-mono">${item.caracteres || String(item.valor).length}/30</span>
+        ${selosDeTamanho(item)}
       </div>
       <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" data-nova="1" value="${escapeHtml(item.valor)}" />
       <div class="fia-ganho">+ "${escapeHtml(item.palavra)}" · entra em ${Number(item.buscas) || 0} buscas</div>
@@ -336,6 +336,30 @@ function linhaPalavraNova(item) {
       <div class="fia-alerta-nova">⚠️ Seu anúncio não diz isso hoje.</div>
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
     </div>`;
+}
+
+/**
+ * O contador de caracteres só é informação onde ainda cabe escolha.
+ *
+ * O ML indexa os 30 primeiros caracteres de cada campo, então em campo de TEXTO sobrar
+ * espaço é perder busca — e o contador é um chamado pra caçar mais palavra. Mas em campo de
+ * lista fechada, sim/não ou número, o valor é único e exato: "Quadrado" ocupa 8 e não existe
+ * nada que ocupe mais. Ali o "8/30" acusa um desperdício que não existe e manda o vendedor
+ * procurar o que não há — medido em MLB6683355882 (31/08/2026).
+ */
+function aceitaMaisTexto(campo) {
+  const t = String((campo && campo.value_type) || 'string');
+  return t !== 'list' && t !== 'boolean' && t !== 'number' && t !== 'number_unit';
+}
+
+function selosDeTamanho(item) {
+  const usados = item.caracteres || String(item.valor || '').length;
+  if (!aceitaMaisTexto(item.campo)) return '';
+  const sobra = 30 - usados;
+  const dica = sobra > 6
+    ? ` <span class="fia-sobra" title="O Mercado Livre indexa os 30 primeiros caracteres deste campo. O que sobra é busca que o anúncio deixa de alcançar.">cabe mais ${sobra}</span>`
+    : '';
+  return `<span class="fia-chars fia-mono" title="O Mercado Livre indexa os 30 primeiros caracteres deste campo.">${usados}/30</span>${dica}`;
 }
 
 function rotuloFonte(fonte) {

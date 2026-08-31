@@ -41,6 +41,47 @@ const RESPOSTA = {
   descartadas: 2,
 };
 
+// O ML indexa os 30 primeiros caracteres de cada campo, então em campo de TEXTO sobrar
+// espaço é busca que o anúncio deixa de alcançar — e o contador é um chamado pra caçar mais
+// palavra. Mas em lista fechada, sim/não e número o valor é único e exato: "Quadrado" ocupa
+// 8 e não existe nada que ocupe mais. Ali o "8/30" acusa desperdício que não existe e manda
+// o vendedor procurar o que não há (visto em MLB6683355882, 31/08/2026).
+console.log('\n== contador de caracteres: só onde ainda cabe escolha ==');
+{
+  const { M, el } = carregar();
+  const campos = [
+    { id: 'STYLES', name: 'Estilos', value_type: 'string', preenchido: false, obrigatorio: false, _mudaLink: false, _extra: false },
+    { id: 'NECK_TYPE', name: 'Tipo de gola', value_type: 'list', preenchido: false, obrigatorio: false, _mudaLink: false, _extra: false },
+    { id: 'IS_KIT', name: 'É kit', value_type: 'boolean', preenchido: false, obrigatorio: false, _mudaLink: false, _extra: false },
+    { id: 'COMPOSITION', name: 'Composição', value_type: 'string', preenchido: false, obrigatorio: false, _mudaLink: false, _extra: false },
+  ];
+  const dados = {
+    ok: true,
+    sugestoes: [
+      { id: 'STYLES', acao: 'preencher', valor: 'Casual', caracteres: 6, palavras_novas: ['casual'], origens: [] },
+      { id: 'NECK_TYPE', acao: 'preencher', valor: 'Quadrado', caracteres: 8, palavras_novas: ['quadrado'], origens: [] },
+      { id: 'IS_KIT', acao: 'preencher', valor: 'Não', caracteres: 3, palavras_novas: [], origens: [] },
+      { id: 'COMPOSITION', acao: 'preencher', valor: 'Algodao,Elastano,Ribana Teste', caracteres: 29, palavras_novas: ['algodao'], origens: [] },
+    ],
+    palavras_novas_sugeridas: [], sem_base: [], descartadas: 0,
+  };
+  M.renderPainel('ficha-ia-body', { estado: 'ok', dados, campos, placar: { preenchidos: 0, total: 4 } });
+  const body = el('ficha-ia-body');
+  const linhaDe = (id) => body.querySelectorAll('.fia-linha').find
+    ? body.querySelectorAll('.fia-linha').find((l) => l.getAttribute('data-campo') === id)
+    : null;
+
+  const texto = (id) => { const l = linhaDe(id); return l ? l.textContent : ''; };
+
+  check('campo de texto mostra o contador', /6\/30/.test(texto('STYLES')), texto('STYLES'));
+  check('e chama pra encher o que sobra', /cabe mais 24/.test(texto('STYLES')), texto('STYLES'));
+  check('lista fechada NÃO mostra contador', !/\/30/.test(texto('NECK_TYPE')), texto('NECK_TYPE'));
+  check('lista fechada NÃO manda encher', !/cabe mais/.test(texto('NECK_TYPE')), texto('NECK_TYPE'));
+  check('sim/não NÃO mostra contador', !/\/30/.test(texto('IS_KIT')), texto('IS_KIT'));
+  check('texto quase cheio mostra o contador', /29\/30/.test(texto('COMPOSITION')), texto('COMPOSITION'));
+  check('mas não pede mais por 1 caractere', !/cabe mais/.test(texto('COMPOSITION')), texto('COMPOSITION'));
+}
+
 console.log('\n== separarSecoes ==');
 {
   const { M } = carregar();

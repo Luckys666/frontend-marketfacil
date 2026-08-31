@@ -12,6 +12,10 @@
 .kw-wrapper .fia-alvo-titulo { font-size: .88rem; font-weight: 600; color: var(--text, #1e3a5f); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw-wrapper .fia-alvo-id { font-size: .74rem; color: var(--text-muted, #64748b); }
 
+/* "cabe mais N": o orçamento que sobra é busca que o anúncio deixa de alcançar. Só aparece
+   em campo de texto — em lista fechada e sim/não não há espaço a preencher. */
+.kw-wrapper .fia-sobra { font-size: .72rem; font-weight: 600; color: var(--blue, #0066ff); background: #eff6ff; border-radius: 5px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; }
+
 .kw-wrapper .fia-placar { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; background: var(--navy, #0f172a); border-radius: 10px; color: #fff; }
 .kw-wrapper .fia-placar-num { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 700; }
 .kw-wrapper .fia-placar-lbl { font-size: .82rem; opacity: .8; }
