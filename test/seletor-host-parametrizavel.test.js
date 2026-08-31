@@ -129,6 +129,14 @@ console.log('\n== chips e filtros de preço são do painel ==');
   const r = carregar({ chips: ['nao_existe', 'incomplete_specs'] }).__internos.chipsDoPainel().map((c) => c.id);
   check('id desconhecido é ignorado em silêncio', r.join() === 'incomplete_specs', r.join());
 }
+{
+  // Com os chips restritos, "nenhum problema nos seus anúncios" seria falso: a conta pode
+  // ter 101 pausados sem estoque e a tela só ter olhado ficha (visto em conta real, 31/08).
+  const padrao = carregar(null).__internos.HOST.textoSemProblemas;
+  check('sem host, a mensagem de tudo certo é a de sempre', /Nenhum problema encontrado/.test(padrao), padrao);
+  const proprio = carregar({ chips: ['incomplete_specs'], textoSemProblemas: 'Nenhuma ficha incompleta 🎉' }).__internos.HOST.textoSemProblemas;
+  check('o painel pode dizer o que ELE conferiu', proprio === 'Nenhuma ficha incompleta 🎉', proprio);
+}
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);

@@ -735,6 +735,10 @@ window.MFSEL_HOST = {
   //   exposição é, na maioria das vezes, consequência de ficha pobre.
   chips: ['incomplete_specs', 'missing_gtin', 'unhealthy', 'warning'],
 
+  // Como esta tela só olha os sinais de ficha, "nenhum problema nos seus anúncios" seria
+  // falso — a conta pode ter 101 pausados sem estoque, que não são assunto daqui.
+  textoSemProblemas: 'Nenhum anúncio seu está com ficha incompleta 🎉 Escolha um abaixo para procurar palavras novas.',
+
   // "Com desconto" e "Frete grátis abaixo de R$ 79" recortam por preço e frete: úteis pra
   // quem caça margem, ruído pra quem veio escrever ficha.
   filtrosDePreco: false,
@@ -817,8 +821,14 @@ async function sellerIdDaConta(signal) {
 function linhaVariacao(item) {
   // O que distingue uma variação da outra é o CHILD_PK — cor, tamanho, desenho. Mostrar
   // o título inteiro não ajuda: ele é quase igual em todas.
+  // Só o que o vendedor usa pra reconhecer a peça: cor, tamanho, desenho. `SELLER_SKU` e
+  // `GTIN` também são atributos de variação, mas são CÓDIGO — na tela de escolha viravam
+  // "Código universal de produto: 7891800840100" ao lado de "Cor: Branco", empurrando o que
+  // importa pro fim da linha (visto em conta real, 31/08).
   const distintivos = ((item.attributes || [])
-    .filter((a) => a && VARIATION_ATTR_IDS.has(String(a.id).toUpperCase()) && a.value_name)
+    .filter((a) => a && a.value_name
+      && VARIATION_ATTR_IDS.has(String(a.id).toUpperCase())
+      && !IDS_FORA.has(String(a.id).toUpperCase()))
     .map((a) => `<span class="fia-var-attr"><b>${escapeHtml(a.name)}:</b> ${escapeHtml(a.value_name)}</span>`)
     .join('')) || '<span class="fia-var-attr">variação sem cor/tamanho definidos</span>';
 

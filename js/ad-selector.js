@@ -268,6 +268,10 @@ const HOST = Object.assign({
   // inteira antes do que ele veio fazer (Lucas, 31/08/2026).
   chips: null,
   filtrosDePreco: true,
+  // Com `chips` restrito, "Tudo certo! Nenhum problema encontrado nos seus anúncios" vira
+  // mentira: a conta pode ter 101 pausados sem estoque e a tela só ter olhado ficha. O
+  // painel diz o que ELE conferiu.
+  textoSemProblemas: 'Tudo certo! Nenhum problema encontrado nos seus anúncios.',
 }, (typeof window !== 'undefined' && window.MFSEL_HOST) || {});
 
 /** Os chips deste painel, na ordem que o host pediu. */
@@ -437,7 +441,7 @@ function renderChips(counts) {
     .filter((x) => x.count > 0);
 
   if (visible.length === 0) {
-    area.innerHTML = '<div class="chips-clean"><span class="chip-ind" style="background:var(--green);box-shadow:0 0 0 3px var(--green-light)"></span> Tudo certo! Nenhum problema encontrado nos seus anúncios.</div>';
+    area.innerHTML = '<div class="chips-clean"><span class="chip-ind" style="background:var(--green);box-shadow:0 0 0 3px var(--green-light)"></span> ' + escapeHtml(HOST.textoSemProblemas) + '</div>';
     return;
   }
 
