@@ -602,8 +602,8 @@ function secaoSemBase(lista) {
   if (!lista || !lista.length) return '';
   return `
     <div class="fia-secao fia-sem-base">
-      <div class="fia-secao-titulo">— Sem base no anúncio <span class="fia-mono">(${lista.length})</span></div>
-      <p class="fia-aviso">Nenhum trecho do título ou da descrição diz o valor destes campos. Preencha você — a IA não chuta fato de produto.</p>
+      <div class="fia-secao-titulo">— Estes ficaram com você <span class="fia-mono">(${lista.length})</span></div>
+      <p class="fia-aviso">Nem o anúncio diz, nem deu pra supor com segurança. São dados que só você tem — e cada um preenchido é mais uma busca em que o anúncio entra.</p>
       ${lista.map((c) => `<span class="fia-chip">${escapeHtml(c.name || c.id)}</span>`).join('')}
     </div>`;
 }
