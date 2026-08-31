@@ -126,6 +126,10 @@ function camposElegiveis(categoryAttributes, detail, obrigatoriosML) {
         values: Array.isArray(c.values) ? c.values.map((v) => ({ id: String(v.id), name: v.name })) : [],
         allowed_units: Array.isArray(c.allowed_units) ? c.allowed_units : [],
         default_unit: c.default_unit || null,
+        // Quem pode receber VÁRIOS valores separados por vírgula. Quem decide é a ML, na
+        // tag — não o tipo. `COMPOSITION` é multivalued e aceita "Algodão,Elastano";
+        // `SIZE` é `string` igual e aceita UM: "P,M,G" afirma que a mesma peça é P, M e G.
+        multivalued: !!(c.tags && c.tags.multivalued),
         _extra: !!(c.tags && c.tags.hidden),
         _renomeia: renomeiaVariacao(c, detail),
         _mudaLink: mudaOLink(c, detail),
