@@ -501,6 +501,38 @@ const RESPOSTA_B = {
     check('sem tela de escolha', el('ficha-ia-body').querySelectorAll('.fia-var').length === 0);
   }
 
+  console.log('\n== 200 com o item pela metade não é "instabilidade" ==');
+  {
+    // O /api/fetch-item devolve HTTP 200 mesmo quando a ML recusou: o status real vem em
+    // `code`, dentro do envelope, e o corpo volta só com `{ id }`. Com o token vencido isso
+    // passava batido — `detail.id` existe, a ficha seguia, e quebrava lá na frente pedindo
+    // `/api/attributes/undefined`. Visto em conta real, 31/08.
+    const rotas = [
+      [/getAccessToken2/, async () => ({ body: { response: { access_token: 'TOKEN-ML' } } })],
+      [/get-user-id/, async () => ({ body: { response: { user_id: 'u1' } } })],
+      [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 401, body: { id: 'MLB1111111111' } }] })],
+    ];
+    const { M, el } = carregar({ rotas });
+    await M.abrirFichaIA('MLB1111111111');
+    const t = el('ficha-ia-body').textContent;
+    check('token vencido vira "sessão expirada", não "tente de novo"',
+      /Sess[ãa]o expirada/i.test(t), t.slice(0, 100));
+    check('e não fala em instabilidade', !/instabilidade/i.test(t), t.slice(0, 100));
+  }
+  {
+    // 200 de verdade, mas sem category_id: também não dá pra montar a lista de campos.
+    const rotas = [
+      [/getAccessToken2/, async () => ({ body: { response: { access_token: 'TOKEN-ML' } } })],
+      [/get-user-id/, async () => ({ body: { response: { user_id: 'u1' } } })],
+      [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 200, body: { id: 'MLB1111111111', title: 'X' } }] })],
+    ];
+    const { M, el } = carregar({ rotas });
+    await M.abrirFichaIA('MLB1111111111');
+    const t = el('ficha-ia-body').textContent;
+    check('item sem categoria não vira /attributes/undefined',
+      /n[ãa]o deu pra consultar|instabilidade/i.test(t), t.slice(0, 90));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();

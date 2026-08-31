@@ -1034,6 +1034,20 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     const envelope = Array.isArray(detalhe) ? detalhe[0] : null;
     const detail = envelope ? envelope.body : detalhe;
     if (!detail || !detail.id) throw new Error('sem detalhe');
+
+    // ⚠️ O /api/fetch-item devolve HTTP 200 mesmo quando a ML recusou o item: o status real
+    // vem em `code`, DENTRO do envelope, e o corpo volta só com `{ id }`. Com o token
+    // vencido isso passava batido — `detail.id` existe, a ficha seguia, e quebrava lá na
+    // frente pedindo `/api/attributes/undefined`. O vendedor via "instabilidade passageira"
+    // quando o que ele precisava ler era "reconecte sua conta" (medido em 31/08).
+    const codigoDoItem = Number(envelope && envelope.code) || 200;
+    if (codigoDoItem === 401 || codigoDoItem === 403) {
+      const e = new Error('item_sem_permissao'); e.status = 401; throw e;
+    }
+    if (!detail.category_id) {
+      // 200 com corpo pela metade: não dá pra montar a lista de campos sem a categoria.
+      const e = new Error('item_incompleto'); e.status = codigoDoItem >= 400 ? codigoDoItem : 502; throw e;
+    }
     // A descrição não vai mais no payload da ficha (quem lê é o proxy, no ML), mas serve
     // aqui: é dela que a caça de palavras tira o texto, sem precisar raspar a página.
     const d = (envelope && envelope.description) || detail.description || {};
