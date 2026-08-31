@@ -548,8 +548,8 @@ const RESPOSTA_B = {
     const { M, el } = carregar({ rotas });
     await M.abrirFichaIA('MLB1111111111');
     const t = el('ficha-ia-body').textContent;
-    check('token vencido vira "sessão expirada", não "tente de novo"',
-      /Sess[ãa]o expirada/i.test(t), t.slice(0, 100));
+    check('token vencido manda reconectar a conta, não "tente de novo"',
+      /reconect/i.test(t) && /Mercado Livre/i.test(t), t.slice(0, 100));
     check('e não fala em instabilidade', !/instabilidade/i.test(t), t.slice(0, 100));
   }
   {

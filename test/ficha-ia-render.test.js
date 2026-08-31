@@ -218,7 +218,7 @@ console.log('\n== palavra nova em campo que já tinha valor: soma, não substitu
   });
   const html = el('ficha-ia-body').innerHTML;
   const txt = el('ficha-ia-body').textContent;
-  check('diz que soma ao que já está lá', /soma ao que já está lá/i.test(txt), txt.slice(0, 300));
+  check('diz que acrescenta ao que já está lá', /acrescenta ao que já está lá/i.test(txt), txt.slice(0, 300));
   check('e mostra qual era o valor', /Inox/.test(txt));
   // Riscar diria que "Inox" está saindo, e não está.
   check('não risca o valor antigo', !/<s>[\s\S]{0,40}Inox/.test(html), html.slice(0, 400));
@@ -237,7 +237,7 @@ console.log('\n== palavra nova em campo que já tinha valor: soma, não substitu
     campos: CAMPOS,
     placar: { preenchidos: 2, total: 4 },
   });
-  check('campo vazio não fala em somar', !/soma ao que já está lá/i.test(el('ficha-ia-body').textContent));
+  check('campo vazio não fala em acrescentar', !/acrescenta ao que já está lá/i.test(el('ficha-ia-body').textContent));
 }
 
 // Um campo recebe quantas palavras couberem nos 30. Enquanto a linha mostrava só a

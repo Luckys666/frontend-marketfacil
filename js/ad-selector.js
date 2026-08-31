@@ -434,6 +434,34 @@ async function fetchCounts(sellerId) {
   return counts;
 }
 
+/**
+ * O que o pente-fino desta tela achou, quando o resumo da ML não achou nada.
+ *
+ * O chip conta ANÚNCIO com o label `incomplete_technical_specs`; o sinal de cada linha
+ * conta VARIAÇÃO, com o `adoption_status.ft.missing_attributes` da mesma ML. Os dois estão
+ * certos e medem coisas diferentes — e foi assim que "Nenhum anúncio seu está com ficha
+ * incompleta 🎉" apareceu duas linhas acima de "Ficha incompleta em 2 variações" (conta
+ * real, 31/08/2026).
+ *
+ * Some quando não há o que ressalvar, e some também quando a camada de ficha não carregou:
+ * dizer "nenhuma" sem ter olhado é a mesma mentira do outro lado. Só aparece onde o painel
+ * pedir — a Análise de Anúncios está LIVE e não muda (D7).
+ */
+function ressalvaDaFicha() {
+  if (!HOST.avisarFichaConferida) return '';
+  const mapa = state.fichaMap || {};
+  const ids = Object.keys(mapa);
+  if (!ids.length) return '';
+  const incompletas = ids.filter((id) => {
+    const f = mapa[id];
+    return !!(f && Array.isArray(f.missing) && f.missing.length);
+  }).length;
+  if (!incompletas) return '';
+  return '<span class="chips-ressalva"> Conferindo campo a campo, achei '
+    + incompletas + (incompletas === 1 ? ' variação' : ' variações')
+    + ' com campo vazio — dá pra ganhar busca nelas.</span>';
+}
+
 function renderChips(counts) {
   const area = $('#chipsArea');
   const visible = chipsDoPainel()
@@ -441,7 +469,8 @@ function renderChips(counts) {
     .filter((x) => x.count > 0);
 
   if (visible.length === 0) {
-    area.innerHTML = '<div class="chips-clean"><span class="chip-ind" style="background:var(--green);box-shadow:0 0 0 3px var(--green-light)"></span> ' + escapeHtml(HOST.textoSemProblemas) + '</div>';
+    area.innerHTML = '<div class="chips-clean"><span class="chip-ind" style="background:var(--green);box-shadow:0 0 0 3px var(--green-light)"></span> '
+      + escapeHtml(HOST.textoSemProblemas) + ressalvaDaFicha() + '</div>';
     return;
   }
 

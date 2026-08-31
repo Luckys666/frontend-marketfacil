@@ -99,7 +99,7 @@ console.log('\n== o que muda o link do anúncio nunca entra em lote ==');
 {
   const ficha = fs.readFileSync(path.join(__dirname, '..', 'js', 'ficha-ia.js'), 'utf8');
   check('a seção dos campos caros é renderizada SEM checkbox',
-    /secao\('⚠️ Só um a um', sohUmAUm, false/.test(ficha), 'o terceiro argumento é comCheckbox');
+    /secao\('[^']*link[^']*', sohUmAUm, false/.test(ficha), 'o terceiro argumento é comCheckbox');
   check('e a barra do topo diz quantos ficaram de fora',
     /ficam de fora|fica de fora/.test(ficha));
   check('a palavra nova continua num bloco separado, com o aviso da origem',

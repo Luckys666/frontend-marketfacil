@@ -92,6 +92,9 @@
   color: var(--green-dark); font-weight: 500; font-size: 0.92rem;
 }
 .ana-wrapper .mfsel .chips-tip { font-size: 0.8rem; color: var(--text-secondary); margin: 8px 0 0; }
+/* A ressalva do pente-fino: o resumo verde fala do que a ML sinaliza, e esta linha do que
+   a própria tela conferiu campo a campo. Cor neutra de propósito — ela informa, não alarma. */
+.ana-wrapper .mfsel .chips-ressalva { display: block; margin-top: 4px; font-weight: 400; font-size: 0.82rem; color: var(--text-secondary); }
 .ana-wrapper .mfsel .chips-skel { display: flex; gap: 9px; }
 .ana-wrapper .mfsel .chips-skel span {
   width: 150px; height: 34px; border-radius: 999px;

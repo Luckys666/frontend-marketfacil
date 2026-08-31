@@ -116,3 +116,25 @@
 /* Campo que ficou com o vendedor: mesma linha das outras, só sem valor sugerido. */
 .kw-wrapper .fia-vazia { border-style: dashed; }
 .kw-wrapper select.fia-valor { appearance: auto; background: #fff; }
+
+/* ── P4–P17: o que a tela sabia e não dizia ─────────────────────────────────────
+   O botão que RESETA A EXPOSIÇÃO do anúncio não pode ter a mesma cara do que só
+   preenche um campo: quem clicou três vezes sem consequência clica de novo no
+   automático. */
+.kw-wrapper .fia-aplicar-um.fia-perigo { border-color: #dc2626; color: #b91c1c; background: #fef2f2; }
+.kw-wrapper .fia-aplicar-um.fia-perigo:hover { background: #fee2e2; }
+.kw-wrapper .fia-aplicar-um[disabled], .kw-wrapper .fia-aplicar-secao[disabled],
+.kw-wrapper .fia-aplicar-tudo[disabled] { opacity: .55; cursor: progress; }
+
+/* A legenda do X/30: o número aparecia em sete telas e nenhuma dizia o que ele conta. */
+.kw-wrapper .fia-legenda { font-size: .74rem; line-height: 1.4; color: var(--text-muted, #64748b); margin: -8px 0 14px; }
+
+/* "vai ficar assim" — o vendedor via a palavra solta e não sabia o que ia pro campo. */
+.kw-wrapper .fia-rotulo-valor { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #94a3b8); margin-bottom: 3px; }
+
+/* O estado sem saída ganhou saída. */
+.kw-wrapper .fia-cta { display: inline-block; margin-top: 10px; padding: 9px 18px; font-size: .84rem; font-weight: 600; border-radius: 8px; background: var(--navy, #0f172a); color: #fff; text-decoration: none; }
+.kw-wrapper .fia-cta:hover { background: #1e293b; color: #fff; text-decoration: none; }
+
+/* As notas da barra viraram parágrafos (eram um <span> só, e agora são até três). */
+.kw-wrapper p.fia-tudo-nota { flex: 1 0 100%; margin: 0; }

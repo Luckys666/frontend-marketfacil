@@ -357,8 +357,13 @@ function contarPlacar(campos) {
 /* ---------- Render ---------- */
 function linhaSugestao(item, comCheckbox) {
   const marca = item.acao === 'trocar' ? '✏️' : '✅';
+  // "substitui" escrito por extenso: a vendedora leu "Vale trocar" e "Palavras novas" como
+  // a mesma coisa, porque as duas mostravam "+N palavra nova" e nenhuma dizia se o que ela
+  // escreveu ia embora. E o tamanho vem como "17/30", não "(17)" — o mesmo parêntese
+  // significava ITENS no título da seção e CARACTERES aqui.
   const antesDepois = item.acao === 'trocar'
-    ? `<div class="fia-antes">hoje <s>${escapeHtml(item.atual || '')}</s> <span class="fia-mono">(${String(item.atual || '').length})</span></div>`
+    ? `<div class="fia-antes">substitui o que está lá hoje: <s>${escapeHtml(item.atual || '')}</s>${
+      aceitaMaisTexto(item.campo) ? ` <span class="fia-mono">${String(item.atual || '').length}/30</span>` : ''}</div>`
     : '';
   const check = comCheckbox
     ? `<input type="checkbox" class="fia-check" data-campo="${escapeHtml(item.id)}" checked />`
@@ -371,18 +376,27 @@ function linhaSugestao(item, comCheckbox) {
   // UMA linha de origem por palavra. Composição de fontes diferentes ("aço" de um campo,
   // "inox" da descrição) mostra as duas — é assim que o vendedor pega o caso raro em que a
   // junção não serve pro produto dele.
+  // "veio de" em vez de "←": a seta é notação de quem lê diff, e a evidência é justamente
+  // a parte que precisa ser lida por quem nunca viu a tela.
   const origens = (item.origens || []).map((o) => `
         <div class="fia-origem">
           <span class="fia-origem-palavra">"${escapeHtml(o.palavra)}"</span>
-          <span class="fia-origem-seta">←</span>
+          <span class="fia-origem-seta">veio de</span>
           <span class="fia-fonte">${escapeHtml(rotuloFonte(o.fonte))}</span>
           <span class="fia-trecho">${escapeHtml(o.trecho)}</span>
         </div>`).join('');
   const ganho = (item.palavras_novas || []).length
     ? `<div class="fia-ganho">+${item.palavras_novas.length} ${item.palavras_novas.length === 1 ? 'palavra nova' : 'palavras novas'}: ${escapeHtml(item.palavras_novas.join(', '))}</div>`
     : '';
+  // O botão do campo que muda o link NÃO pode ser o mesmo botão de sempre. Quem clicou duas
+  // ou três vezes em "Aplicar só este" sem consequência clica de novo no automático — e
+  // aqui o clique reseta a exposição do anúncio.
+  const caro = !!(item.campo && item.campo._mudaLink);
+  const botao = caro
+    ? `<button type="button" class="fia-aplicar-um fia-perigo" data-campo="${escapeHtml(item.id)}">Corrigir e mudar o link do anúncio</button>`
+    : `<button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}">Aplicar só este</button>`;
   return `
-    <div class="fia-linha" data-campo="${escapeHtml(item.id)}">
+    <div class="fia-linha" data-campo="${escapeHtml(item.id)}"${tokensDaLinha(item)}>
       <div class="fia-linha-topo">
         ${check}
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
@@ -391,11 +405,29 @@ function linhaSugestao(item, comCheckbox) {
         ${selosDeTamanho(item)}
       </div>
       ${antesDepois}
+      ${rotuloDoValor}
       ${entradaDaLinha(item)}
       ${ganho}
       <div class="fia-evidencia">${origens}</div>
-      <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}">Aplicar só este</button>
+      ${botao}
     </div>`;
+}
+
+/**
+ * "Vai ficar assim" — a vendedora via a palavra solta e não sabia o que ia parar no campo.
+ * O texto da caixa É o valor final (já com o que estava lá dentro, quando é soma), e dizer
+ * isso em duas palavras vale mais do que qualquer explicação embaixo.
+ */
+const rotuloDoValor = '<div class="fia-rotulo-valor">vai ficar assim:</div>';
+
+/**
+ * As palavras que ESTA linha põe no índice, para o placar do topo saber recontar quando o
+ * vendedor desmarca. Sem isto o "+N palavras novas" ficava parado num número que já não
+ * correspondia ao que o botão ia salvar.
+ */
+function tokensDaLinha(item) {
+  const t = (item.palavras_novas || []).join(',');
+  return t ? ` data-tokens="${escapeHtml(t)}"` : '';
 }
 
 /**
@@ -411,13 +443,14 @@ function linhaPalpite(item) {
     ? `<div class="fia-ganho">+${item.palavras_novas.length} ${item.palavras_novas.length === 1 ? 'palavra nova' : 'palavras novas'}: ${escapeHtml(item.palavras_novas.join(', '))}</div>`
     : '';
   return `
-    <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
+    <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1"${tokensDaLinha(item)}>
       <div class="fia-linha-topo">
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.name || item.id)}</span>
         <span class="fia-marca">🤔</span>
         ${selosDeTamanho(item)}
       </div>
+      ${rotuloDoValor}
       ${entradaDaLinha(item, ' data-nova="1"')}
       ${ganho}
       ${item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : ''}
@@ -457,10 +490,10 @@ function linhaPalavraNova(item) {
   const acrescimo = item.atual
     ? (item.atual_proposto
       ? `<div class="fia-antes">junta com o que achei no seu anúncio: <b>${escapeHtml(item.atual)}</b></div>`
-      : `<div class="fia-antes">soma ao que já está lá: <b>${escapeHtml(item.atual)}</b></div>`)
+      : `<div class="fia-antes">acrescenta ao que já está lá: <b>${escapeHtml(item.atual)}</b></div>`)
     : '';
   return `
-    <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
+    <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1"${tokensDaLinha(item)}>
       <div class="fia-linha-topo">
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
@@ -468,6 +501,7 @@ function linhaPalavraNova(item) {
         ${selosDeTamanho(item)}
       </div>
       ${acrescimo}
+      ${rotuloDoValor}
       ${entradaDaLinha(item, ' data-nova="1"')}
       <div class="fia-ganho">${ganhoDaLinha(item)}</div>
       <div class="fia-combos">${combos}</div>
@@ -539,13 +573,29 @@ function rotuloFonte(fonte) {
   return 'seu anúncio';
 }
 
-function blocoErro(icone, titulo, texto, comBotao) {
+/**
+ * Onde o vendedor resolve o problema que a tela acabou de contar.
+ * O mesmo destino que o resto do app usa (MF_renderError), e respeitando o version-test:
+ * mandar quem está testando para a conta de produção seria trocar o problema por outro.
+ */
+function urlMinhaConta() {
+  const href = String((window.location && window.location.href) || '');
+  return href.indexOf('version-test') >= 0
+    ? 'https://app.marketfacil.com.br/version-test/minha-conta'
+    : 'https://app.marketfacil.com.br/minha-conta';
+}
+
+function blocoErro(icone, titulo, texto, comBotao, cta) {
+  const link = cta
+    ? `<a class="fia-cta" href="${escapeHtml(cta.href)}">${escapeHtml(cta.label)}</a>`
+    : '';
   return `
     <div class="fia-estado">
       <div class="fia-estado-icone">${icone}</div>
       <p class="fia-estado-titulo">${escapeHtml(titulo)}</p>
       <p class="fia-estado-texto">${escapeHtml(texto)}</p>
       ${comBotao ? '<button type="button" class="fia-retry">Tentar de novo</button>' : ''}
+      ${link}
     </div>`;
 }
 
@@ -564,14 +614,19 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       'Aguarde alguns segundos e tente de novo.', true);
     return;
   }
+  // Os dois estados que dependem de uma ação em OUTRA tela levam o caminho junto. "Ative
+  // seu plano" sem botão era o único estado do painel sem saída, e "sessão"/"recurso" são
+  // palavras de sistema — quem vende não fala assim.
   if (estado === 'sem_plano') {
-    el.innerHTML = blocoErro('🔒', 'Recurso do plano ativo',
-      'Ative seu plano para usar o preenchimento com IA.', false);
+    el.innerHTML = blocoErro('🔒', 'Seu plano não está ativo',
+      'Ative seu plano para preencher a ficha com a ajuda da IA.', false,
+      { label: 'Ver meu plano →', href: urlMinhaConta() });
     return;
   }
   if (estado === 'sessao') {
-    el.innerHTML = blocoErro('⏳', 'Sessão expirada',
-      'Recarregue a página para continuar.', false);
+    el.innerHTML = blocoErro('⏳', 'Sua conexão com o Mercado Livre caiu',
+      'Reconecte sua conta do Mercado Livre para continuar.', false,
+      { label: 'Reconectar conta →', href: urlMinhaConta() });
     return;
   }
   // O anúncio é lido no Mercado Livre, com a conta conectada. Estes três estados dizem o
@@ -599,19 +654,24 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   const nadaPraFazer = comEvidencia.length === 0 && trocas.length === 0
     && sohUmAUm.length === 0 && palavrasNovas.length === 0 && palpites.length === 0;
   const semBase = (dados && dados.sem_base) || [];
-  // Conta só o que nasce marcado — o número tem que bater com o que o botão vai salvar.
-  const tokensNovos = contarTokensNovos(comEvidencia.concat(trocas));
+  // Conta tudo que NASCE MARCADO — as quatro listas, já que desde 31/08 o vendedor confere
+  // e desmarca. O campo que muda o link não tem marcação, então não entra aqui nem no
+  // recálculo. Quem mantém o número vivo depois é `recontarTokens`.
+  const tokensNovos = contarTokensNovos(comEvidencia.concat(trocas, palavrasNovas, palpites));
 
   const cabecalho = `
     <div class="fia-placar">
       <span class="fia-placar-num">${p.preenchidos} de ${p.total}</span>
       <span class="fia-placar-lbl">campos preenchidos</span>
-      ${tokensNovos ? `<span class="fia-placar-tokens" id="fia-tokens" title="O Mercado Livre corta o anúncio se faltar uma palavra da busca. Cada palavra nova abre buscas que estavam fechadas.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>` : ''}
+      <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="O Mercado Livre corta o anúncio se faltar uma palavra da busca. Cada palavra nova abre buscas que estavam fechadas.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
       ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
-    </div>`;
+    </div>
+    <p class="fia-legenda">Os números como <b>8/30</b> contam os 30 caracteres que o Mercado Livre lê de cada campo pra achar seu anúncio.</p>`;
 
   if (nadaPraFazer && completo) {
-    el.innerHTML = cabecalho + blocoErro('🎉', 'Ficha completa',
+    // Um 🎉 só. Dois selos de festa para a mesma conquista, colados um no outro, transformam
+    // a comemoração em enfeite.
+    el.innerHTML = cabecalho + blocoErro('✅', 'Ficha completa',
       'Todos os campos que você pode preencher neste anúncio já estão preenchidos.', false);
     return;
   }
@@ -683,10 +743,17 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   // ele é recalculado a cada marcar/desmarcar (`recontarBotoes`). O que fica fora é só o
   // campo que muda o link, que nem checkbox tem.
   const totalTudo = comEvidencia.length + trocas.length + palavrasNovas.length + palpites.length;
+  // Duas coisas que a barra precisava dizer e não dizia:
+  //   1. que NENHUM campo daqui muda o link. Sem isso, o aviso vermelho de um bloco
+  //      contaminava a tela inteira e a vendedora não clicava em nada;
+  //   2. quantos estão SUBSTITUINDO o que ela mesma escreveu. "Aplicar tudo" prometia
+  //      preencher e trocava valor no meio do caminho.
   const barraTudo = totalTudo ? `
     <div class="fia-tudo-barra">
       <button type="button" class="fia-aplicar-tudo">Aplicar tudo que está marcado <span class="fia-mono" data-conta="tudo">(${totalTudo})</span></button>
-      ${sohUmAUm.length ? `<span class="fia-tudo-nota">${sohUmAUm.length} ${sohUmAUm.length === 1 ? 'campo fica' : 'campos ficam'} de fora — ${sohUmAUm.length === 1 ? 'muda' : 'mudam'} o link do anúncio</span>` : ''}
+      <p class="fia-tudo-nota">Nenhum campo destas listas muda o link do seu anúncio.</p>
+      ${trocas.length ? `<p class="fia-tudo-nota">Inclui ${trocas.length} que ${trocas.length === 1 ? 'substitui' : 'substituem'} o que você já tinha escrito.</p>` : ''}
+      ${sohUmAUm.length ? `<p class="fia-tudo-nota">${sohUmAUm.length} ${sohUmAUm.length === 1 ? 'campo fica' : 'campos ficam'} de fora — ${sohUmAUm.length === 1 ? 'muda' : 'mudam'} o link do anúncio.</p>` : ''}
     </div>` : '';
 
   el.innerHTML = cabecalho
@@ -695,8 +762,10 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
     + secao('✏️ Vale trocar', trocas, true, '', 'trocar', 'Aplicar as trocas marcadas')
     + secaoNovas
     + secaoPalpites
-    + secao('⚠️ Só um a um', sohUmAUm, false,
-        '<p class="fia-aviso">Mexer nestes campos muda o link do anúncio e ele perde a exposição que tinha — recomeça como se fosse novo. Só vale se estiver mesmo errado. Por isso ficam fora do "aplicar tudo" e não têm marcação em lote.</p>',
+    // O título diz o que a seção É, não como ela se opera. E o aviso vira três frases
+    // curtas: era a frase de maior consequência da tela e a mais difícil de ler.
+    + secao('⚠️ Estes mudam o link do anúncio', sohUmAUm, false,
+        '<p class="fia-aviso">Mexer aqui muda o link do anúncio. Ele perde a exposição que já tem e recomeça do zero, como anúncio novo. Só vale a pena se o valor estiver errado. Por isso estes campos ficam fora do "aplicar tudo".</p>',
         'caros')
     + secaoSemBase(semBase, campos);
 }
@@ -843,17 +912,43 @@ async function aplicar(itemId, itens, campos, detail, token) {
   // Qual campo o ML recusou? A ML aponta em `cause[].references` ("item.attributes[2]"
   // ou o id do atributo). Sem procurar, um lote de 5 campos com erro na Marca dizia
   // "Cor: tamanho fora do permitido" — e o vendedor ia consertar o campo errado.
+  //
+  // ⚠️ O id casa INTEIRO, não por pedaço. Com `includes`, uma recusa em `MAIN_COLOR` era
+  // atribuída a `COLOR` (o id cabe dentro do outro), e a tela mandava consertar um campo
+  // que estava certo. A fronteira é o que separa id de id: letra, número e `_` fazem parte
+  // do nome, o resto é separador.
+  const idInteiro = (ref, id) => {
+    const alvo = String(id).toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(^|[^A-Z0-9_])' + alvo + '($|[^A-Z0-9_])').test(String(ref).toUpperCase());
+  };
   const campoDoErro = (errData) => {
     const cause = errData && (Array.isArray(errData.cause) ? errData.cause[0] : errData.cause);
     const refs = [].concat((cause && cause.references) || [], String((cause && cause.message) || ''));
     for (const attr of attributes) {
-      if (refs.some((r) => String(r).toUpperCase().includes(String(attr.id).toUpperCase()))) {
-        return porId.get(String(attr.id));
-      }
+      if (refs.some((r) => idInteiro(r, attr.id))) return porId.get(String(attr.id));
     }
     const idx = refs.map((r) => /attributes\[(\d+)\]/.exec(String(r))).find(Boolean);
     if (idx && attributes[Number(idx[1])]) return porId.get(String(attributes[Number(idx[1])].id));
     return attributes.length === 1 ? porId.get(String(attributes[0].id)) : null;
+  };
+
+  /**
+   * O que ENTROU de verdade, lido do item que o ML devolveu.
+   *
+   * O proxy roteia família em duas pernas (PUT direto + editor de família), então uma
+   * recusa numa delas não diz nada sobre a outra: `salvos: 0` num lote de 5 com 4 já
+   * publicados fazia o vendedor ler "não foi possível salvar" e refazer o que já estava
+   * feito. O corpo devolvido é o item DEPOIS da gravação — dá pra conferir em vez de
+   * chutar. Sem `attributes` no corpo não há o que conferir, e aí zero continua sendo a
+   * resposta honesta.
+   */
+  const conferirGravados = (devolvido) => {
+    const lista = (devolvido && devolvido.attributes) || null;
+    if (!Array.isArray(lista) || !lista.length) return null;
+    const doML = new Map(lista.filter((a) => a && a.id).map((a) => [String(a.id), String(a.value_name || '')]));
+    return attributes
+      .filter((a) => doML.has(String(a.id)) && chaveTexto(doML.get(String(a.id))) === chaveTexto(a.value_name))
+      .map((a) => String(a.id));
   };
 
   if (!resp.ok) {
@@ -872,9 +967,15 @@ async function aplicar(itemId, itens, campos, detail, token) {
   const alvoParcial = campoDoErro((devolvido && (devolvido._family_task_error || devolvido._item_put_error)) || {})
     || (attributes.length === 1 ? porId.get(String(attributes[0].id)) : { name: 'Um dos campos' });
   const parcial = erroParcial(devolvido, alvoParcial);
-  if (parcial) return { ok: false, salvos: 0, erro: parcial };
+  if (parcial) {
+    const gravados = conferirGravados(devolvido) || [];
+    const aviso = gravados.length
+      ? `Salvei ${gravados.length} ${gravados.length === 1 ? 'campo' : 'campos'}. ${parcial}`
+      : parcial;
+    return { ok: false, salvos: gravados.length, erro: aviso, gravados, atualizado: devolvido };
+  }
 
-  return { ok: true, salvos: attributes.length, erro: null, atualizado: devolvido };
+  return { ok: true, salvos: attributes.length, erro: null, gravados: attributes.map((a) => String(a.id)), atualizado: devolvido };
 }
 
 /* ---------- Orquestração ---------- */
@@ -905,7 +1006,15 @@ window.MFSEL_HOST = {
 
   // Como esta tela só olha os sinais de ficha, "nenhum problema nos seus anúncios" seria
   // falso — a conta pode ter 101 pausados sem estoque, que não são assunto daqui.
-  textoSemProblemas: 'Nenhum anúncio seu está com ficha incompleta 🎉 Escolha um abaixo para procurar palavras novas.',
+  //
+  // ⚠️ E ela não pode afirmar que NENHUMA ficha está incompleta: esse número é o do label
+  // da ML, por anúncio, enquanto o sinal de cada linha conta VARIAÇÃO. Os dois vêm da ML,
+  // os dois estão certos, e juntos mentiam — "Nenhum anúncio seu está com ficha incompleta
+  // 🎉" ficava duas linhas acima de "Ficha incompleta em 2 variações" (conta real, 31/08).
+  // Agora a frase diz de quem é a afirmação, e `avisarFichaConferida` deixa a tela contar o
+  // que ela mesma achou.
+  textoSemProblemas: 'O Mercado Livre não está sinalizando ficha incompleta na sua conta. Escolha um anúncio abaixo para procurar palavras novas.',
+  avisarFichaConferida: true,
 
   // "Com desconto" e "Frete grátis abaixo de R$ 79" recortam por preço e frete: úteis pra
   // quem caça margem, ruído pra quem veio escrever ficha.
@@ -1310,6 +1419,30 @@ function recontarBotoes() {
   });
   const tudo = body.querySelector('[data-conta="tudo"]');
   if (tudo) tudo.textContent = '(' + contar(body) + ')';
+  recontarTokens(body);
+}
+
+/**
+ * O placar de palavras novas acompanha o que está marcado.
+ *
+ * Ele nascia certo e congelava: desmarcar três linhas deixava o "+7 palavras novas" no
+ * lugar, prometendo um ganho que o botão não ia entregar. Cada linha carrega as suas em
+ * `data-tokens`, e a conta aqui é a mesma do render — tokens DISTINTOS, porque a mesma
+ * palavra em dois campos abre a busca uma vez só.
+ */
+function recontarTokens(body) {
+  const alvo = body.querySelector('#fia-tokens');
+  if (!alvo) return;
+  const tokens = new Set();
+  body.querySelectorAll('.fia-check, .fia-check-nova').forEach((c) => {
+    if (!c.checked) return;
+    const linha = typeof c.closest === 'function' ? c.closest('.fia-linha') : null;
+    const crus = linha ? String(linha.getAttribute('data-tokens') || '') : '';
+    for (const t of crus.split(',')) if (t) tokens.add(t);
+  });
+  const n = tokens.size;
+  alvo.textContent = '+' + n + (n === 1 ? ' palavra nova' : ' palavras novas');
+  alvo.hidden = n === 0;
 }
 
 let _botoesLigados = false;
@@ -1444,9 +1577,31 @@ function umCampo(origem) {
   return id ? [{ id, valor: valorDaLinha(origem) }] : [];
 }
 
+/**
+ * Uma escrita por vez.
+ *
+ * Dois cliques no mesmo botão — ou "salvar em lote" e, antes da resposta, "aplicar só este"
+ * no MESMO campo — mandavam dois PUTs concorrentes. Quem vence no ML pode ser o oposto do
+ * que a tela mostra como salvo, e o vendedor não tem como saber qual valor ficou gravado.
+ */
+let _salvando = false;
+
+function travarBotoes(travado) {
+  const body = document.getElementById('ficha-ia-body');
+  if (!body) return;
+  body.querySelectorAll('.fia-aplicar-um, .fia-aplicar-secao, .fia-aplicar-tudo, .fia-lote').forEach((b) => {
+    b.disabled = travado;
+    if (travado) b.setAttribute('aria-busy', 'true');
+    else b.removeAttribute('aria-busy');
+  });
+}
+
 async function salvar(itens) {
   const body = document.getElementById('ficha-ia-body');
   if (!body || !itens.length) return;
+  if (_salvando) return;
+  _salvando = true;
+  travarBotoes(true);
   // O alvo é fotografado agora. Se o vendedor trocar de anúncio enquanto o PUT está no ar,
   // o que volta é sobre o anúncio ANTIGO: escrever isso no estado atual marcaria campo do
   // anúncio novo como salvo, e a tela passaria a mentir sobre o que está gravado.
@@ -1457,18 +1612,28 @@ async function salvar(itens) {
     campos: estadoFicha.campos,
     token: estadoFicha.token,
   };
-  const r = await aplicar(alvo.itemId, itens, alvo.campos, alvo.detail, alvo.token);
+  let r;
+  try {
+    r = await aplicar(alvo.itemId, itens, alvo.campos, alvo.detail, alvo.token);
+  } finally {
+    _salvando = false;
+    travarBotoes(false);
+  }
   // O PUT foi feito de verdade (e é do anúncio certo); só a TELA não é mais deste assunto.
   if (!geracaoVigente(geracao)) return;
+  // Parte gravou, parte não: o erro aparece, e o que ENTROU sai da tela igual ao sucesso.
+  // Sem isso, o vendedor via o erro e refazia o que já estava publicado.
+  const gravados = new Set((r.gravados || []).map(String));
+  const entraram = r.ok ? itens : itens.filter((i) => gravados.has(String(i.id)));
   if (!r.ok) {
     const aviso = document.createElement('div');
     aviso.className = 'fia-erro';
     aviso.textContent = r.erro;
     body.insertBefore(aviso, body.firstChild);
-    return;
+    if (!entraram.length) return;
   }
   // Estado local acompanha o que foi salvo: o placar sobe na hora, sem refetch.
-  for (const item of itens) {
+  for (const item of entraram) {
     const campo = alvo.campos.find((c) => c.id === item.id);
     if (campo) { campo.preenchido = true; campo.valor_atual = item.valor; }
     const attrs = (alvo.detail.attributes = alvo.detail.attributes || []);
@@ -1480,12 +1645,13 @@ async function salvar(itens) {
   // catalog-quality e MAIS uma chamada paga de IA — e o cache não salva, porque a chave
   // inclui o valor dos campos, que acabou de mudar. Salvar 5 campos um a um custaria 5
   // chamadas de IA. O que sai da tela é só o que foi gravado.
-  const salvos = new Set(itens.map((i) => String(i.id)));
+  const salvos = new Set(entraram.map((i) => String(i.id)));
   if (estadoFicha.resposta) {
     estadoFicha.resposta = {
       ...estadoFicha.resposta,
       sugestoes: (estadoFicha.resposta.sugestoes || []).filter((x) => !salvos.has(String(x.id))),
       palavras_novas_sugeridas: (estadoFicha.resposta.palavras_novas_sugeridas || []).filter((x) => !salvos.has(String(x.id))),
+      palpites: (estadoFicha.resposta.palpites || []).filter((x) => !salvos.has(String(x.id))),
       sem_base: (estadoFicha.resposta.sem_base || []).filter((x) => !salvos.has(String(x.id))),
     };
   }
@@ -1495,6 +1661,9 @@ async function salvar(itens) {
     campos: estadoFicha.campos,
     placar: contarPlacar(estadoFicha.campos),
   });
+  // Na falha parcial o aviso vermelho já contou os dois lados; repetir o verde por cima
+  // seria dizer "deu certo" na mesma tela que acabou de dizer que não deu.
+  if (!r.ok) return;
   const ok = document.createElement('div');
   ok.className = 'fia-ok';
   ok.textContent = r.salvos === 1 ? '1 campo preenchido agora.' : r.salvos + ' campos preenchidos agora.';
