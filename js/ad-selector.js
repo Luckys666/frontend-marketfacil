@@ -1860,7 +1860,12 @@ function renderRows(items) {
         if (sparkF || convF) famVisits = `<span class="stock-wrap">${lineF}${convF}</span>`;
       }
       const catItem = row.items.find(isCatalogItem);
-      trs.push(`<tr data-key="${escapeHtml(key)}" data-family="${escapeHtml(row.familyId)}" data-analyze="${escapeHtml(analyzeId)}" data-title="${escapeHtml(famTitle || '')}" data-thumb="${escapeHtml(httpsThumb(a.rep.thumbnail))}" class="row${sel}">
+      // As irmãs viajam na linha: quem agrupa por family_id é este arquivo, e o painel que
+      // recebe o clique não tem como redescobrir o grupo sozinho — o user_product_id que
+      // ele recebe é o de UMA variação (Lucas, 31/08: "a parte de variações a gente
+      // precisava selecionar pra ter a experiência do usuário").
+      const irmas = row.items.map((x) => x && x.id).filter(Boolean).join(',');
+      trs.push(`<tr data-key="${escapeHtml(key)}" data-family="${escapeHtml(row.familyId)}" data-irmas="${escapeHtml(irmas)}" data-analyze="${escapeHtml(analyzeId)}" data-title="${escapeHtml(famTitle || '')}" data-thumb="${escapeHtml(httpsThumb(a.rep.thumbnail))}" class="row${sel}">
         <td class="td-photo" data-label="Foto">${a.rep.thumbnail ? `<img class="thumb" loading="eager" src="${escapeHtml(httpsThumb(a.rep.thumbnail))}" alt="">` : '<span class="thumb"></span>'}</td>
         <td data-label="Título"><div class="cell-main"><span class="caret${open ? ' open' : ''}" data-family="${escapeHtml(row.familyId)}">▸</span><div class="cell-text">
           <div class="cell-title" title="${escapeHtml(famTitle || '')}">${escapeHtml(famTitle || '—')}</div>
@@ -1991,7 +1996,8 @@ function wireRows(host) {
     tr.addEventListener('click', (e) => {
       if (String(window.getSelection ? window.getSelection() : '').length) return;
       if (!tapAllowed(e)) return;
-      enterAnalysis(tr.getAttribute('data-analyze'), tr.getAttribute('data-title'), tr.getAttribute('data-thumb'), tr.getAttribute('data-key'));
+      enterAnalysis(tr.getAttribute('data-analyze'), tr.getAttribute('data-title'), tr.getAttribute('data-thumb'), tr.getAttribute('data-key'),
+        { variacoes: (tr.getAttribute('data-irmas') || '').split(',').filter(Boolean) });
     });
   });
   // sub-linha (variação) -> analisa a variação específica

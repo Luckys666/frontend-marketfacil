@@ -457,6 +457,45 @@ const RESPOSTA_B = {
       /não achei as variações/i.test(t) && /tentar de novo/i.test(t), t.slice(0, 120));
   }
 
+  console.log('\n== clique num grupo: as irmãs vêm do Seletor, não do user-product ==');
+  {
+    // Quem agrupa as variações é o Seletor, por `family_id`. O `user_product_id` que ele
+    // entregava é o de UMA delas — e na conta do Lucas cada variação tem o seu, com um
+    // item só dentro. Sem receber as irmãs, a ficha abria direto uma variação qualquer e
+    // o vendedor não escolhia nada.
+    let buscouUserProduct = 0;
+    const { rotas } = mundo({ sugestoes: {} });
+    const comGrupo = [
+      [/\/api\/user-products\//, async () => { buscouUserProduct++; return { body: { results: ['MLB1111111111'] } }; }],
+      [/\/api\/fetch-item\?item_id=ML[A-Z]\d+,/, async () => ({
+        body: [
+          { code: 200, body: { id: 'MLB1111111111', title: 'Blusinha P', status: 'active',
+            attributes: [{ id: 'SIZE', name: 'Tamanho', value_name: 'P' }] } },
+          { code: 200, body: { id: 'MLB2222222222', title: 'Blusinha M', status: 'active',
+            attributes: [{ id: 'SIZE', name: 'Tamanho', value_name: 'M' }] } },
+        ],
+      })],
+    ].concat(rotas);
+    const { M, el } = carregar({ rotas: comGrupo });
+
+    // é isto que o Seletor passa quando o clique foi numa linha-produto
+    await M.abrirFichaIA('MLBU3935191872', ['MLB1111111111', 'MLB2222222222']);
+
+    const cartoes = el('ficha-ia-body').querySelectorAll('.fia-var');
+    check('as duas irmãs viram escolha', cartoes.length === 2, String(cartoes.length));
+    check('e o produto nem precisou ser consultado', buscouUserProduct === 0, String(buscouUserProduct));
+    check('mostrando o tamanho de cada uma',
+      el('ficha-ia-body').textContent.includes('P') && el('ficha-ia-body').textContent.includes('M'));
+  }
+  {
+    // Grupo de um só (ou clique numa linha simples) continua abrindo direto.
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const { M, el } = carregar({ rotas });
+    await M.abrirFichaIA('MLB1111111111', ['MLB1111111111']);
+    check('grupo de uma variação abre a ficha direto', M._estado().itemId === 'MLB1111111111', String(M._estado().itemId));
+    check('sem tela de escolha', el('ficha-ia-body').querySelectorAll('.fia-var').length === 0);
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();

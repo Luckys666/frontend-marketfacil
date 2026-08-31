@@ -719,7 +719,12 @@ async function aplicar(itemId, itens, campos, detail, token) {
 window.MFSEL_HOST = {
   root: '.ana-wrapper',
   resultsId: null,
-  onSelect: function (itemId) { window.MFFicha.abrirFichaIA(itemId); },
+  // `opts.variacoes` chega quando o clique foi numa linha-produto: são as irmãs da mesma
+  // família, que só o Seletor conhece (ele agrupa por family_id). Sem elas, o que a ficha
+  // recebe é o produto de UMA variação — e o vendedor não escolhe nada.
+  onSelect: function (itemId, opts) {
+    window.MFFicha.abrirFichaIA(itemId, (opts && opts.variacoes) || null);
+  },
 
   // O resumo e os filtros aqui são de FICHA E PALAVRAS, não de operação (Lucas, 31/08).
   // Quem abre esta página veio melhorar o que o anúncio DIZ; "Pausados sem estoque",
@@ -839,8 +844,15 @@ function linhaVariacao(item) {
  * é jogar o trabalho de volta pro vendedor, e ele nem sempre sabe qual linha da lista
  * corresponde a qual variação.
  */
-async function escolherVariacao(produtoId, body, geracao, signal) {
+async function escolherVariacao(produtoId, body, geracao, signal, idsJaConhecidos) {
   body.innerHTML = '<div class="fia-carregando">Vendo as variações deste produto…</div>';
+
+  // Quando o clique veio de uma linha-produto, o Seletor já sabe quais são as irmãs — e
+  // são elas que importam, não os itens do user_product (que costuma ter uma só).
+  if (Array.isArray(idsJaConhecidos) && idsJaConhecidos.length > 1) {
+    await mostrarVariacoes(idsJaConhecidos, produtoId, body, geracao, signal);
+    return;
+  }
 
   const seller = await sellerIdDaConta(signal);
   if (!geracaoVigente(geracao)) return;
@@ -863,8 +875,9 @@ async function escolherVariacao(produtoId, body, geracao, signal) {
   if (!geracaoVigente(geracao)) return;
 
   // Um anúncio só: pedir pra escolher entre uma coisa é clique a troco de nada.
-  const soUm = ids.length === 1 && ids[0] !== produtoId && /^ML[A-Z]\d/i.test(ids[0]) && !/^ML[A-Z]U/i.test(ids[0]);
-  if (soUm) { await abrirFichaIA(ids[0]); return; }
+  // Se a ML devolvesse aqui o próprio id do produto, abrir "a única variação" recursaria no
+  // mesmo MLBU pra sempre. Só segue com anúncio (MLB) de verdade.
+  ids = ids.filter((id) => id !== produtoId && /^ML[A-Z]\d/i.test(id) && !/^ML[A-Z]U/i.test(id));
 
   if (!ids.length) {
     body.innerHTML = blocoErro('🎨', 'Não achei as variações deste produto',
@@ -872,6 +885,14 @@ async function escolherVariacao(produtoId, body, geracao, signal) {
     ligarBotoes();
     return;
   }
+
+  await mostrarVariacoes(ids, produtoId, body, geracao, signal);
+}
+
+/** Desenha a escolha. Recebe os ids já resolvidos, venha de onde vier o grupo. */
+async function mostrarVariacoes(ids, produtoId, body, geracao, signal) {
+  // Um anúncio só: pedir pra escolher entre uma coisa é clique a troco de nada.
+  if (ids.length === 1) { await abrirFichaIA(ids[0]); return; }
 
   let itens = [];
   try {
@@ -897,7 +918,7 @@ async function escolherVariacao(produtoId, body, geracao, signal) {
   ligarBotoes();
 }
 
-async function abrirFichaIA(itemId) {
+async function abrirFichaIA(itemId, variacoesDoGrupo) {
   const view = document.getElementById('ficha-ia-view');
   const body = document.getElementById('ficha-ia-body');
   const painel = document.getElementById('ficha-ia-painel');
@@ -925,11 +946,17 @@ async function abrirFichaIA(itemId) {
   // Família: cada variação tem a sua ficha, e gravar na errada é pior que não gravar. Mas
   // mandar o vendedor "voltar para a lista e achar a variação" é jogar o trabalho de volta
   // pra ele — a escolha acontece aqui mesmo (Lucas, 31/08).
-  if (/^ML[A-Z]U\d+$/i.test(String(itemId))) {
+  // Duas portas pro mesmo lugar: o clique numa linha-produto traz as irmãs prontas (o
+  // Seletor agrupa por family_id), e um MLBU digitado ou vindo de outro caminho faz a
+  // busca pelo produto. Grupo de 2+ manda escolher venha de onde vier.
+  const doGrupo = (Array.isArray(variacoesDoGrupo) ? variacoesDoGrupo : [])
+    .map(String).filter((id) => /^ML[A-Z]\d/i.test(id) && !/^ML[A-Z]U/i.test(id));
+
+  if (doGrupo.length > 1 || /^ML[A-Z]U\d+$/i.test(String(itemId))) {
     try {
       estadoFicha.token = estadoFicha.token || await tokenDoML();
       if (!geracaoVigente(geracao)) return;
-      await escolherVariacao(itemId, body, geracao, signal);
+      await escolherVariacao(itemId, body, geracao, signal, doGrupo);
     } catch (e) {
       if (!geracaoVigente(geracao) || (e && e.name === 'AbortError')) return;
       renderPainel('ficha-ia-body', { estado: 'falha', dados: null, campos: [], placar: { preenchidos: 0, total: 0 } });
