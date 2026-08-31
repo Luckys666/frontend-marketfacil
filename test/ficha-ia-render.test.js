@@ -185,10 +185,14 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   const bloco = html.slice(html.indexOf('fia-nova'));
   check('nasce DESMARCADA', bloco.indexOf('checked') === -1 || bloco.indexOf('data-nova') < bloco.indexOf('checked'),
     bloco.slice(0, 200));
-  // O botão conta o que está MARCADO. A palavra nova nasce desmarcada, então não entra no
-  // número — e o bloco dela abre em "(0)" até o vendedor escolher.
-  check('o "aplicar tudo" conta só o que nasce marcado', /Aplicar tudo que está marcado[\s\S]{0,60}\(2\)/.test(html), txt.slice(0, 300));
-  check('o bloco das palavras novas abre em zero', /Aplicar as palavras marcadas[\s\S]{0,60}\(0\)/.test(html), txt.slice(0, 300));
+  // Desde 31/08 tudo nasce marcado: o vendedor confere e desmarca o que discordar. O botão
+  // conta as 4 (3 com evidência + 1 palavra nova) e recalcula a cada marcar/desmarcar.
+  // 3, não 4: são 2 com evidência + 1 palavra nova. A "Cor" é campo que muda o link, então
+  // fica fora do lote — e o número do botão prova isso sem precisar de outra asserção.
+  check('o "aplicar tudo" conta tudo que está marcado, menos o campo caro',
+    /Aplicar tudo que está marcado[\s\S]{0,80}\(3\)/.test(html), txt.slice(0, 300));
+  check('e a palavra nova nasce marcada', /fia-check-nova[^>]*checked/.test(html), html.slice(html.indexOf('fia-check-nova'), html.indexOf('fia-check-nova') + 120));
+  check('cada bloco tem marcar/desmarcar todos', /Marcar todos[\s\S]{0,200}Desmarcar todos/.test(html));
 }
 
 console.log('\n== render: nada passou na régua != falha ==');

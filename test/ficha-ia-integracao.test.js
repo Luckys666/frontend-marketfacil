@@ -132,8 +132,8 @@ console.log('\n== #2 a descrição do /api/fetch-item é IRMÃ do body ==');
     // São dois: `click` (aplicar) e `change` (recontar os botões ao marcar/desmarcar).
     // O que importa é que 3 chamadas não virem 6 listeners — aí um clique salvaria em
     // duplicata.
-    check('3 chamadas não empilham listener', ligados.length === 2, ligados.join(','));
-    check('e são um de cada tipo', ligados.includes('click') && ligados.includes('change'), ligados.join(','));
+    check('3 chamadas não empilham listener', ligados.length === 3, ligados.join(','));
+    check('e são um de cada tipo', ['click','change','input'].every((t) => ligados.includes(t)), ligados.join(','));
   }
 
   console.log('\n== #5 o retry nunca escreve no anúncio errado ==');

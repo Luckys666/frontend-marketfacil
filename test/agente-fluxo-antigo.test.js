@@ -89,15 +89,22 @@ console.log('\n== a régua ficou no servidor, não no bundle público ==');
   check('o front não filtra palavra por categoria', !/categoria\s*===\s*['\"]/.test(ficha));
 }
 
-console.log('\n== o lote nunca leva palavra que o anúncio não diz (D9) ==');
+// ⚠️ A régua do D9 MUDOU em 31/08, por decisão do Lucas: "o usuário só quer conferir e
+// aplicar. o que estiver errado eles vão desmarcar". Tudo nasce marcado.
+//
+// O que protege o vendedor não é mais o checkbox vazio — é a tela dizer DE ONDE vem cada
+// valor (o bloco separado, o aviso no topo dele, o "porquê" na linha do palpite) e o campo
+// que muda o link continuar fora de qualquer aplicação em lote.
+console.log('\n== o que muda o link do anúncio nunca entra em lote ==');
 {
   const ficha = fs.readFileSync(path.join(__dirname, '..', 'js', 'ficha-ia.js'), 'utf8');
-  check('o seletor do lote exclui a classe da palavra nova',
-    /fia-check:not\(\.fia-check-nova\)/.test(ficha), 'marcadosNoLote precisa do :not()');
-  check('e ainda confere o data-nova como segunda trava',
-    /dataset\.nova/.test(ficha));
-  check('a linha da palavra nova não nasce com checked',
-    !/fia-check-nova[^>]*checked/.test(ficha));
+  check('a seção dos campos caros é renderizada SEM checkbox',
+    /secao\('⚠️ Só um a um', sohUmAUm, false/.test(ficha), 'o terceiro argumento é comCheckbox');
+  check('e a barra do topo diz quantos ficaram de fora',
+    /ficam de fora|fica de fora/.test(ficha));
+  check('a palavra nova continua num bloco separado, com o aviso da origem',
+    /fia-secao-novas[\s\S]{0,400}não diz nenhuma delas/.test(ficha));
+  check('e o palpite mostra em que a IA se baseou', /fia-porque/.test(ficha));
 }
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');

@@ -203,11 +203,12 @@ const RESPOSTA_B = {
       JSON.stringify(enviado));
   }
 
-  console.log('\n== a palavra nova nasce desmarcada, e é isso que a protege (D9) ==');
+  console.log('\n== tudo nasce marcado; o vendedor DESMARCA o que estiver errado ==');
   {
-    // O desenho mudou em 31/08: agora existe "aplicar tudo", e a palavra nova PODE entrar
-    // nele — desde que o vendedor marque. A trava do D9 não é ficar fora do botão, é NASCER
-    // DESMARCADA: nada afirma característica do produto por inércia.
+    // Régua invertida em 31/08: "o usuário só quer conferir e aplicar. o que estiver errado
+    // eles vão desmarcar". O que protege deixou de ser o checkbox vazio e passou a ser a
+    // tela dizer de onde vem cada valor — bloco separado, aviso da origem, e o campo que
+    // muda o link fora de qualquer lote.
     const MISTO = {
       ok: true,
       sugestoes: [{ id: 'MATERIAL', acao: 'preencher', valor: 'Aco inox', origens: [], palavras_novas: ['inox'], caracteres: 8 }],
@@ -222,11 +223,10 @@ const RESPOSTA_B = {
       await M.abrirFichaIA('MLB1111111111');
       const body = el('ficha-ia-body');
 
-      check('a palavra nova nasce desmarcada', body.querySelector('.fia-check-nova').checked === false);
+      check('a palavra nova nasce MARCADA', body.querySelector('.fia-check-nova').checked === true);
       await body.querySelector('.fia-aplicar-tudo').click();
-      const enviado = ((puts[0] || {}).corpo || {}).attributes || [];
-      check('sem marcar, o aplicar tudo não a leva',
-        enviado.length === 1 && enviado[0].id === 'MATERIAL', JSON.stringify(enviado));
+      const ids = (((puts[0] || {}).corpo || {}).attributes || []).map((a) => a.id).sort();
+      check('um clique aplica as duas', ids.join() === 'BRAND,MATERIAL', ids.join());
     }
     {
       const { rotas, puts } = mundo({ sugestoes: { MLB1111111111: MISTO } });
@@ -234,13 +234,30 @@ const RESPOSTA_B = {
       await M.abrirFichaIA('MLB1111111111');
       const body = el('ficha-ia-body');
 
+      // o vendedor conferiu e discordou desta
       const cn = body.querySelector('.fia-check-nova');
-      cn.checked = true;
+      cn.checked = false;
       await cn.dispatchEvent({ type: 'change', target: cn });
       await body.querySelector('.fia-aplicar-tudo').click();
 
-      const ids = (((puts[0] || {}).corpo || {}).attributes || []).map((a) => a.id).sort();
-      check('marcada pelo vendedor, ela entra', ids.join() === 'BRAND,MATERIAL', ids.join());
+      const ids = (((puts[0] || {}).corpo || {}).attributes || []).map((a) => a.id);
+      check('desmarcada, ela não vai', ids.join() === 'MATERIAL', ids.join());
+    }
+    {
+      // "Desmarcar todos" e "Marcar todos" no bloco
+      const { rotas } = mundo({ sugestoes: { MLB1111111111: MISTO } });
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
+      const bloco = body.querySelectorAll('.fia-secao').find((s) => (s.getAttribute('data-secao') || '') === 'novas');
+
+      await bloco.querySelectorAll('.fia-marcar').find((b) => b.dataset.marcar === '0').click();
+      check('"Desmarcar todos" limpa o bloco',
+        bloco.querySelectorAll('.fia-check-nova').every((c) => !c.checked));
+
+      await bloco.querySelectorAll('.fia-marcar').find((b) => b.dataset.marcar === '1').click();
+      check('"Marcar todos" traz de volta',
+        bloco.querySelectorAll('.fia-check-nova').every((c) => c.checked));
     }
   }
 
@@ -596,13 +613,13 @@ const RESPOSTA_B = {
 
       const btTudo = body.querySelector('.fia-aplicar-tudo');
       check('o botão de aplicar tudo aparece', !!btTudo);
-      check('e conta só o que nasce marcado (2, não 4)',
-        /\(2\)/.test(btTudo.textContent), btTudo.textContent);
+      // Tudo nasce marcado desde 31/08 — o vendedor confere e desmarca o que discordar.
+      check('conta tudo que está marcado (as 4)', /\(4\)/.test(btTudo.textContent), btTudo.textContent);
 
       await btTudo.click();
       check('um clique, um PUT só', puts.length === 1, String(puts.length));
       const ids = ((puts[0] || {}).attributes || []).map((a) => a.id).sort();
-      check('com os dois campos marcados juntos', ids.join() === 'BRAND,MATERIAL', ids.join());
+      check('com os quatro campos de uma vez', ids.join() === 'AGID,BRAND,MATERIAL,MPN', ids.join());
     }
     {
       // marcar um palpite muda o número do botão e o que ele salva
@@ -612,15 +629,15 @@ const RESPOSTA_B = {
       const body = el('ficha-ia-body');
 
       const checkPalpite = body.querySelector('.fia-secao-palpites .fia-check-nova');
-      checkPalpite.checked = true;
+      checkPalpite.checked = false;
       await checkPalpite.dispatchEvent({ type: 'change', target: checkPalpite });
 
       const btTudo = body.querySelector('.fia-aplicar-tudo');
-      check('o número sobe quando o vendedor marca um palpite', /\(3\)/.test(btTudo.textContent), btTudo.textContent);
+      check('o número CAI quando o vendedor desmarca um palpite', /\(3\)/.test(btTudo.textContent), btTudo.textContent);
 
       await btTudo.click();
       const ids = ((puts[0] || {}).attributes || []).map((a) => a.id).sort();
-      check('e o palpite marcado entra no PUT', ids.join() === 'AGID,BRAND,MATERIAL', ids.join());
+      check('e o desmarcado fica de fora do PUT', ids.join() === 'BRAND,MATERIAL,MPN', ids.join());
     }
     {
       // botão de um bloco só salva o daquele bloco

@@ -108,3 +108,11 @@
 .kw-wrapper .fia-tudo-nota { font-size: .76rem; color: var(--text-muted, #64748b); }
 .kw-wrapper .fia-aplicar-secao { display: block; width: 100%; margin-top: 4px; padding: 9px 14px; font-size: .84rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); border-radius: 7px; background: #fff; color: var(--blue, #0066ff); cursor: pointer; }
 .kw-wrapper .fia-aplicar-secao:hover { background: #eff6ff; }
+
+/* Marcar/desmarcar o bloco inteiro: o vendedor vem conferir, não montar seleção. */
+.kw-wrapper .fia-secao-acoes { display: flex; gap: 8px; margin-top: 10px; }
+.kw-wrapper .fia-marcar { padding: 4px 10px; font-size: .74rem; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--text-muted, #64748b); cursor: pointer; }
+.kw-wrapper .fia-marcar:hover { border-color: var(--blue, #0066ff); color: var(--blue, #0066ff); }
+/* Campo que ficou com o vendedor: mesma linha das outras, só sem valor sugerido. */
+.kw-wrapper .fia-vazia { border-style: dashed; }
+.kw-wrapper select.fia-valor { appearance: auto; background: #fff; }

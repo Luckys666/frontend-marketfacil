@@ -391,7 +391,7 @@ function linhaSugestao(item, comCheckbox) {
         ${selosDeTamanho(item)}
       </div>
       ${antesDepois}
-      <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" value="${escapeHtml(item.valor)}" />
+      ${entradaDaLinha(item)}
       ${ganho}
       <div class="fia-evidencia">${origens}</div>
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}">Aplicar só este</button>
@@ -413,12 +413,12 @@ function linhaPalpite(item) {
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
       <div class="fia-linha-topo">
-        <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" />
+        <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.name || item.id)}</span>
         <span class="fia-marca">🤔</span>
         ${selosDeTamanho(item)}
       </div>
-      <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" data-nova="1" value="${escapeHtml(item.valor)}" />
+      ${entradaDaLinha(item, ' data-nova="1"')}
       ${ganho}
       ${item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : ''}
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
@@ -431,12 +431,12 @@ function linhaPalavraNova(item) {
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
       <div class="fia-linha-topo">
-        <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" />
+        <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
         <span class="fia-marca">🔍</span>
         ${selosDeTamanho(item)}
       </div>
-      <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" data-nova="1" value="${escapeHtml(item.valor)}" />
+      ${entradaDaLinha(item, ' data-nova="1"')}
       <div class="fia-ganho">+ "${escapeHtml(item.palavra)}" · entra em ${Number(item.buscas) || 0} buscas</div>
       <div class="fia-combos">${combos}</div>
       <div class="fia-alerta-nova">⚠️ Seu anúncio não diz isso hoje.</div>
@@ -456,6 +456,37 @@ function linhaPalavraNova(item) {
 function aceitaMaisTexto(campo) {
   const t = String((campo && campo.value_type) || 'string');
   return t !== 'list' && t !== 'boolean' && t !== 'number' && t !== 'number_unit';
+}
+
+/**
+ * Campo de escolha vira LISTA na tela, não caixa de texto.
+ *
+ * Digitar num campo que só aceita opção da categoria é convite para o ML recusar na hora de
+ * salvar — foi o que aconteceu com `Forma de caimento = "Slim"`, que não é uma das opções
+ * (Justo, Solto…). Com a lista, o vendedor corrige na tela e só existe valor válido.
+ */
+function campoDeEscolha(campo) {
+  const t = String((campo && campo.value_type) || '');
+  if (t === 'boolean') return [{ id: '242085', name: 'Sim' }, { id: '242084', name: 'Não' }];
+  if (t === 'list' && Array.isArray(campo.values) && campo.values.length) return campo.values;
+  return null;
+}
+
+function entradaDaLinha(item, extraAttrs) {
+  const opcoes = campoDeEscolha(item.campo);
+  const attrs = `class="fia-valor" data-campo="${escapeHtml(item.id)}"${extraAttrs || ''}`;
+  if (!opcoes) {
+    return `<input type="text" ${attrs} value="${escapeHtml(item.valor)}" />`;
+  }
+  const atual = chaveTexto(item.valor);
+  // Uma opção vazia no topo: sem ela, o valor proposto vira o único caminho e o vendedor
+  // não consegue deixar o campo em branco depois de abrir a lista.
+  const linhas = opcoes.map((o) => {
+    const nome = String((o && o.name) || '');
+    const sel = chaveTexto(nome) === atual ? ' selected' : '';
+    return `<option value="${escapeHtml(nome)}"${sel}>${escapeHtml(nome)}</option>`;
+  }).join('');
+  return `<select ${attrs}><option value="">— escolher —</option>${linhas}</select>`;
 }
 
 function selosDeTamanho(item) {
@@ -557,7 +588,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   if (nadaPraFazer) {
     el.innerHTML = cabecalho + blocoErro('🔎', 'Não achei base no texto deste anúncio',
       'O título e a descrição não dizem o que preencher nestes campos. Complete a descrição do anúncio e tente de novo.', true)
-      + secaoSemBase(semBase);
+      + secaoSemBase(semBase, campos);
     return;
   }
 
@@ -566,8 +597,20 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
    * Sem isso, aceitar as 4 sugestões de um bloco era clicar em "Aplicar só este" quatro
    * vezes — e o vendedor abandonava no meio (Lucas, 31/08).
    */
+  /**
+   * O rodapé de cada bloco: marcar/desmarcar de uma vez, e aplicar.
+   *
+   * O vendedor vem pra CONFERIR e aplicar, não pra montar a seleção clique a clique
+   * (Lucas, 31/08) — então tudo nasce marcado e ele desmarca o que estiver errado. Os dois
+   * atalhos existem pro caso oposto: quando ele quer olhar um bloco inteiro com calma,
+   * desmarca tudo e marca só o que conferiu.
+   */
   const botaoDaSecao = (chave, n, rotulo, marcados) => (n
-    ? `<button type="button" class="fia-aplicar-secao" data-secao="${chave}">${rotulo} <span class="fia-mono" data-conta="secao">(${marcados === undefined ? n : marcados})</span></button>`
+    ? `<div class="fia-secao-acoes">
+         <button type="button" class="fia-marcar" data-marcar="1">Marcar todos</button>
+         <button type="button" class="fia-marcar" data-marcar="0">Desmarcar todos</button>
+       </div>
+       <button type="button" class="fia-aplicar-secao" data-secao="${chave}">${rotulo} <span class="fia-mono" data-conta="secao">(${marcados === undefined ? n : marcados})</span></button>`
     : '');
 
   const secao = (titulo, itens, comCheckbox, extra, chave, rotuloBotao) => itens.length ? `
@@ -583,7 +626,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <div class="fia-secao-titulo">🔍 Palavras novas — você decide <span class="fia-mono">(${palavrasNovas.length})</span></div>
       <p class="fia-aviso">Estas são buscas reais que seu anúncio não alcança hoje — mas ele não diz nenhuma delas. Marque só o que é verdade sobre o seu produto.</p>
       ${palavrasNovas.map(linhaPalavraNova).join('')}
-      ${botaoDaSecao('novas', palavrasNovas.length, 'Aplicar as palavras marcadas', 0)}
+      ${botaoDaSecao('novas', palavrasNovas.length, 'Aplicar as palavras marcadas')}
     </div>` : '';
 
   // Lista 3: o anúncio não diz, a IA acha. Campo vazio não indexa nada, então vale propor —
@@ -593,7 +636,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <div class="fia-secao-titulo">🤔 A IA acha que é isso — confirme <span class="fia-mono">(${palpites.length})</span></div>
       <p class="fia-aviso">Seu anúncio não diz nada sobre estes campos, então isto é o que costuma valer para um produto assim. Campo em branco não aparece em busca nenhuma — vale conferir e marcar o que estiver certo.</p>
       ${palpites.map(linhaPalpite).join('')}
-      ${botaoDaSecao('palpites', palpites.length, 'Aplicar os marcados', 0)}
+      ${botaoDaSecao('palpites', palpites.length, 'Aplicar os marcados')}
     </div>` : '';
 
   /**
@@ -604,11 +647,11 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
    * "aplicar tudo" não pode carregar esse tipo de consequência escondida. Esses campos
    * ficam visíveis logo abaixo, com o selo dizendo que estão fora deste botão.
    */
-  // O número no botão conta o que está MARCADO, não quantas linhas existem — e é recalculado
-  // a cada clique no checkbox (`recontarBotoes`). Prometer "(12)" e salvar 2 porque as
-  // outras nasceram desmarcadas seria surpresa na direção errada.
-  const totalTudo = comEvidencia.length + trocas.length;
-  const barraTudo = (comEvidencia.length + trocas.length + palavrasNovas.length + palpites.length) ? `
+  // Tudo nasce marcado (31/08), então o número de partida é o total das quatro listas — e
+  // ele é recalculado a cada marcar/desmarcar (`recontarBotoes`). O que fica fora é só o
+  // campo que muda o link, que nem checkbox tem.
+  const totalTudo = comEvidencia.length + trocas.length + palavrasNovas.length + palpites.length;
+  const barraTudo = totalTudo ? `
     <div class="fia-tudo-barra">
       <button type="button" class="fia-aplicar-tudo">Aplicar tudo que está marcado <span class="fia-mono" data-conta="tudo">(${totalTudo})</span></button>
       ${sohUmAUm.length ? `<span class="fia-tudo-nota">${sohUmAUm.length} ${sohUmAUm.length === 1 ? 'campo fica' : 'campos ficam'} de fora — ${sohUmAUm.length === 1 ? 'muda' : 'mudam'} o link do anúncio</span>` : ''}
@@ -623,17 +666,41 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
     + secao('⚠️ Só um a um', sohUmAUm, false,
         '<p class="fia-aviso">Mexer nestes campos muda o link do anúncio e ele perde a exposição que tinha — recomeça como se fosse novo. Só vale se estiver mesmo errado. Por isso ficam fora do "aplicar tudo" e não têm marcação em lote.</p>',
         'caros')
-    + secaoSemBase(semBase);
+    + secaoSemBase(semBase, campos);
 }
 
 // Campo sem base é RESULTADO. Sumir daqui faz o vendedor achar que a ferramenta não olhou.
-function secaoSemBase(lista) {
+/**
+ * Campo que ninguém conseguiu preencher — mas o vendedor consegue, e é aqui.
+ *
+ * Antes esta seção era só uma fileira de chips com o nome dos campos: dizia o que faltava e
+ * não deixava fazer nada a respeito, empurrando o vendedor pro painel do ML no meio do
+ * trabalho. Agora cada um vem com a entrada certa (lista onde é lista, texto onde é texto),
+ * e o que ele digitar entra no mesmo "aplicar" do resto (Lucas, 31/08).
+ */
+function secaoSemBase(lista, campos) {
   if (!lista || !lista.length) return '';
+  const porId = new Map((campos || []).map((c) => [String(c.id), c]));
+  const linhas = lista.map((c) => {
+    const campo = porId.get(String(c.id)) || c;
+    const item = { id: c.id, valor: '', campo, caracteres: 0 };
+    return `
+      <div class="fia-linha fia-vazia" data-campo="${escapeHtml(c.id)}">
+        <div class="fia-linha-topo">
+          <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(c.id)}" data-nova="1" />
+          <span class="fia-nome">${escapeHtml(c.name || c.id)}</span>
+          ${selosDeTamanho(item)}
+        </div>
+        ${entradaDaLinha(item, ' data-nova="1"')}
+      </div>`;
+  }).join('');
+
   return `
-    <div class="fia-secao fia-sem-base">
+    <div class="fia-secao fia-sem-base" data-secao="vazios">
       <div class="fia-secao-titulo">— Estes ficaram com você <span class="fia-mono">(${lista.length})</span></div>
-      <p class="fia-aviso">Nem o anúncio diz, nem deu pra supor com segurança. São dados que só você tem — e cada um preenchido é mais uma busca em que o anúncio entra.</p>
-      ${lista.map((c) => `<span class="fia-chip">${escapeHtml(c.name || c.id)}</span>`).join('')}
+      <p class="fia-aviso">Nem o anúncio diz, nem deu pra supor com segurança. São dados que só você tem — e cada um preenchido é mais uma busca em que o anúncio entra. Preencha aqui mesmo e aplique junto com o resto.</p>
+      ${linhas}
+      <button type="button" class="fia-aplicar-secao" data-secao="vazios">Aplicar os que você preencheu <span class="fia-mono" data-conta="secao">(0)</span></button>
     </div>`;
 }
 
@@ -1173,6 +1240,33 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
  * desmarcadas, a surpresa é na direção errada. Também fecha o caso inverso: desmarcar tudo
  * e o botão continuar prometendo o número antigo.
  */
+/**
+ * O vendedor mexeu num valor: atualiza o contador daquela linha e, se ele escreveu num
+ * campo que estava vazio, marca a linha sozinho.
+ *
+ * Marcar sozinho é o que faz a seção "ficaram com você" valer a pena: ele digita e aplica,
+ * sem ter que lembrar de clicar num quadradinho que não pediu.
+ */
+function aoEditarValor(entrada) {
+  const linha = typeof entrada.closest === 'function' ? entrada.closest('.fia-linha') : null;
+  if (!linha) return;
+  const valor = String(entrada.value || '').trim();
+
+  const alvo = linha.querySelector('.fia-chars');
+  if (alvo) alvo.textContent = valor.length + '/30';
+  const sobra = linha.querySelector('.fia-sobra');
+  if (sobra) {
+    const resta = 30 - valor.length;
+    sobra.textContent = resta > 6 ? 'cabe mais ' + resta : '';
+    sobra.hidden = resta <= 6;
+  }
+
+  const marca = linha.querySelector('.fia-check, .fia-check-nova');
+  if (marca && valor && !marca.checked) marca.checked = true;
+  if (marca && !valor) marca.checked = false;
+  recontarBotoes();
+}
+
 function recontarBotoes() {
   const body = document.getElementById('ficha-ia-body');
   if (!body) return;
@@ -1196,9 +1290,20 @@ function ligarBotoes() {
   // empilharia listener no mesmo elemento a cada volta.
   body.addEventListener('change', (ev) => {
     const a = ev && ev.target;
-    if (a && a.classList && (a.classList.contains('fia-check') || a.classList.contains('fia-check-nova'))) {
+    if (!a || !a.classList) return;
+    if (a.classList.contains('fia-check') || a.classList.contains('fia-check-nova')) {
       recontarBotoes();
+      return;
     }
+    // troca numa lista de opções conta como edição
+    if (a.classList.contains('fia-valor')) aoEditarValor(a);
+  });
+
+  // O contador de caracteres acompanha o que o vendedor digita: ele é o placar do orçamento
+  // de 30, e um número parado enquanto o texto muda é pior que número nenhum.
+  body.addEventListener('input', (ev) => {
+    const a = ev && ev.target;
+    if (a && a.classList && a.classList.contains('fia-valor')) aoEditarValor(a);
   });
   body.addEventListener('click', async (ev) => {
     const alvo = ev.target;
@@ -1212,6 +1317,24 @@ function ligarBotoes() {
     }
     if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
     if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
+
+    // Marcar/desmarcar o bloco inteiro. O vendedor vem conferir e aplicar: quando ele quer
+    // olhar com calma, desmarca tudo e marca só o que conferiu.
+    if (alvo.classList.contains('fia-marcar')) {
+      const bloco = typeof alvo.closest === 'function' ? alvo.closest('.fia-secao') : null;
+      const ligar = alvo.dataset.marcar === '1';
+      if (bloco) {
+        bloco.querySelectorAll('.fia-check, .fia-check-nova').forEach((c) => {
+          // Campo ainda vazio não tem o que aplicar — marcar seria promessa vazia.
+          const linha = typeof c.closest === 'function' ? c.closest('.fia-linha') : null;
+          const entrada = linha ? linha.querySelector('.fia-valor') : null;
+          const temValor = !!(entrada && String(entrada.value || '').trim());
+          c.checked = ligar && temValor;
+        });
+        recontarBotoes();
+      }
+      return;
+    }
 
     // Um bloco de cada vez: o botão fica DENTRO da seção, então o escopo é o `closest`.
     if (alvo.classList.contains('fia-aplicar-secao')) {
@@ -1275,8 +1398,11 @@ function marcadosEm(raiz) {
     // Um campo, um valor: se duas linhas do mesmo campo estiverem marcadas, vale a primeira
     // — mandar as duas faz a ML gravar uma e descartar a outra em silêncio.
     if (!id || vistos.has(id)) return;
+    const valor = valorDaLinha(c);
+    // Marcado mas sem valor não vira PUT: seria mandar campo vazio pro ML.
+    if (!valor) return;
     vistos.add(id);
-    itens.push({ id, valor: valorDaLinha(c) });
+    itens.push({ id, valor });
   });
   return itens;
 }
