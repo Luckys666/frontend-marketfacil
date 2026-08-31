@@ -82,7 +82,7 @@ console.log('\n== P5 — se um bloco é perigoso, a tela precisa dizer que os ou
   const { body } = pintar();
   const barra = body.querySelector('.fia-tudo-barra');
   check('a barra do "aplicar tudo" afirma que o resto é seguro',
-    barra && /nenhum[^.]*muda o link/i.test(barra.textContent), barra && barra.textContent);
+    barra && /(nada|nenhum)[^.]*muda o link/i.test(barra.textContent), barra && barra.textContent);
 }
 
 console.log('\n== P6 — "aplicar tudo" avisa quando está substituindo o que o vendedor escreveu ==');
@@ -90,7 +90,7 @@ console.log('\n== P6 — "aplicar tudo" avisa quando está substituindo o que o 
   const { body } = pintar();
   const barra = body.querySelector('.fia-tudo-barra');
   check('diz quantos substituem valor existente',
-    barra && /1 que substitui/i.test(barra.textContent), barra && barra.textContent);
+    barra && /\b1 substitui\b/i.test(barra.textContent), barra && barra.textContent);
 }
 {
   const semTroca = { ...DADOS, sugestoes: DADOS.sugestoes.filter((s) => s.acao !== 'trocar') };
@@ -314,6 +314,36 @@ console.log('\n== P19 — o campo do erro casava por pedaço do nome ==');
     check('com a ficha aberta, o campo de colar link some', externo.hidden === true, String(externo.hidden));
     M.voltarParaLista();
     check('e volta quando ele volta pra lista', externo.hidden === false, String(externo.hidden));
+  }
+
+  console.log('\n== a tela fala como gente (31/08, passe de texto) ==');
+  {
+    const { body, txt } = pintar();
+
+    // O travessão é a pontuação favorita de texto gerado, e a tela tinha um em quase todo
+    // aviso. Some junto o "— escolher —" do select.
+    check('nenhum travessão no que o vendedor lê', !txt.includes('—'),
+      (txt.match(/[^.]{0,40}—[^.]{0,40}/g) || []).join(' // '));
+
+    // Emoji em título de seção é decoração; o ícone que fica é o da linha, que diz de onde
+    // veio o valor.
+    const titulos = body.querySelectorAll('.fia-secao-titulo').map((n) => n.textContent.trim());
+    const comEmoji = titulos.filter((t) => /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(t));
+    check('título de seção sem emoji', comEmoji.length === 0, comEmoji.join(' // '));
+
+    // Cinco tarjas amarelas tiram do amarelo o significado que ele precisa ter na única
+    // seção que pode custar caro.
+    const comFundo = body.querySelectorAll('.fia-aviso').filter((n) => /fia-aviso-risco/.test(n.getAttribute('class') || ''));
+    check('só a seção de risco usa a tarja amarela', comFundo.length === 1, String(comFundo.length));
+    check('e é justamente a que muda o link',
+      comFundo[0] && /link/i.test(comFundo[0].textContent), comFundo[0] && comFundo[0].textContent);
+
+    // Aviso sem risco não pode ter cor de alerta no CSS.
+    const fs = require('fs');
+    const path = require('path');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'css', 'ficha-ia.css'), 'utf8');
+    check('o aviso comum não tem fundo de alerta',
+      !/\.fia-aviso \{[^}]*background/.test(css), (css.match(/\.fia-aviso \{[^}]*\}/) || [''])[0]);
   }
 
   console.log('\n== o card é UM só, no padrão do app (31/08, noite) ==');

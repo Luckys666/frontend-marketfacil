@@ -563,7 +563,7 @@ const RESPOSTA_B = {
     await M.abrirFichaIA('MLB1111111111');
     const t = el('ficha-ia-body').textContent;
     check('item sem categoria não vira /attributes/undefined',
-      /n[ãa]o deu pra consultar|instabilidade/i.test(t), t.slice(0, 90));
+      /n[ãa]o consegui analisar|n[ãa]o deu pra/i.test(t), t.slice(0, 90));
   }
 
   console.log('\n== aplicar por bloco e aplicar tudo ==');
@@ -689,7 +689,7 @@ const RESPOSTA_B = {
     await M.abrirFichaIA('MLB1111111111');
     const body = el('ficha-ia-body');
 
-    check('a tela avisa quantos ficam de fora', /fica de fora|ficam de fora/.test(body.textContent), body.textContent.slice(0, 200));
+    check('a tela avisa quantos ficam de fora', /ficou de fora|ficaram de fora/.test(body.textContent), body.textContent.slice(0, 200));
     await body.querySelector('.fia-aplicar-tudo').click();
     const ids = ((puts[0] || {}).attributes || []).map((a) => a.id);
     check('o campo que muda o link NÃO entra no aplicar tudo', ids.join() === 'MATERIAL', ids.join());

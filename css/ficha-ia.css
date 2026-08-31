@@ -76,7 +76,6 @@
 .kw-wrapper .fia-check-nova { width: 16px; height: 16px; accent-color: #8b5cf6; cursor: pointer; }
 .kw-wrapper .fia-combos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
 .kw-wrapper .fia-combo { font-size: .7rem; padding: 2px 8px; border-radius: 999px; background: #f5f3ff; color: #6d28d9; }
-.kw-wrapper .fia-alerta-nova { margin-top: 6px; font-size: .73rem; color: #92400e; }
 .kw-wrapper .fia-placar-tokens { font-size: .82rem; font-weight: 600; color: var(--green, #00d68f); cursor: help; }
 
 .kw-wrapper .fia-aplicar-um { margin-top: 8px; padding: 5px 12px; font-size: .76rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); background: #fff; color: var(--blue, #0066ff); border-radius: 6px; cursor: pointer; }
@@ -84,7 +83,10 @@
 .kw-wrapper .fia-lote { display: block; width: 100%; padding: 12px; margin: 4px 0 20px; font-size: .92rem; font-weight: 700; border: 0; border-radius: 8px; background: var(--blue, #0066ff); color: #fff; cursor: pointer; }
 .kw-wrapper .fia-lote:hover { background: #0052cc; }
 
-.kw-wrapper .fia-aviso { font-size: .78rem; line-height: 1.45; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
+/* A dica de uma seção é dica, não alarme. Cinco tarjas amarelas na mesma tela tiram do
+   amarelo o significado que ele precisa ter na única seção que pode custar caro. */
+.kw-wrapper .fia-aviso { font-size: .78rem; line-height: 1.45; color: var(--text-muted, #64748b); margin: 0 0 10px; }
+.kw-wrapper .fia-aviso-risco { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; }
 .kw-wrapper .fia-erro { font-size: .82rem; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
 .kw-wrapper .fia-chip { display: inline-block; font-size: .76rem; padding: 3px 9px; margin: 0 5px 5px 0; border-radius: 999px; background: var(--bg-subtle, #f1f5f9); color: var(--text-muted, #64748b); }
 

@@ -103,7 +103,7 @@ console.log('\n== o que muda o link do anúncio nunca entra em lote ==');
   check('e a barra do topo diz quantos ficaram de fora',
     /ficam de fora|fica de fora/.test(ficha));
   check('a palavra nova continua num bloco separado, com o aviso da origem',
-    /fia-secao-novas[\s\S]{0,400}não diz nenhuma delas/.test(ficha));
+    /fia-secao-novas[\s\S]{0,400}não diz isso hoje/.test(ficha));
   check('e o palpite mostra em que a IA se baseou', /fia-porque/.test(ficha));
 }
 

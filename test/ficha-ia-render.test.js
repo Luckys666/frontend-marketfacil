@@ -163,7 +163,7 @@ console.log('\n== render: sucesso ==');
   check('sem prometer que a IA não chuta (ela chuta agora)', !/n[ãa]o chuta/i.test(txt));
   check('não conta pro vendedor quantas a peneira descartou', !/descartad/i.test(txt));
   // 31/08: em vez de um botão de lote só, cada bloco tem o seu e existe um "aplicar tudo".
-  check('o botão de aplicar tudo existe', /Aplicar tudo que está marcado/i.test(txt), txt.slice(0, 160));
+  check('o botão de aplicar tudo existe', /Aplicar tudo/i.test(txt), txt.slice(0, 160));
   check('e cada bloco tem o seu botão', /Aplicar os marcados|Aplicar as/i.test(txt));
   check('avisa que o campo caro renomeia', /perde a exposi|muda o link/i.test(txt));
   check('nunca escreve "atributo"', !/atributo/i.test(txt), txt.slice(0, 200));
@@ -190,7 +190,7 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   // 3, não 4: são 2 com evidência + 1 palavra nova. A "Cor" é campo que muda o link, então
   // fica fora do lote — e o número do botão prova isso sem precisar de outra asserção.
   check('o "aplicar tudo" conta tudo que está marcado, menos o campo caro',
-    /Aplicar tudo que está marcado[\s\S]{0,80}\(3\)/.test(html), txt.slice(0, 300));
+    /Aplicar tudo[\s\S]{0,80}\(3\)/.test(html), txt.slice(0, 300));
   check('e a palavra nova nasce marcada', /fia-check-nova[^>]*checked/.test(html), html.slice(html.indexOf('fia-check-nova'), html.indexOf('fia-check-nova') + 120));
   check('cada bloco tem marcar/desmarcar todos', /Marcar todos[\s\S]{0,200}Desmarcar todos/.test(html));
 }
@@ -218,7 +218,7 @@ console.log('\n== palavra nova em campo que já tinha valor: soma, não substitu
   });
   const html = el('ficha-ia-body').innerHTML;
   const txt = el('ficha-ia-body').textContent;
-  check('diz que acrescenta ao que já está lá', /acrescenta ao que já está lá/i.test(txt), txt.slice(0, 300));
+  check('diz que acrescenta ao valor de hoje', /acrescenta a:/i.test(txt), txt.slice(0, 300));
   check('e mostra qual era o valor', /Inox/.test(txt));
   // Riscar diria que "Inox" está saindo, e não está.
   check('não risca o valor antigo', !/<s>[\s\S]{0,40}Inox/.test(html), html.slice(0, 400));
@@ -237,7 +237,7 @@ console.log('\n== palavra nova em campo que já tinha valor: soma, não substitu
     campos: CAMPOS,
     placar: { preenchidos: 2, total: 4 },
   });
-  check('campo vazio não fala em acrescentar', !/acrescenta ao que já está lá/i.test(el('ficha-ia-body').textContent));
+  check('campo vazio não fala em acrescentar', !/acrescenta a:/i.test(el('ficha-ia-body').textContent));
 }
 
 // Um campo recebe quantas palavras couberem nos 30. Enquanto a linha mostrava só a
@@ -268,7 +268,7 @@ console.log('\n== a linha mostra TODAS as palavras que entraram, e a soma das bu
   const txt = el('ficha-ia-body').textContent;
   check('diz quantas palavras entraram', /3 palavras/.test(txt), txt.slice(0, 300));
   check('e nomeia todas', /look/.test(txt) && /encontro/.test(txt) && /peca/.test(txt), txt.slice(0, 300));
-  check('com a soma das buscas, não só a da primeira', /entra em 7 buscas/.test(txt), txt.slice(0, 300));
+  check('com a soma das buscas, não só a da primeira', /7 buscas/.test(txt), txt.slice(0, 300));
 
   // Uma palavra só continua lendo como antes — plural forçado soaria errado.
   M.renderPainel('ficha-ia-body', {
@@ -286,7 +286,7 @@ console.log('\n== a linha mostra TODAS as palavras que entraram, e a soma das bu
     placar: { preenchidos: 2, total: 4 },
   });
   const um = el('ficha-ia-body').textContent;
-  check('uma palavra só não vira "1 palavras"', !/1 palavras/.test(um) && /entra em 4 buscas/.test(um), um.slice(0, 200));
+  check('uma palavra só não vira "1 palavras"', !/1 palavras/.test(um) && /4 buscas/.test(um), um.slice(0, 200));
 }
 
 console.log('\n== render: nada passou na régua != falha ==');
@@ -308,7 +308,7 @@ console.log('\n== render: falha NUNCA vira zero ==');
   const { M, el } = carregar();
   M.renderPainel('ficha-ia-body', { estado: 'falha', dados: null, campos: CAMPOS, placar: { preenchidos: 2, total: 4 } });
   const txt = el('ficha-ia-body').textContent;
-  check('diz que a consulta falhou', /n[ãa]o deu|n[ãa]o foi poss/i.test(txt), txt.slice(0, 200));
+  check('diz que a consulta falhou', /n[ãa]o consegui|n[ãa]o deu|n[ãa]o foi poss/i.test(txt), txt.slice(0, 200));
   check('oferece tentar de novo', /tentar de novo|tente de novo/i.test(txt));
   check('NÃO diz que não há campo pra melhorar', !/nenhum campo|tudo certo|nada a melhorar/i.test(txt));
 }
