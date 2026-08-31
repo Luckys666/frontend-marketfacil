@@ -156,7 +156,11 @@ console.log('\n== render: sucesso ==');
   check('mostra o valor de hoje na troca', html.includes('Panela Pressão Tramontina 3L'));
   check('mostra o valor novo', html.includes('Pressão Rápida'));
   check('campo sem base APARECE', txt.includes('Voltagem'));
-  check('e diz por que está vazio', /sem base|nenhum trecho/i.test(txt), txt.slice(0, 200));
+  // O texto mudou em 31/08: dizer "a IA não chuta fato de produto" virou mentira depois
+  // que a lista de palpites passou a chutar. Agora a seção explica o que sobrou pro
+  // vendedor — e por que vale preencher.
+  check('e diz por que está vazio', /ficaram com voc|nem o an[úu]ncio diz/i.test(txt), txt.slice(0, 200));
+  check('sem prometer que a IA não chuta (ela chuta agora)', !/n[ãa]o chuta/i.test(txt));
   check('não conta pro vendedor quantas a peneira descartou', !/descartad/i.test(txt));
   check('o botão de lote existe', /aceitar tudo|salvar os/i.test(txt));
   check('avisa que o campo caro renomeia', /perde a exposi|muda o link/i.test(txt));
