@@ -129,18 +129,40 @@ class No {
     const l = this._ouvintes.get(tipo) || [];
     const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1);
   }
-  /** Sobe a árvore como o browser: o handler delegado no #ficha-ia-body precisa disso. */
+  /**
+   * Sobe a árvore como o browser: o handler delegado no #ficha-ia-body precisa disso.
+   * E chega ao DOCUMENT no fim — sem isso, `document.addEventListener('click', ...)` era
+   * um no-op no teste, que foi exatamente como o botão "Voltar para a lista" ficou morto
+   * na tela sem nenhuma asserção reclamar.
+   */
   dispatchEvent(ev) {
     const pendentes = [];
     let n = this;
+    let ultimo = this;
     while (n) {
       for (const fn of (n._ouvintes.get(ev.type) || [])) pendentes.push(fn.call(n, ev));
+      ultimo = n;
       n = n.parentNode;
     }
+    const doc = ultimo && ultimo.__documento;
+    if (doc) for (const fn of (doc._ouvintes.get(ev.type) || [])) pendentes.push(fn.call(doc, ev));
     return Promise.all(pendentes.filter((p) => p && typeof p.then === 'function'));
   }
-  /** Devolve promise: os handlers do painel são async e o teste precisa esperar. */
-  click() { return this.dispatchEvent({ type: 'click', target: this }); }
+  /**
+   * Devolve promise: os handlers do painel são async e o teste precisa esperar.
+   * O evento carrega `preventDefault`/`stopPropagation` porque o browser carrega — sem
+   * eles, um handler perfeitamente normal explode só aqui, e o teste vira ruído.
+   */
+  click() {
+    const ev = {
+      type: 'click',
+      target: this,
+      defaultPrevented: false,
+      preventDefault() { ev.defaultPrevented = true; },
+      stopPropagation() { ev.propagacaoParada = true; },
+    };
+    return this.dispatchEvent(ev);
+  }
   focus() {}
 }
 
@@ -228,6 +250,7 @@ function criarDocumento() {
     body,
     head: new No('head'),
     _reg: reg,
+    _ouvintes: new Map(),
     getElementById(id) {
       if (!reg[id]) { const n = new No('div'); n.setAttribute('id', id); body.appendChild(n); reg[id] = n; }
       return reg[id];
@@ -235,8 +258,18 @@ function criarDocumento() {
     createElement: (tag) => new No(tag),
     querySelector: (sel) => body.querySelector(sel),
     querySelectorAll: (sel) => body.querySelectorAll(sel),
-    addEventListener() {},
+    // Registra de verdade. Como no-op, ele engolia toda delegação feita no document — e
+    // um botão ligado assim ficava morto sem nenhum teste perceber.
+    addEventListener(tipo, fn) {
+      if (!doc._ouvintes.has(tipo)) doc._ouvintes.set(tipo, []);
+      doc._ouvintes.get(tipo).push(fn);
+    },
+    removeEventListener(tipo, fn) {
+      const l = doc._ouvintes.get(tipo) || [];
+      const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1);
+    },
   };
+  body.__documento = doc;
   return doc;
 }
 

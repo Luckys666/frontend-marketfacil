@@ -12,6 +12,20 @@
 .kw-wrapper .fia-alvo-titulo { font-size: .88rem; font-weight: 600; color: var(--text, #1e3a5f); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw-wrapper .fia-alvo-id { font-size: .74rem; color: var(--text-muted, #64748b); }
 
+/* Escolha da variação: cada uma tem a própria ficha, e a escolha acontece aqui em vez de
+   mandar o vendedor caçar a linha certa na lista. */
+.kw-wrapper .fia-estado-topo { text-align: center; padding: 4px 0 14px; }
+.kw-wrapper .fia-vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.kw-wrapper .fia-var { display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%; padding: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; font: inherit; transition: border-color .15s, box-shadow .15s; }
+.kw-wrapper .fia-var:hover { border-color: var(--blue, #0066ff); box-shadow: 0 2px 8px rgba(0, 102, 255, .12); }
+.kw-wrapper .fia-var-topo { display: flex; align-items: flex-start; gap: 8px; }
+.kw-wrapper .fia-var-attrs { display: flex; flex-wrap: wrap; gap: 4px 10px; flex: 1 1 auto; }
+.kw-wrapper .fia-var-attr { font-size: .82rem; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-var-pausado { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.kw-wrapper .fia-var-rodape { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kw-wrapper .fia-var-id { font-size: .72rem; color: var(--text-muted, #64748b); }
+.kw-wrapper .fia-var-campos { font-size: .74rem; color: var(--text-muted, #64748b); }
+
 /* "cabe mais N": o orçamento que sobra é busca que o anúncio deixa de alcançar. Só aparece
    em campo de texto — em lista fechada e sim/não não há espaço a preencher. */
 .kw-wrapper .fia-sobra { font-size: .72rem; font-weight: 600; color: var(--blue, #0066ff); background: #eff6ff; border-radius: 5px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; }

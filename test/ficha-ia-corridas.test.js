@@ -365,6 +365,98 @@ const RESPOSTA_B = {
     check('a tela não mostra erro por causa disso', !/não deu pra consultar/i.test(corpo), corpo.slice(0, 90));
   }
 
+  console.log('\n== "Voltar para a lista" volta mesmo ==');
+  {
+    // O botão ficava morto na tela: o listener era registrado no `DOMContentLoaded`, que no
+    // Bubble já disparou muito antes deste script rodar (o HTML entra por innerHTML).
+    // Nenhum teste percebia porque o `document.addEventListener` do harness era no-op.
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const { M, el, doc, box } = carregar({ rotas });
+
+    const view = el('ficha-ia-view');
+    const painel = el('ficha-ia-painel');
+    // o botão vive na barra da ficha, montada pelo shell do bundle
+    el('ficha-ia-barra').innerHTML = '<button type="button" id="ficha-ia-voltar">← Voltar para a lista</button>';
+
+    await M.abrirFichaIA('MLB1111111111');
+    check('a ficha está aberta', view.hidden === false, String(view.hidden));
+
+    // o Seletor é quem redesenha a lista ao sair da análise
+    let saiuDaAnalise = 0;
+    box.MFSelExitAnalysis = () => { saiuDaAnalise++; };
+
+    await doc.querySelector('#ficha-ia-voltar').click();
+
+    check('clicar no botão fecha a ficha', view.hidden === true, String(view.hidden));
+    check('e mostra o painel de volta', painel.hidden === false, String(painel.hidden));
+    check('e tira o Seletor do modo análise', saiuDaAnalise === 1, String(saiuDaAnalise));
+  }
+
+  console.log('\n== produto com variações: a escolha acontece na própria tela ==');
+  {
+    // Antes a tela dizia "volte para a lista e abra a variação que você quer melhorar" —
+    // jogar o trabalho de volta pro vendedor, que nem sempre sabe qual linha da lista é
+    // qual variação.
+    const variacoes = ['MLB1111111111', 'MLB2222222222'];
+    const { rotas } = mundo({ sugestoes: {} });
+    const comProduto = [
+      [/\/api\/users\/me/, async () => ({ body: { id: 649733403 } })],
+      [/\/api\/user-products\/[^/]+\/items/, async () => ({ body: { results: variacoes } })],
+      [/\/api\/fetch-item\?item_id=ML[A-Z]\d+,/, async () => ({
+        body: [
+          { code: 200, body: { id: 'MLB1111111111', title: 'Blusinha Branca P', status: 'active',
+            attributes: [{ id: 'COLOR', name: 'Cor', value_name: 'Branco' }, { id: 'SIZE', name: 'Tamanho', value_name: 'P' }] } },
+          { code: 200, body: { id: 'MLB2222222222', title: 'Blusinha Preta M', status: 'paused',
+            attributes: [{ id: 'COLOR', name: 'Cor', value_name: 'Preto' }, { id: 'SIZE', name: 'Tamanho', value_name: 'M' }] } },
+        ],
+      })],
+    ].concat(rotas);
+    const { M, el } = carregar({ rotas: comProduto });
+
+    await M.abrirFichaIA('MLBU3935191872');
+    const body = el('ficha-ia-body');
+    const botoes = body.querySelectorAll('.fia-var');
+
+    check('as duas variações aparecem pra escolher', botoes.length === 2, String(botoes.length));
+    check('cada uma mostra o que a distingue',
+      body.textContent.includes('Branco') && body.textContent.includes('Preto')
+      && body.textContent.includes('P') && body.textContent.includes('M'),
+      body.textContent.slice(0, 140));
+    check('a pausada aparece marcada como tal', body.textContent.includes('pausado'));
+    check('e não manda mais o vendedor "voltar para a lista"',
+      !/volte para a lista/i.test(body.textContent), body.textContent.slice(0, 120));
+
+    // clicar numa variação abre a ficha DELA
+    await botoes[1].click();
+    check('clicar na variação abre a ficha dela', M._estado().itemId === 'MLB2222222222', String(M._estado().itemId));
+  }
+  {
+    // Produto com uma variação só: pedir pra escolher entre uma coisa é clique à toa.
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const comProduto = [
+      [/\/api\/users\/me/, async () => ({ body: { id: 649733403 } })],
+      [/\/api\/user-products\/[^/]+\/items/, async () => ({ body: { results: ['MLB1111111111'] } })],
+    ].concat(rotas);
+    const { M, el } = carregar({ rotas: comProduto });
+
+    await M.abrirFichaIA('MLBU3935191872');
+    check('com uma variação só, abre direto', M._estado().itemId === 'MLB1111111111', String(M._estado().itemId));
+    check('sem tela de escolha no meio', el('ficha-ia-body').querySelectorAll('.fia-var').length === 0);
+  }
+  {
+    // A ML não devolveu as variações: dizer o que houve, não uma parede em branco.
+    const { rotas } = mundo({ sugestoes: {} });
+    const comProduto = [
+      [/\/api\/users\/me/, async () => ({ body: { id: 649733403 } })],
+      [/\/api\/user-products\/[^/]+\/items/, async () => ({ status: 500, body: {} })],
+    ].concat(rotas);
+    const { M, el } = carregar({ rotas: comProduto });
+    await M.abrirFichaIA('MLBU3935191872');
+    const t = el('ficha-ia-body').textContent;
+    check('sem variações, a tela explica e oferece tentar de novo',
+      /não achei as variações/i.test(t) && /tentar de novo/i.test(t), t.slice(0, 120));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();

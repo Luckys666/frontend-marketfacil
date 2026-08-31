@@ -785,6 +785,105 @@ function cabecalhoDoAnuncio(itemId, titulo) {
     </div>`;
 }
 
+/** O seller da conta conectada — o endpoint de itens do produto exige. */
+let _sellerId = null;
+async function sellerIdDaConta(signal) {
+  if (_sellerId) return _sellerId;
+  try {
+    const me = await proxyGet('/api/users/me', estadoFicha.token, signal);
+    _sellerId = String((me && (me.id || (me.body && me.body.id))) || '') || null;
+  } catch (e) { _sellerId = null; }
+  return _sellerId;
+}
+
+function linhaVariacao(item) {
+  // O que distingue uma variação da outra é o CHILD_PK — cor, tamanho, desenho. Mostrar
+  // o título inteiro não ajuda: ele é quase igual em todas.
+  const distintivos = ((item.attributes || [])
+    .filter((a) => a && VARIATION_ATTR_IDS.has(String(a.id).toUpperCase()) && a.value_name)
+    .map((a) => `<span class="fia-var-attr"><b>${escapeHtml(a.name)}:</b> ${escapeHtml(a.value_name)}</span>`)
+    .join('')) || '<span class="fia-var-attr">variação sem cor/tamanho definidos</span>';
+
+  const pausado = String(item.status || '') !== 'active';
+  const preenchidos = ((item.attributes || []).filter((a) => a && a.value_name)).length;
+
+  return `
+    <button type="button" class="fia-var" data-variacao="${escapeHtml(item.id)}">
+      <span class="fia-var-topo">
+        <span class="fia-var-attrs">${distintivos}</span>
+        ${pausado ? '<span class="fia-var-pausado">pausado</span>' : ''}
+      </span>
+      <span class="fia-var-rodape">
+        <span class="fia-var-id fia-mono">${escapeHtml(item.id)}</span>
+        <span class="fia-var-campos">${preenchidos} campos preenchidos</span>
+      </span>
+    </button>`;
+}
+
+/**
+ * Produto com variações: cada uma tem a SUA ficha, então a escolha acontece aqui.
+ * Antes a tela dizia "volte para a lista e abra a variação que você quer melhorar" — o que
+ * é jogar o trabalho de volta pro vendedor, e ele nem sempre sabe qual linha da lista
+ * corresponde a qual variação.
+ */
+async function escolherVariacao(produtoId, body, geracao, signal) {
+  body.innerHTML = '<div class="fia-carregando">Vendo as variações deste produto…</div>';
+
+  const seller = await sellerIdDaConta(signal);
+  if (!geracaoVigente(geracao)) return;
+
+  let ids = [];
+  try {
+    const r = await proxyGet(
+      '/api/user-products/' + encodeURIComponent(produtoId) + '/items?seller_id=' + encodeURIComponent(seller || ''),
+      estadoFicha.token, signal
+    );
+    // A ML devolve os ids como STRING nesta rota (medido em 31/08), mas aceitar objeto
+    // também sai de graça e evita quebrar se ela mudar.
+    ids = ((r && r.results) || [])
+      .map((x) => (typeof x === 'string' ? x : (x && (x.id || x.item_id))))
+      .filter(Boolean)
+      .map(String);
+  } catch (e) {
+    if (!geracaoVigente(geracao) || (e && e.name === 'AbortError')) return;
+  }
+  if (!geracaoVigente(geracao)) return;
+
+  // Um anúncio só: pedir pra escolher entre uma coisa é clique a troco de nada.
+  const soUm = ids.length === 1 && ids[0] !== produtoId && /^ML[A-Z]\d/i.test(ids[0]) && !/^ML[A-Z]U/i.test(ids[0]);
+  if (soUm) { await abrirFichaIA(ids[0]); return; }
+
+  if (!ids.length) {
+    body.innerHTML = blocoErro('🎨', 'Não achei as variações deste produto',
+      'Ele agrupa variações, mas o Mercado Livre não devolveu nenhuma agora. Tente de novo em alguns instantes.', true);
+    ligarBotoes();
+    return;
+  }
+
+  let itens = [];
+  try {
+    const d = await proxyGet('/api/fetch-item?item_id=' + ids.slice(0, 20).join(','), estadoFicha.token, signal);
+    itens = (Array.isArray(d) ? d : []).map((x) => (x && x.body) || x).filter((x) => x && x.id);
+  } catch (e) {
+    if (!geracaoVigente(geracao) || (e && e.name === 'AbortError')) return;
+  }
+  if (!geracaoVigente(geracao)) return;
+
+  // Sem os detalhes ainda dá pra escolher pelo id — pior, mas melhor que uma parede.
+  if (!itens.length) itens = ids.slice(0, 20).map((id) => ({ id, attributes: [], status: 'active' }));
+
+  const cabecalho = document.getElementById('ficha-ia-head');
+  if (cabecalho) cabecalho.innerHTML = cabecalhoDoAnuncio(produtoId, (itens[0] && itens[0].title) || null);
+
+  body.innerHTML = `
+    <div class="fia-estado-topo">
+      <p class="fia-estado-titulo">Qual variação você quer melhorar?</p>
+      <p class="fia-estado-texto">Cada variação tem a própria ficha técnica. Escolha uma para ver o que dá pra preencher nela.</p>
+    </div>
+    <div class="fia-vars">${itens.map(linhaVariacao).join('')}</div>`;
+  ligarBotoes();
+}
+
 async function abrirFichaIA(itemId) {
   const view = document.getElementById('ficha-ia-view');
   const body = document.getElementById('ficha-ia-body');
@@ -810,15 +909,19 @@ async function abrirFichaIA(itemId) {
   const cabecalho = document.getElementById('ficha-ia-head');
   if (cabecalho) cabecalho.innerHTML = cabecalhoDoAnuncio(itemId, null);
 
-  // Família: cada variação tem a sua ficha. Sem escolher qual, não há o que sugerir —
-  // e gravar na variação errada é pior que não gravar.
+  // Família: cada variação tem a sua ficha, e gravar na errada é pior que não gravar. Mas
+  // mandar o vendedor "voltar para a lista e achar a variação" é jogar o trabalho de volta
+  // pra ele — a escolha acontece aqui mesmo (Lucas, 31/08).
   if (/^ML[A-Z]U\d+$/i.test(String(itemId))) {
-    body.innerHTML = `
-      <div class="fia-estado">
-        <div class="fia-estado-icone">🎨</div>
-        <p class="fia-estado-titulo">Esse produto tem variações</p>
-        <p class="fia-estado-texto">Cada variação tem a própria ficha técnica. Volte para a lista e abra a variação que você quer melhorar.</p>
-      </div>`;
+    try {
+      estadoFicha.token = estadoFicha.token || await tokenDoML();
+      if (!geracaoVigente(geracao)) return;
+      await escolherVariacao(itemId, body, geracao, signal);
+    } catch (e) {
+      if (!geracaoVigente(geracao) || (e && e.name === 'AbortError')) return;
+      renderPainel('ficha-ia-body', { estado: 'falha', dados: null, campos: [], placar: { preenchidos: 0, total: 0 } });
+      ligarBotoes();
+    }
     return;
   }
 
@@ -934,6 +1037,13 @@ function ligarBotoes() {
   body.addEventListener('click', async (ev) => {
     const alvo = ev.target;
     if (!alvo) return;
+    // A escolha da variação abre a ficha DELA. `closest` porque o clique quase sempre cai
+    // num span de dentro do botão, não no botão.
+    const variacao = typeof alvo.closest === 'function' ? alvo.closest('.fia-var') : null;
+    if (variacao && variacao.dataset && variacao.dataset.variacao) {
+      await abrirFichaIA(variacao.dataset.variacao);
+      return;
+    }
     if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
     if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
     if (alvo.classList.contains('fia-aplicar-um')) { await salvar(umCampo(alvo)); return; }
@@ -1044,9 +1154,18 @@ function voltarParaLista() {
   if (typeof window.MFSelExitAnalysis === 'function') window.MFSelExitAnalysis();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('ficha-ia-voltar');
-  if (btn) btn.addEventListener('click', voltarParaLista);
+// Delegação no document, e NÃO `DOMContentLoaded` + `getElementById`: no Bubble o HTML
+// entra por innerHTML e este script roda muito depois do DOMContentLoaded, então aquele
+// listener nunca chegava a ser registrado — o botão existia na tela e não fazia nada.
+// (O keyword-agent contorna o mesmo problema com bindButton + setTimeout; delegação
+// resolve sem depender de quando o elemento aparece, e sobrevive a um re-render.)
+document.addEventListener('click', (ev) => {
+  const alvo = ev && ev.target && typeof ev.target.closest === 'function'
+    ? ev.target.closest('#ficha-ia-voltar')
+    : null;
+  if (!alvo) return;
+  ev.preventDefault();
+  voltarParaLista();
 });
 
 window.MFFicha = {

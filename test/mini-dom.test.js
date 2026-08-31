@@ -89,6 +89,19 @@ console.log('\n== eventos sobem (delegação) ==');
   btn.click();
   check('o clique no botão chega no container', alvoVisto === btn);
 }
+console.log('\n== o clique chega ao DOCUMENT (delegação global) ==');
+{
+  const doc = criarDocumento();
+  const box = doc.getElementById('g');
+  box.innerHTML = '<button id="voltar">Voltar</button>';
+  let vistos = 0;
+  doc.addEventListener('click', (ev) => { if (ev.target.closest('#voltar')) vistos++; });
+  box.querySelector('#voltar').click();
+  check('handler no document recebe o clique', vistos === 1, String(vistos));
+  box.querySelector('#voltar').click();
+  check('e continua recebendo', vistos === 2, String(vistos));
+}
+
 (async () => {
   const doc = criarDocumento();
   const box = doc.getElementById('f');
