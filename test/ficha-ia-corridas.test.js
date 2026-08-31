@@ -328,7 +328,7 @@ const RESPOSTA_B = {
 
     // ⚠️ NADA de scraper aqui: o anúncio é da conta de quem está usando e o item já veio
     // pela API do ML nesta mesma abertura. Raspar a página seria pedir de novo, por fora, o
-    // que já está na mão — com crédito de Decodo, risco de Anubis e segundos a mais
+    // que já está na mão — com custo por chamada, risco de página instável e segundos a mais
     // (Lucas, 31/08: "por que raios estamos usando o scraper se o anúncio é da conta da
     // própria pessoa?").
     check('a caça NÃO chama o scraper', !chamadas.some((u) => u.includes('ml-scraper')), JSON.stringify(chamadas));

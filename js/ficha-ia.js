@@ -175,12 +175,12 @@ async function cacarPalavras(itemId, detail, descricao, signal) {
     const uid = await Kw.fetchUserIdForScraping();
     if (!uid) return;
 
-    // ⚠️ NADA DE SCRAPER AQUI. O anúncio é da conta de quem está usando, e o item já veio
-    // pela API do ML no começo desta mesma abertura — raspar a página seria pedir de novo,
-    // por fora, o que já está na mão. O scraper existe no Agente porque lá o vendedor cola
-    // QUALQUER link, inclusive de concorrente; aqui não. Custava crédito de Decodo, corria
-    // risco de Anubis e de página instável, e somava segundos ao carregamento (Lucas,
-    // 31/08). `extractIndexedWords` só precisa de title + attributes, que o item tem.
+    // ⚠️ A LEITURA DO ANÚNCIO VEM DA API, NÃO DE FORA. O anúncio é da conta de quem está
+    // usando, e o item já chegou no começo desta mesma abertura — buscá-lo por outro
+    // caminho seria pedir de novo o que já está na mão, com custo por chamada, risco de
+    // página instável e segundos a mais no carregamento (Lucas, 31/08). O outro caminho
+    // existe no Agente porque lá o vendedor cola QUALQUER link, inclusive de concorrente;
+    // aqui não. `extractIndexedWords` só precisa de title + attributes, que o item tem.
     const produto = {
       title: (detail && detail.title) || '',
       attributes: (detail && detail.attributes) || [],
