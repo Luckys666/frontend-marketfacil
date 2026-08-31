@@ -83,8 +83,14 @@ console.log('\n== #2 a descrição do /api/fetch-item é IRMÃ do body ==');
       return { ok: true, status: 200, json: async () => resposta };
     };
     await M.abrirFichaIA('MLB1');
-    check('a descrição chega ao payload', !!(payloadVisto && payloadVisto.descricao), JSON.stringify(payloadVisto && payloadVisto.descricao));
-    check('e é o texto certo', payloadVisto && /acabamento inox escovado/.test(payloadVisto.descricao));
+    // O defeito #2 era ler `detail.descriptions.plain_text` (que não existe): a descrição
+    // chegava sempre vazia e quase toda sugestão morria na régua. Desde o P2 (30/08) quem
+    // lê a descrição é o proxy, no ML — então o que este bloco trava agora é o CONTRATO
+    // novo: o front manda o ID, e a fonte de evidência não passa mais pelo navegador.
+    check('o payload leva o ID do anúncio', payloadVisto && payloadVisto.item_id === 'MLB1',
+      JSON.stringify(payloadVisto && payloadVisto.item_id));
+    check('o payload NÃO leva a descrição', payloadVisto && !('descricao' in payloadVisto));
+    check('o payload NÃO leva o título', payloadVisto && !('titulo' in payloadVisto));
   }
   {
     check('ninguém lê `descriptions` (plural não existe em item nenhum)',
@@ -150,7 +156,12 @@ console.log('\n== #2 a descrição do /api/fetch-item é IRMÃ do body ==');
     const head = box.document.getElementById('ficha-ia-head');
     head.innerHTML = '<p>Este anúncio faz parte de um grupo de variações.</p>';
     await M.abrirFichaIA('MLB_OUTRO');
-    check('abrir outro anúncio limpa o cabeçalho', head.innerHTML === '', head.innerHTML.slice(0, 60));
+    check('o aviso de família do anterior não sobrevive',
+      !head.textContent.includes('grupo de variações'), head.textContent.slice(0, 80));
+    // P1: o cabeçalho deixou de ser só o aviso — ele diz QUAL anúncio está aberto, desde o
+    // primeiro instante. Sem isso, uma troca de anúncio no meio do carregamento é invisível.
+    check('e o cabeçalho já mostra o anúncio da vez',
+      head.textContent.includes('MLB_OUTRO'), head.textContent.slice(0, 80));
   }
 
   console.log('\n== #6 voltar sai do modo análise do Seletor ==');

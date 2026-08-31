@@ -218,6 +218,45 @@ console.log('\n== buscarSugestoes: mapeia status pra estado ==');
     check('sem retry automático: 2 pedidos = 2 chamadas, nunca 4', box.chamadas.length === 2, String(box.chamadas.length));
   }
 
+  // Desde o P2 (30/08) quem lê o anúncio é o proxy, no ML — e as recusas de LÁ chegam aqui
+  // com `code`. Dois 403 diferentes: um manda ativar plano, o outro diz que o anúncio é de
+  // outra conta. Mandar o vendedor ativar um plano que ele já tem é pior que não avisar.
+  const rotaComCode = (status, code) => [[/gpt-ficha/, async () => ({ status, body: { error: 'x', code } })]];
+  {
+    const { M } = carregar({ rotas: rotaComCode(403, 'anuncio_de_outra_conta') });
+    check('403 de anúncio alheio NÃO vira sem_plano',
+      (await M.buscarSugestoes({}, 'u', 'tok')).estado === 'outra_conta');
+  }
+  {
+    const { M } = carregar({ rotas: rotaComCode(403, 'sem_plano') });
+    check('403 de plano continua sem_plano', (await M.buscarSugestoes({}, 'u', 'tok')).estado === 'sem_plano');
+  }
+  {
+    const { M } = carregar({ rotas: rotaComCode(404, 'anuncio_nao_encontrado') });
+    check('404 vira nao_encontrado', (await M.buscarSugestoes({}, 'u', 'tok')).estado === 'nao_encontrado');
+  }
+  {
+    const { M } = carregar({ rotas: rotaComCode(502, 'anuncio_ilegivel') });
+    check('não conseguir ler o anúncio é estado próprio, não "não achei base"',
+      (await M.buscarSugestoes({}, 'u', 'tok')).estado === 'anuncio_ilegivel');
+  }
+  {
+    const { M } = carregar({ rotas: rotaComCode(503, 'ml_indisponivel') });
+    check('ML fora também', (await M.buscarSugestoes({}, 'u', 'tok')).estado === 'anuncio_ilegivel');
+  }
+  {
+    const { M, box } = carregar({ resposta: RESPOSTA });
+    await M.buscarSugestoes({ item_id: 'MLB1' }, 'user-1', 'TOKEN-ML');
+    const h = box.chamadas[0].init.headers;
+    check('o token do ML viaja em header próprio', h['X-ML-Token'] === 'TOKEN-ML', JSON.stringify(h));
+    check('e o Authorization continua sendo o user_id do app', h.Authorization === 'Bearer user-1');
+  }
+  {
+    const { M } = carregar({ rotas: [[/gpt-ficha/, async () => ({ status: 200, body: { ok: true, sugestoes: [] } })]] });
+    const r = await M.buscarSugestoes({}, 'u', 'tok');
+    check('200 continua entregando o corpo', r.estado === 'ok' && r.dados.ok === true, JSON.stringify(r));
+  }
+
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
   process.exit(fail ? 1 : 0);
 })();

@@ -158,15 +158,17 @@ function formatarPalavrasQueFaltam(lista) {
   }).filter((p) => p.palavra);
 }
 
-/** O pedido: só FATOS. Régua nenhuma sai daqui. */
-function montarPayload({ detail, descricao, categoryAttributes, obrigatoriosML, palavrasQueFaltam, siteId }) {
+/**
+ * O pedido: o ID do anúncio e os campos que o vendedor pode mexer. Régua nenhuma sai daqui.
+ *
+ * O título, a descrição e a ficha atual NÃO viajam mais: quem lê o anúncio é o proxy, no
+ * ML, com o token do próprio vendedor. Enquanto vinham daqui, a régua "só sugere o que o
+ * anúncio diz" obedecia ao que ESTE CÓDIGO afirmava que o anúncio dizia — e qualquer um
+ * com o DevTools aberto reescrevia o "fato" antes de mandar.
+ */
+function montarPayload({ detail, categoryAttributes, obrigatoriosML, palavrasQueFaltam }) {
   return {
-    site_id: siteId || 'MLB',
-    titulo: (detail && detail.title) || '',
-    descricao: descricao || '',
-    ficha_atual: ((detail && detail.attributes) || [])
-      .filter((a) => a && a.value_name)
-      .map((a) => ({ id: a.id, name: a.name || a.id, value: String(a.value_name) })),
+    item_id: (detail && detail.id) || '',
     campos: camposElegiveis(categoryAttributes, detail, obrigatoriosML)
       .map(({ _extra, _renomeia, _mudaLink, ...limpo }) => limpo),
     palavras_que_faltam: formatarPalavrasQueFaltam(palavrasQueFaltam),
@@ -176,26 +178,41 @@ function montarPayload({ detail, descricao, categoryAttributes, obrigatoriosML, 
 /* ---------- Busca ---------- */
 // Sem retry: é rota de IA. Uma tentativa, e o erro sobe — retry multiplica custo sem
 // melhorar resultado. Retry só no scraper, onde a instabilidade é real.
-async function buscarSugestoes(payload, userId) {
+async function buscarSugestoes(payload, userId, mlToken, signal) {
   let resp;
   try {
     resp = await fetch(MFFICHA_PROXY + '/api/gpt-ficha', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (userId || '') },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + (userId || ''),
+        // Duas identidades diferentes: o Authorization é o user_id do app (mede consumo de
+        // IA); o token do ML é o que autoriza LER o anúncio, e é com ele que o proxy busca
+        // as três fontes de evidência.
+        'X-ML-Token': String(mlToken || ''),
+      },
       body: JSON.stringify(payload),
+      signal: signal || undefined,
     });
   } catch (e) {
+    if (e && e.name === 'AbortError') return { estado: 'cancelado', dados: null };
     return { estado: 'falha', dados: null };
   }
+  // O motivo vem no `code`: 403 de plano e 403 de "anúncio não é seu" pedem telas
+  // diferentes, e mandar o vendedor ativar um plano que ele já tem é pior que não avisar.
+  let corpo = null;
+  try { corpo = await resp.json(); } catch (e) { corpo = null; }
+  const code = String((corpo && corpo.code) || '');
+
+  if (resp.ok) return { estado: 'ok', dados: corpo };
   if (resp.status === 401) return { estado: 'sessao', dados: null };
-  if (resp.status === 403) return { estado: 'sem_plano', dados: null };
-  if (resp.status === 429) return { estado: 'ocupado', dados: null };
-  if (!resp.ok) return { estado: 'falha', dados: null };
-  try {
-    return { estado: 'ok', dados: await resp.json() };
-  } catch (e) {
-    return { estado: 'falha', dados: null };
+  if (resp.status === 403) {
+    return { estado: code === 'anuncio_de_outra_conta' ? 'outra_conta' : 'sem_plano', dados: null };
   }
+  if (resp.status === 404) return { estado: 'nao_encontrado', dados: null };
+  if (resp.status === 429) return { estado: 'ocupado', dados: null };
+  if (code === 'anuncio_ilegivel' || code === 'ml_indisponivel') return { estado: 'anuncio_ilegivel', dados: null };
+  return { estado: 'falha', dados: null };
 }
 
 /* ---------- Cache do resultado ---------- */
@@ -362,6 +379,24 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   if (estado === 'sessao') {
     el.innerHTML = blocoErro('⏳', 'Sessão expirada',
       'Recarregue a página para continuar.', false);
+    return;
+  }
+  // O anúncio é lido no Mercado Livre, com a conta conectada. Estes três estados dizem o
+  // que aconteceu lá — misturar com "não achei base no anúncio" faria o vendedor procurar
+  // problema no texto dele quando o problema é outro.
+  if (estado === 'outra_conta') {
+    el.innerHTML = blocoErro('🔑', 'Esse anúncio não é da sua conta',
+      'Ele está em outra conta do Mercado Livre. Volte para a lista e escolha um anúncio seu.', false);
+    return;
+  }
+  if (estado === 'nao_encontrado') {
+    el.innerHTML = blocoErro('🔎', 'Não encontrei esse anúncio',
+      'Ele pode ter sido excluído no Mercado Livre. Volte para a lista e atualize.', false);
+    return;
+  }
+  if (estado === 'anuncio_ilegivel') {
+    el.innerHTML = blocoErro('🔌', 'Não deu pra ler seu anúncio agora',
+      'O Mercado Livre não respondeu. Tente de novo em alguns instantes.', true);
     return;
   }
 
@@ -610,13 +645,46 @@ async function obterUserId() {
   } catch (e) { return null; }
 }
 
-async function proxyGet(rota, token) {
-  const r = await fetch(MFFICHA_PROXY + rota, { headers: { Authorization: 'Bearer ' + token } });
+async function proxyGet(rota, token, signal) {
+  const r = await fetch(MFFICHA_PROXY + rota, {
+    headers: { Authorization: 'Bearer ' + token },
+    signal: signal || undefined,
+  });
   if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
   return r.json();
 }
 
 const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null };
+
+/**
+ * Qual abertura é a válida. `estadoFicha` é um só, e abrirFichaIA tem cinco awaits: abrir o
+ * anúncio A, voltar e abrir o B fazia a cadeia de A — que ainda estava no ar — reescrever o
+ * estado por cima do B. A tela mostrava A achando que era B, e um salvar() de A que chegasse
+ * atrasado marcava campo de B como gravado: a tela passava a mentir sobre o anúncio.
+ * Só a última abertura vale; as anteriores viram no-op e são canceladas.
+ */
+let _geracao = 0;
+let _abortar = null;
+
+function novaGeracao() {
+  if (_abortar) { try { _abortar.abort(); } catch (e) { /* navegador antigo */ } }
+  _abortar = (typeof AbortController === 'function') ? new AbortController() : null;
+  _geracao += 1;
+  return { id: _geracao, signal: _abortar ? _abortar.signal : undefined };
+}
+
+const geracaoVigente = (g) => g === _geracao;
+
+/** O que o vendedor está editando, sempre visível. Sem isto não há como perceber a troca. */
+function cabecalhoDoAnuncio(itemId, titulo) {
+  const id = escapeHtml(String(itemId || ''));
+  return `
+    <div class="fia-alvo">
+      <span class="fia-alvo-rotulo">Editando</span>
+      <span class="fia-alvo-titulo">${escapeHtml(titulo || 'seu anúncio')}</span>
+      <span class="fia-alvo-id fia-mono">${id}</span>
+    </div>`;
+}
 
 async function abrirFichaIA(itemId) {
   const view = document.getElementById('ficha-ia-view');
@@ -627,6 +695,9 @@ async function abrirFichaIA(itemId) {
   view.hidden = false;
   body.innerHTML = '<div class="fia-carregando">Lendo a ficha deste anúncio…</div>';
 
+  // Esta abertura passa a ser a válida; a anterior, se ainda estiver no ar, é cancelada.
+  const { id: geracao, signal } = novaGeracao();
+
   // O anúncio da vez é gravado ANTES de qualquer await. Sem isto, uma falha na primeira
   // abertura deixava `itemId` null (o "Tentar de novo" nunca funcionaria) e, pior: depois
   // de ver o anúncio A, uma falha ao abrir o B fazia o retry recarregar o A — e o próximo
@@ -636,8 +707,9 @@ async function abrirFichaIA(itemId) {
   estadoFicha.campos = [];
   // O aviso de família é do anúncio ANTERIOR até a gente saber deste. Limpar aqui evita
   // um anúncio solto herdar "faz parte de um grupo de variações" do que veio antes.
+  // O ID já entra: durante o carregamento o vendedor precisa saber o que está abrindo.
   const cabecalho = document.getElementById('ficha-ia-head');
-  if (cabecalho) cabecalho.innerHTML = '';
+  if (cabecalho) cabecalho.innerHTML = cabecalhoDoAnuncio(itemId, null);
 
   // Família: cada variação tem a sua ficha. Sem escolher qual, não há o que sugerir —
   // e gravar na variação errada é pior que não gravar.
@@ -652,12 +724,15 @@ async function abrirFichaIA(itemId) {
   }
 
   try {
-    estadoFicha.token = estadoFicha.token || await tokenDoML();
+    const token = estadoFicha.token || await tokenDoML();
+    if (!geracaoVigente(geracao)) return;
+    estadoFicha.token = token;
     if (!estadoFicha.token) {
       if (typeof window.MF_renderError === 'function') window.MF_renderError(body, 'no_ml_account');
       return;
     }
-    const detalhe = await proxyGet('/api/fetch-item?item_id=' + encodeURIComponent(itemId), estadoFicha.token);
+    const detalhe = await proxyGet('/api/fetch-item?item_id=' + encodeURIComponent(itemId), estadoFicha.token, signal);
+    if (!geracaoVigente(geracao)) return;
     // O /api/fetch-item devolve [{ code, body, description }]: a descrição é IRMÃ do
     // `body`, não filha. Lendo `detail.descriptions.plain_text` (que não existe em item
     // nenhum) a descrição vinha SEMPRE vazia — e como ela é a fonte de evidência mais
@@ -667,36 +742,38 @@ async function abrirFichaIA(itemId) {
     const detail = envelope ? envelope.body : detalhe;
     if (!detail || !detail.id) throw new Error('sem detalhe');
 
-    if (detail.user_product_id) {
-      const nota = document.getElementById('ficha-ia-head');
+    const nota = document.getElementById('ficha-ia-head');
+    if (nota) {
       // Um mesmo produto pode servir mais de um anúncio — a edição propaga entre eles,
       // por desenho do ML. Não é destrutivo, mas surpreende quem não sabe.
-      if (nota) nota.innerHTML = '<p class="fia-aviso">Este anúncio faz parte de um grupo de variações. O que você salvar aqui vale para esta variação.</p>';
+      const avisoFamilia = detail.user_product_id
+        ? '<p class="fia-aviso">Este anúncio faz parte de um grupo de variações. O que você salvar aqui vale para esta variação.</p>'
+        : '';
+      nota.innerHTML = cabecalhoDoAnuncio(detail.id, detail.title) + avisoFamilia;
     }
 
-    const cats = await proxyGet('/api/attributes/' + encodeURIComponent(detail.category_id), estadoFicha.token);
+    const cats = await proxyGet('/api/attributes/' + encodeURIComponent(detail.category_id), estadoFicha.token, signal);
+    if (!geracaoVigente(geracao)) return;
     // adoption_status só existe em anúncio ATIVO — sem ele, a régua cai pro tags.required
     // da categoria e a tela NÃO afirma que a etapa está completa.
     let obrigatorios = null;
     try {
-      const q = await proxyGet('/api/catalog-quality?item_id=' + encodeURIComponent(detail.id), estadoFicha.token);
+      const q = await proxyGet('/api/catalog-quality?item_id=' + encodeURIComponent(detail.id), estadoFicha.token, signal);
       const req = q && q.adoption_status && q.adoption_status.required;
       if (req) {
         const ids = [].concat(req.attributes || [], req.missing_attributes || []).filter(Boolean);
         if (ids.length) obrigatorios = new Set(ids);
       }
     } catch (e) { /* sem a lista da ML, vale a da categoria */ }
+    if (!geracaoVigente(geracao)) return;
 
-    const d = (envelope && envelope.description) || detail.description || {};
-    const descricao = d.plain_text || d.text || '';
     estadoFicha.itemId = detail.id;
     estadoFicha.detail = detail;
     estadoFicha.campos = camposElegiveis(cats, detail, obrigatorios);
 
     const payload = montarPayload({
-      detail, descricao, categoryAttributes: cats, obrigatoriosML: obrigatorios,
+      detail, categoryAttributes: cats, obrigatoriosML: obrigatorios,
       palavrasQueFaltam: window.MFFicha._palavrasQueFaltam || [],
-      siteId: (String(detail.site_id || 'MLB')).toUpperCase(),
     });
 
     // Cache por anúncio + assinatura da ficha: voltar pra lista e reabrir o mesmo anúncio
@@ -706,11 +783,13 @@ async function abrirFichaIA(itemId) {
     if (!r) {
       body.innerHTML = '<div class="fia-carregando">A IA está lendo o texto do seu anúncio…</div>';
       const uid = await obterUserId();
+      if (!geracaoVigente(geracao)) return;
       if (!uid) {
         renderPainel('ficha-ia-body', { estado: 'sessao', dados: null, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
         return;
       }
-      r = await buscarSugestoes(payload, uid);
+      r = await buscarSugestoes(payload, uid, estadoFicha.token, signal);
+      if (!geracaoVigente(geracao)) return;
       // Falha não entra em cache — senão o botão "tentar de novo" devolveria a mesma falha.
       if (r.estado === 'ok') cacheSugestoes.set(chave, r);
     }
@@ -721,6 +800,9 @@ async function abrirFichaIA(itemId) {
     });
     ligarBotoes();
   } catch (e) {
+    // Abertura cancelada (o vendedor já abriu outro anúncio) não é erro e não pode pintar
+    // a tela do anúncio novo com a falha do antigo.
+    if (!geracaoVigente(geracao) || (e && e.name === 'AbortError')) return;
     // 401 do ML é conta desconectada, não instabilidade: dizer "tente de novo" manda o
     // vendedor bater na mesma porta pra sempre. É a régua da §8.3 da spec.
     const estado = (e && (e.status === 401 || e.status === 403)) ? 'sessao'
@@ -746,15 +828,21 @@ function ligarBotoes() {
     if (!alvo) return;
     if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
     if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
-    if (alvo.classList.contains('fia-aplicar-um')) { await salvar(umCampo(alvo.dataset.campo, !!alvo.dataset.nova)); return; }
+    if (alvo.classList.contains('fia-aplicar-um')) { await salvar(umCampo(alvo)); return; }
   });
 }
 
-function valorDigitado(campoId, nova) {
-  const seletor = nova
-    ? '.fia-valor[data-campo="' + campoId + '"][data-nova="1"]'
-    : '.fia-valor[data-campo="' + campoId + '"]:not([data-nova])';
-  const input = document.querySelector(seletor);
+/**
+ * O valor é o da LINHA de onde veio o clique — não o do primeiro `data-campo` igual no DOM.
+ *
+ * O prompt pede uma proposta por palavra, então duas linhas para o mesmo campo é o caso
+ * esperado (uma para "inox", outra para "escovado"). Procurando por `data-campo` no
+ * documento inteiro, clicar em "Aplicar" na segunda gravava o valor da primeira — o
+ * vendedor publicava uma afirmação que ele não escolheu.
+ */
+function valorDaLinha(origem) {
+  const linha = origem && typeof origem.closest === 'function' ? origem.closest('.fia-linha') : null;
+  const input = linha ? linha.querySelector('.fia-valor') : null;
   return input ? String(input.value || '').trim() : '';
 }
 
@@ -769,20 +857,32 @@ function marcadosNoLote() {
   const itens = [];
   document.querySelectorAll('.fia-check:not(.fia-check-nova)').forEach((c) => {
     if (!c.checked || c.dataset.nova) return;
-    const id = c.dataset.campo;
-    itens.push({ id, valor: valorDigitado(id, false) });
+    itens.push({ id: c.dataset.campo, valor: valorDaLinha(c) });
   });
   return itens;
 }
 
-function umCampo(id, nova) {
-  return id ? [{ id, valor: valorDigitado(id, nova) }] : [];
+function umCampo(origem) {
+  const id = origem && origem.dataset ? origem.dataset.campo : '';
+  return id ? [{ id, valor: valorDaLinha(origem) }] : [];
 }
 
 async function salvar(itens) {
   const body = document.getElementById('ficha-ia-body');
   if (!body || !itens.length) return;
-  const r = await aplicar(estadoFicha.itemId, itens, estadoFicha.campos, estadoFicha.detail, estadoFicha.token);
+  // O alvo é fotografado agora. Se o vendedor trocar de anúncio enquanto o PUT está no ar,
+  // o que volta é sobre o anúncio ANTIGO: escrever isso no estado atual marcaria campo do
+  // anúncio novo como salvo, e a tela passaria a mentir sobre o que está gravado.
+  const geracao = _geracao;
+  const alvo = {
+    itemId: estadoFicha.itemId,
+    detail: estadoFicha.detail,
+    campos: estadoFicha.campos,
+    token: estadoFicha.token,
+  };
+  const r = await aplicar(alvo.itemId, itens, alvo.campos, alvo.detail, alvo.token);
+  // O PUT foi feito de verdade (e é do anúncio certo); só a TELA não é mais deste assunto.
+  if (!geracaoVigente(geracao)) return;
   if (!r.ok) {
     const aviso = document.createElement('div');
     aviso.className = 'fia-erro';
@@ -792,9 +892,9 @@ async function salvar(itens) {
   }
   // Estado local acompanha o que foi salvo: o placar sobe na hora, sem refetch.
   for (const item of itens) {
-    const campo = estadoFicha.campos.find((c) => c.id === item.id);
+    const campo = alvo.campos.find((c) => c.id === item.id);
     if (campo) { campo.preenchido = true; campo.valor_atual = item.valor; }
-    const attrs = (estadoFicha.detail.attributes = estadoFicha.detail.attributes || []);
+    const attrs = (alvo.detail.attributes = alvo.detail.attributes || []);
     const idx = attrs.findIndex((a) => a && a.id === item.id);
     if (idx >= 0) attrs[idx].value_name = item.valor;
     else attrs.push({ id: item.id, value_name: item.valor });

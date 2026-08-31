@@ -76,19 +76,23 @@ console.log('\n== camposElegiveis e o payload ==');
     ['tramontina pro', { count: 2, categories: new Set(['concorrencia']), phrases: ['linha pro'] }],
   ];
   const payload = M.montarPayload({
-    detail: SOLTO, descricao: 'Panela de alumínio fundido.',
+    detail: SOLTO,
     categoryAttributes: [MATERIAL, READONLY], obrigatoriosML: new Set(['MATERIAL']),
-    palavrasQueFaltam: faltantes, siteId: 'MLB',
+    palavrasQueFaltam: faltantes,
   });
-  check('manda o título', payload.titulo === SOLTO.title);
-  check('manda a descrição', payload.descricao.includes('alumínio'));
-  check('manda a ficha atual', payload.ficha_atual.some((a) => a.id === 'BRAND'));
+  check('manda o ID do anúncio', payload.item_id === SOLTO.id, String(payload.item_id));
   check('manda só campo elegível', payload.campos.length === 1 && payload.campos[0].id === 'MATERIAL');
   check('marca o obrigatório', payload.campos[0].obrigatorio === true);
   check('marca que está vazio', payload.campos[0].preenchido === false);
-  check('manda o site', payload.site_id === 'MLB');
   check('NÃO manda régua nenhuma (peso/limiar são do servidor)',
     !('limiar' in payload) && !('regras' in payload) && !('prompt' in payload));
+  // P2 (30/08): as três fontes de evidência NÃO viajam daqui. Quem lê o anúncio é o proxy,
+  // no ML. Enquanto vinham no corpo do POST, a régua "só sugere o que o anúncio diz"
+  // obedecia ao que ESTE código afirmava — e o DevTools reescreve isso em dois cliques.
+  check('NÃO manda o título (o proxy lê no ML)', !('titulo' in payload));
+  check('NÃO manda a descrição', !('descricao' in payload));
+  check('NÃO manda a ficha atual', !('ficha_atual' in payload));
+  check('NÃO manda o site (vem do anúncio)', !('site_id' in payload));
 
   // As palavras que faltam viajam como OBJETO: o proxy precisa dos combos (pra tela mostrar
   // as buscas que abrem) e da categoria (pra barrar `concorrencia`).

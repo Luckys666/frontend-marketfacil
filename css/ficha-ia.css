@@ -5,6 +5,13 @@
 .kw-wrapper .fia-carregando { padding: 24px; text-align: center; color: var(--text-muted, #64748b); font-size: .9rem; }
 .kw-wrapper .fia-mono { font-family: 'DM Mono', monospace; }
 
+/* Qual anúncio está aberto. Fica acima de tudo e não some durante o carregamento: sem
+   isso, trocar de anúncio no meio de uma consulta é uma troca invisível. */
+.kw-wrapper .fia-alvo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; background: var(--bg-subtle, #f8fafc); border: 1px solid #e2e8f0; border-radius: 8px; }
+.kw-wrapper .fia-alvo-rotulo { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #64748b); font-weight: 600; }
+.kw-wrapper .fia-alvo-titulo { font-size: .88rem; font-weight: 600; color: var(--text, #1e3a5f); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-wrapper .fia-alvo-id { font-size: .74rem; color: var(--text-muted, #64748b); }
+
 .kw-wrapper .fia-placar { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; background: var(--navy, #0f172a); border-radius: 10px; color: #fff; }
 .kw-wrapper .fia-placar-num { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 700; }
 .kw-wrapper .fia-placar-lbl { font-size: .82rem; opacity: .8; }
