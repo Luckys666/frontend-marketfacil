@@ -134,6 +134,25 @@ function camposElegiveis(categoryAttributes, detail, obrigatoriosML) {
 }
 
 /**
+ * As palavras que o Agente descobriu, guardadas POR ANÚNCIO.
+ *
+ * Elas não são da sessão: saem do cruzamento entre o que a IA sugeriu e o que AQUELE
+ * anúncio já indexa. Numa variável só, as palavras do anúncio analisado antes entravam
+ * como sugestão do próximo aberto pelo Seletor — e essa é a lista que afirma
+ * característica do produto ("seu anúncio não diz isso hoje"). Mesmo defeito do P1.
+ */
+const palavrasPorAnuncio = new Map();
+
+function registrarPalavras(itemId, lista) {
+  if (!itemId) return;
+  palavrasPorAnuncio.set(String(itemId).toUpperCase(), Array.isArray(lista) ? lista : []);
+}
+
+function palavrasDoAnuncio(itemId) {
+  return palavrasPorAnuncio.get(String(itemId || '').toUpperCase()) || [];
+}
+
+/**
  * As palavras que o Agente descobriu, no formato que o proxy espera.
  * Entrada: o que o `buildMissingWordsMap` do keyword-agent já produz —
  * `[palavra, { count, categories: Set, phrases: [] }]`.
@@ -797,7 +816,7 @@ async function abrirFichaIA(itemId) {
 
     const payload = montarPayload({
       detail, categoryAttributes: cats, obrigatoriosML: obrigatorios,
-      palavrasQueFaltam: window.MFFicha._palavrasQueFaltam || [],
+      palavrasQueFaltam: palavrasDoAnuncio(detail.id),
     });
 
     // Cache por anúncio + assinatura da ficha: voltar pra lista e reabrir o mesmo anúncio
@@ -971,7 +990,7 @@ window.MFFicha = {
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
   linhaPalavraNova, rotuloFonte, chaveCache, _cache: cacheSugestoes,
   montarAtributo, aplicar, traduzirErro, erroParcial,
-  abrirFichaIA, voltarParaLista, _palavrasQueFaltam: [],
+  abrirFichaIA, voltarParaLista, registrarPalavras, palavrasDoAnuncio,
   // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos
   // de 30/08 se esconderam enquanto a suíte de lógica pura ficava verde.
   ligarBotoes, salvar, obterUserId,

@@ -228,6 +228,51 @@ const RESPOSTA_B = {
       enviado.length === 1 && enviado[0].id === 'MATERIAL', JSON.stringify(enviado));
   }
 
+  console.log('\n== as palavras do Agente são DO anúncio, não da sessão ==');
+  {
+    // Elas saem do cruzamento entre o que a IA sugeriu e o que AQUELE anúncio já indexa.
+    // Guardadas numa variável só, as palavras do anúncio analisado antes entravam como
+    // sugestão do próximo aberto pelo Seletor — e a lista 2 afirma característica do
+    // produto. Mesmo defeito do P1, em outra roupa.
+    let payloadDoB = null;
+    const { rotas } = mundo({ sugestoes: { MLB2222222222: RESPOSTA_B } });
+    const comEspiao = rotas.map(([p, fn]) => [p, async (url, init) => {
+      if (/gpt-ficha/.test(url)) payloadDoB = JSON.parse(init.body || '{}');
+      return fn(url, init);
+    }]);
+    const { M } = carregar({ rotas: comEspiao });
+
+    // o vendedor analisou o anúncio A no Agente
+    M.registrarPalavras('MLB1111111111', [
+      { palavra: 'antiaderente', combos: ['panela antiaderente'], buscas: 9, categorias: ['beneficios'] },
+    ]);
+    // e então abriu a ficha do B pelo Seletor
+    await M.abrirFichaIA('MLB2222222222');
+
+    check('o payload do B não leva as palavras do A',
+      !!payloadDoB && (payloadDoB.palavras_que_faltam || []).length === 0,
+      JSON.stringify(payloadDoB && payloadDoB.palavras_que_faltam));
+  }
+  {
+    let payloadDoA = null;
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const comEspiao = rotas.map(([p, fn]) => [p, async (url, init) => {
+      if (/gpt-ficha/.test(url)) payloadDoA = JSON.parse(init.body || '{}');
+      return fn(url, init);
+    }]);
+    const { M } = carregar({ rotas: comEspiao });
+
+    M.registrarPalavras('MLB1111111111', [
+      { palavra: 'antiaderente', combos: ['panela antiaderente'], buscas: 9, categorias: ['beneficios'] },
+    ]);
+    await M.abrirFichaIA('MLB1111111111');
+
+    const p = (payloadDoA || {}).palavras_que_faltam || [];
+    check('mas o anúncio certo recebe as suas', p.length === 1 && p[0].palavra === 'antiaderente', JSON.stringify(p));
+    check('com os combos, que a tela usa pra mostrar as buscas que abrem', !!(p[0] && p[0].combos && p[0].combos.length));
+    check('e a categoria, que o proxy usa pra barrar concorrência', !!(p[0] && p[0].categorias));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();
