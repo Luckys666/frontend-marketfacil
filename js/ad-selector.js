@@ -261,7 +261,29 @@ const HOST = Object.assign({
   root: '.ana-wrapper',
   resultsId: 'resultsContainer',
   onSelect: function () { if (typeof window.handleAnalysisClick === 'function') window.handleAnalysisClick(); },
+  // Quais sinais da conta e quais filtros fazem sentido NESTE painel. `null`/`true` = o que
+  // sempre houve, então a Análise não sente nada. O Agente de Palavras-Chave passa a sua
+  // lista: quem entrou pra melhorar ficha não é ajudado por "Pausados sem estoque" nem por
+  // "Frete grátis abaixo de R$ 79" — são recortes de operação e de preço, e ocupam a tela
+  // inteira antes do que ele veio fazer (Lucas, 31/08/2026).
+  chips: null,
+  filtrosDePreco: true,
 }, (typeof window !== 'undefined' && window.MFSEL_HOST) || {});
+
+/** Os chips deste painel, na ordem que o host pediu. */
+function chipsDoPainel() {
+  if (!Array.isArray(HOST.chips)) return PROBLEM_CHIPS;
+  const porId = new Map(PROBLEM_CHIPS.map((c) => [c.id, c]));
+  return HOST.chips.map((id) => porId.get(id)).filter(Boolean);
+}
+
+/**
+ * Os botões de preço podem não existir neste painel. Devolver um objeto inerte é o que
+ * deixa os pontos que já mexiam neles seguirem iguais, sem espalhar `if` por 8 lugares.
+ */
+const INERTE = { classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+  addEventListener() {}, setAttribute() {}, style: {}, hidden: true, dataset: {} };
+function elOpcional(id) { return document.getElementById(id) || INERTE; }
 
 // O container onde o host desenha o resultado do clique. No Agente ele não existe
 // (resultsId: null) — devolver null aqui é o que deixa os `if (rc)` que já existiam
@@ -410,7 +432,7 @@ async function fetchCounts(sellerId) {
 
 function renderChips(counts) {
   const area = $('#chipsArea');
-  const visible = PROBLEM_CHIPS
+  const visible = chipsDoPainel()
     .map((c) => ({ chip: c, count: Number(counts[c.countKey] || 0) }))
     .filter((x) => x.count > 0);
 
@@ -1656,7 +1678,7 @@ function wireDiscountClearBtn() {
   const db = document.getElementById('discountClearBtn');
   if (db) db.addEventListener('click', () => {
     state.discountOnly = false;
-    $('#discountChip').classList.toggle('active', false);
+    elOpcional('discountChip').classList.toggle('active', false);
     state.offset = 0;
     syncClearBtn();
     loadPage();   // o recorte é de conta inteira: sair dele volta pra listagem paginada normal
@@ -1671,7 +1693,7 @@ function wireFreeShipClearBtn() {
   const fb = document.getElementById('freeShipClearBtn');
   if (fb) fb.addEventListener('click', () => {
     state.freeShipUnder = false;
-    $('#freeShipChip').classList.toggle('active', false);
+    elOpcional('freeShipChip').classList.toggle('active', false);
     state.offset = 0;
     syncClearBtn();
     loadPage();
@@ -2650,8 +2672,8 @@ function syncControlsToState() {
   $('#typeSelect').value = state.listingType || '';
   $('#logisticSelect').value = state.logisticType || '';
   setStatusToggle(state.status);
-  $('#discountChip').classList.toggle('active', state.discountOnly);
-  $('#freeShipChip').classList.toggle('active', state.freeShipUnder);
+  elOpcional('discountChip').classList.toggle('active', state.discountOnly);
+  elOpcional('freeShipChip').classList.toggle('active', state.freeShipUnder);
   // #discountHint fica sempre hidden — a faixa persistente (discountBannerHtml) assume o papel
   syncClearBtn();
 }
@@ -2686,6 +2708,16 @@ function refreshCounts() {
 }
 
 function wireControls() {
+  // Filtro de preço e de frete é ferramenta de quem caça margem; para quem veio melhorar
+  // ficha técnica é ruído na frente do que importa. Sai do DOM (não só `hidden`) porque o
+  // bloco "Filtrar e ordenar" conta o que está dentro dele pra montar o próprio rótulo.
+  if (HOST.filtrosDePreco === false) {
+    ['discountChip', 'freeShipChip', 'discountHint', 'freeShipHint'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+  }
+
   // abre/fecha o bloco "Filtrar e ordenar" (só visível no mobile)
   $('#filtersToggle').addEventListener('click', () => {
     const open = $('#filtersCard').classList.toggle('open');
@@ -2719,17 +2751,17 @@ function wireControls() {
   $('#typeSelect').addEventListener('change', (e) => { state.listingType = e.target.value; state.offset = 0; syncClearBtn(); loadPage(); });
   $('#logisticSelect').addEventListener('change', (e) => { state.logisticType = e.target.value; state.offset = 0; syncClearBtn(); loadPage(); });
   // recorte de conta inteira "Com desconto" (varre a lista toda — ver scanAccount)
-  $('#discountChip').addEventListener('click', () => {
+  elOpcional('discountChip').addEventListener('click', () => {
     state.discountOnly = !state.discountOnly;
-    $('#discountChip').classList.toggle('active', state.discountOnly);
+    elOpcional('discountChip').classList.toggle('active', state.discountOnly);
     state.offset = 0;
     syncClearBtn();
     loadPage();
   });
   // recorte de conta inteira "Frete grátis abaixo de R$ 79" (frete pago do próprio bolso)
-  $('#freeShipChip').addEventListener('click', () => {
+  elOpcional('freeShipChip').addEventListener('click', () => {
     state.freeShipUnder = !state.freeShipUnder;
-    $('#freeShipChip').classList.toggle('active', state.freeShipUnder);
+    elOpcional('freeShipChip').classList.toggle('active', state.freeShipUnder);
     state.offset = 0;
     syncClearBtn();
     loadPage();

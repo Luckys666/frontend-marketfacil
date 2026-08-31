@@ -57,7 +57,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'ad-selector.js'), 
 check('ad-selector ainda termina em boot() (o teste depende disso)', /\nboot\(\);\n/.test(src));
 
 function carregar(hostConfig) {
-  const patched = src.replace(/\nboot\(\);\n/, '\nwindow.__internos = { HOST };\n');
+  const patched = src.replace(/\nboot\(\);\n/, '\nwindow.__internos = { HOST, chipsDoPainel };\n');
   const box = mkSandbox(hostConfig);
   vm.createContext(box);
   vm.runInContext(patched, box, { filename: 'ad-selector.js' });
@@ -103,6 +103,31 @@ console.log('\n== nenhum literal solto sobrou no código ==');
   // E o acesso ao container passa a ser sempre pelo helper, que devolve null no Agente.
   check('ninguém mais chama getElementById direto pro container do host',
     !/getElementById\(['"]resultsContainer['"]\)/.test(corpo));
+}
+
+// O resumo e os filtros também são do painel, não fixos: quem entrou pra melhorar ficha
+// não é ajudado por "Pausados sem estoque" nem por "Frete grátis abaixo de R$ 79" (Lucas,
+// 31/08). Sem MFSEL_HOST nada muda — a Análise continua com tudo.
+console.log('\n== chips e filtros de preço são do painel ==');
+{
+  const todos = carregar(null).__internos.chipsDoPainel().map((c) => c.id);
+  check('sem host, TODOS os chips continuam (a Análise não sente nada)',
+    todos.length >= 8 && todos.includes('paused_no_stock'), todos.join(','));
+  check('e os filtros de preço ficam ligados', carregar(null).__internos.HOST.filtrosDePreco !== false);
+}
+{
+  const box = carregar({ chips: ['incomplete_specs', 'missing_gtin'], filtrosDePreco: false });
+  const escolhidos = box.__internos.chipsDoPainel().map((c) => c.id);
+  check('com host, só os chips pedidos aparecem', escolhidos.join() === 'incomplete_specs,missing_gtin', escolhidos.join());
+  check('na ordem em que o host pediu', escolhidos[0] === 'incomplete_specs');
+  check('e os filtros de preço saem', box.__internos.HOST.filtrosDePreco === false);
+  check('os de operação ficam de fora',
+    !escolhidos.includes('paused_no_stock') && !escolhidos.includes('few_available'), escolhidos.join());
+}
+{
+  // id que não existe não pode virar um chip fantasma na tela
+  const r = carregar({ chips: ['nao_existe', 'incomplete_specs'] }).__internos.chipsDoPainel().map((c) => c.id);
+  check('id desconhecido é ignorado em silêncio', r.join() === 'incomplete_specs', r.join());
 }
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');

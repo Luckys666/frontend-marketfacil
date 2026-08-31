@@ -720,6 +720,19 @@ window.MFSEL_HOST = {
   root: '.ana-wrapper',
   resultsId: null,
   onSelect: function (itemId) { window.MFFicha.abrirFichaIA(itemId); },
+
+  // O resumo e os filtros aqui são de FICHA E PALAVRAS, não de operação (Lucas, 31/08).
+  // Quem abre esta página veio melhorar o que o anúncio DIZ; "Pausados sem estoque",
+  // "Estoque quase no fim" e "Corrigir para reativar" são problemas de venda, e ocupavam a
+  // primeira tela inteira antes do que ele veio fazer. Ficam os quatro que se resolvem
+  // preenchendo campo, na ordem em que rendem:
+  //   ficha incompleta é o motivo da página existir; sem GTIN é campo de ficha; perder
+  //   exposição é, na maioria das vezes, consequência de ficha pobre.
+  chips: ['incomplete_specs', 'missing_gtin', 'unhealthy', 'warning'],
+
+  // "Com desconto" e "Frete grátis abaixo de R$ 79" recortam por preço e frete: úteis pra
+  // quem caça margem, ruído pra quem veio escrever ficha.
+  filtrosDePreco: false,
 };
 
 async function tokenDoML() {
