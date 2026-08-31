@@ -107,5 +107,33 @@ console.log('\n== o que muda o link do anúncio nunca entra em lote ==');
   check('e o palpite mostra em que a IA se baseou', /fia-porque/.test(ficha));
 }
 
+console.log('\n== a página começa pelos anúncios DO VENDEDOR (31/08) ==');
+{
+  // O campo de colar link nasceu antes de existir lista: era a única porta. Agora a página
+  // abre com os anúncios da própria conta — e a análise por link, que serve para QUALQUER
+  // anúncio (inclusive de concorrente), fica embaixo, com o rótulo dizendo isso.
+  const shell = html.indexOf('<!--SELECTOR-SHELL-->');
+  const campo = html.indexOf('id="input-link-anuncio"');
+  const botao = html.indexOf('id="btn-analisar"');
+  check('o painel do vendedor vem primeiro', shell > -1 && campo > -1 && shell < campo, shell + ' vs ' + campo);
+  check('e o botão de analisar vem junto do campo, lá embaixo', botao > campo, campo + ' vs ' + botao);
+
+  check('o bloco de fora tem container próprio', html.includes('id="kw-externo"'), html.slice(0, 200));
+  check('o resultado da análise por link mora dentro dele',
+    html.indexOf('id="kw-externo"') < html.indexOf('id="kw-missing"'), html.indexOf('id="kw-externo"') + ' vs ' + html.indexOf('id="kw-missing"'));
+
+  const rotulo = (html.match(/id="kw-externo"[\s\S]{0,600}?<div class="input-group"/) || [''])[0];
+  check('o rótulo diz que é anúncio de outra pessoa',
+    /concorrente|outro vendedor|de terceiros|qualquer an[úu]ncio/i.test(rotulo), rotulo.slice(0, 300));
+  check('e não promete que a ficha é analisada ali',
+    !/ficha t[ée]cnica/i.test(rotulo), rotulo.slice(0, 300));
+}
+{
+  // A mesma ordem precisa sobreviver ao build — é o bundle que vai pro Bubble.
+  const shell = bundle.indexOf('id="mfselRoot"');
+  const campo = bundle.indexOf('id="input-link-anuncio"');
+  check('no bundle a ordem é a mesma', shell > -1 && campo > -1 && shell < campo, shell + ' vs ' + campo);
+}
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);

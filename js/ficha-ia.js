@@ -1211,6 +1211,9 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
   const painel = document.getElementById('ficha-ia-painel');
   if (!view || !body) return;
   if (painel) painel.hidden = true;
+  // O campo de colar link é para espiar anúncio DE OUTRA PESSOA. Deixá-lo embaixo da ficha
+  // aberta é oferecer, no meio de um trabalho, a porta que leva para outro assunto.
+  mostrarBuscaExterna(false);
   view.hidden = false;
   body.innerHTML = '<div class="fia-carregando">Lendo a ficha deste anúncio…</div>';
 
@@ -1670,11 +1673,23 @@ async function salvar(itens) {
   body.insertBefore(ok, body.firstChild);
 }
 
+/**
+ * O bloco de espiar anúncio de terceiro.
+ *
+ * Ele vive no fim da página, depois dos anúncios do próprio vendedor — a página abre pelo
+ * que é dele (Lucas, 31/08). Some enquanto uma ficha está aberta e volta com a lista.
+ */
+function mostrarBuscaExterna(mostrar) {
+  const bloco = document.getElementById('kw-externo');
+  if (bloco) bloco.hidden = !mostrar;
+}
+
 function voltarParaLista() {
   const view = document.getElementById('ficha-ia-view');
   const painel = document.getElementById('ficha-ia-painel');
   if (view) view.hidden = true;
   if (painel) painel.hidden = false;
+  mostrarBuscaExterna(true);
   // O clique que abriu a ficha passou pelo enterAnalysis do Seletor, que escondeu o
   // #panelView e mostrou o #analysisView. Só desesconder a ficha deixava o vendedor na
   // barra de análise, tendo que clicar num SEGUNDO "voltar" pra ver a lista de novo —

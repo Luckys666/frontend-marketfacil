@@ -297,6 +297,25 @@ console.log('\n== P19 — o campo do erro casava por pedaço do nome ==');
     await Promise.all([primeiro, segundo]);
   }
 
+  console.log('\n== o bloco "espiar outro anúncio" sai da frente enquanto a ficha está aberta ==');
+  {
+    const CAT = [{ id: 'MATERIAL', name: 'Material', value_type: 'string', value_max_length: 255, tags: {} }];
+    const rotas = [
+      [/getAccessToken2/, async () => ({ body: { response: { access_token: 'T' } } })],
+      [/get-user-id/, async () => ({ body: { response: { user_id: 'u1' } } })],
+      [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 200, body: { id: 'MLB1111111111', title: 'Panela', category_id: 'C1', site_id: 'MLB', attributes: [] }, description: { plain_text: 'd' } }] })],
+      [/\/api\/attributes\//, async () => ({ body: CAT })],
+      [/\/api\/catalog-quality/, async () => ({ status: 404, body: {} })],
+      [/\/api\/gpt-ficha/, async () => ({ body: { ok: true, sugestoes: [], palavras_novas_sugeridas: [], palpites: [], sem_base: [], descartadas: 0 } })],
+    ];
+    const { M, el } = carregar({ rotas });
+    const externo = el('kw-externo');
+    await M.abrirFichaIA('MLB1111111111');
+    check('com a ficha aberta, o campo de colar link some', externo.hidden === true, String(externo.hidden));
+    M.voltarParaLista();
+    check('e volta quando ele volta pra lista', externo.hidden === false, String(externo.hidden));
+  }
+
   console.log('\n== o card é UM só, no padrão do app (31/08, noite) ==');
   {
     // Medido no navegador com o painel renderizado de verdade: as 7 linhas têm a MESMA

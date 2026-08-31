@@ -145,3 +145,13 @@
 
 /* As notas da barra viraram parágrafos (eram um <span> só, e agora são até três). */
 .kw-wrapper p.fia-tudo-nota { flex: 1 0 100%; margin: 0; }
+
+/* ── "Espiar outro anúncio": o fluxo antigo, agora no fim da página ─────────────
+   O campo de colar link nasceu antes de existir lista de anúncios do vendedor — era a
+   única porta. Com a lista no topo, ele passou a abrir a página oferecendo primeiro o
+   trabalho sobre anúncio DOS OUTROS (Lucas, 31/08). Aqui ele fica embaixo, separado, e o
+   rótulo diz de quem é o anúncio que vai ser analisado. */
+.kw-wrapper .kw-externo { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border, #e2e8f0); }
+.kw-wrapper .kw-externo[hidden] { display: none !important; }
+.kw-wrapper .kw-externo-topo { margin-bottom: 10px; }
+.kw-wrapper .kw-externo-dica { margin: 4px 0 0; font-size: .78rem; line-height: 1.45; color: var(--text-muted, #64748b); }
