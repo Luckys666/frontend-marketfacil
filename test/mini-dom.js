@@ -112,7 +112,35 @@ class No {
     }
     return saida;
   }
-  querySelectorAll(sel) { return this._todos([]).filter((n) => casa(n, sel)); }
+  /**
+   * Aceita lista (".a, .b" = OU) e descendente (".a .b" = dentro de). Os dois aparecem no
+   * painel: `.fia-check, .fia-check-nova` junta os dois tipos de marcação, e
+   * `.fia-secao-palpites .fia-linha` isola um bloco.
+   *
+   * O que continua lançando é `>`, `+` e `~` (ver `partir`): melhor um erro alto do que um
+   * `null` que passa por "não achei".
+   */
+  querySelectorAll(sel) {
+    const alternativas = String(sel).split(',').map((s) => s.trim()).filter(Boolean);
+    const achados = new Set();
+    for (const alt of alternativas) {
+      // `>`, `+` e `~` continuam fora: lançar é melhor que devolver vazio e passar por
+      // "não achei". Sem esta linha eles viravam um passo solto que casa com tudo.
+      if (/[>+~]/.test(alt.replace(/\[[^\]]*\]/g, ''))) {
+        throw new Error('mini-dom: combinador não suportado: ' + alt);
+      }
+      const passos = alt.split(/\s+/).filter(Boolean);
+      let nivel = [this];
+      for (const passo of passos) {
+        const proximo = new Set();
+        for (const base of nivel) for (const n of base._todos([])) if (casa(n, passo)) proximo.add(n);
+        nivel = [...proximo];
+      }
+      for (const n of nivel) if (n !== this) achados.add(n);
+    }
+    // devolve na ordem do documento, como o browser
+    return this._todos([]).filter((n) => achados.has(n));
+  }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   closest(sel) {
     let n = this;

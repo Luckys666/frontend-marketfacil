@@ -99,3 +99,12 @@
    que o vendedor lê pra decidir — e ele é quem afirma, não a ferramenta. */
 .kw-wrapper .fia-secao-palpites .fia-secao-titulo { color: var(--text, #1e3a5f); }
 .kw-wrapper .fia-porque { font-size: .78rem; line-height: 1.4; color: var(--text-muted, #64748b); font-style: italic; margin-top: 6px; }
+
+/* Botão por bloco e o "aplicar tudo". Aceitar as 4 sugestões de uma lista era clicar quatro
+   vezes em "Aplicar só este" — e o vendedor abandonava no meio. */
+.kw-wrapper .fia-tudo-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
+.kw-wrapper .fia-aplicar-tudo { flex: 1 1 auto; padding: 13px 16px; font-size: .95rem; font-weight: 700; border: 0; border-radius: 8px; background: var(--green, #00a06b); color: #fff; cursor: pointer; }
+.kw-wrapper .fia-aplicar-tudo:hover { background: #008a5c; }
+.kw-wrapper .fia-tudo-nota { font-size: .76rem; color: var(--text-muted, #64748b); }
+.kw-wrapper .fia-aplicar-secao { display: block; width: 100%; margin-top: 4px; padding: 9px 14px; font-size: .84rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); border-radius: 7px; background: #fff; color: var(--blue, #0066ff); cursor: pointer; }
+.kw-wrapper .fia-aplicar-secao:hover { background: #eff6ff; }

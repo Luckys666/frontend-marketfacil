@@ -203,29 +203,45 @@ const RESPOSTA_B = {
       JSON.stringify(enviado));
   }
 
-  console.log('\n== o lote continua ignorando as palavras novas (regressão do D9) ==');
+  console.log('\n== a palavra nova nasce desmarcada, e é isso que a protege (D9) ==');
   {
+    // O desenho mudou em 31/08: agora existe "aplicar tudo", e a palavra nova PODE entrar
+    // nele — desde que o vendedor marque. A trava do D9 não é ficar fora do botão, é NASCER
+    // DESMARCADA: nada afirma característica do produto por inércia.
     const MISTO = {
       ok: true,
       sugestoes: [{ id: 'MATERIAL', acao: 'preencher', valor: 'Aco inox', origens: [], palavras_novas: ['inox'], caracteres: 8 }],
       palavras_novas_sugeridas: [
         { id: 'BRAND', name: 'Marca', valor: 'Tramontina', palavra: 'tramontina', buscas: 3, combos: [], caracteres: 10 },
       ],
-      sem_base: [], descartadas: 0,
+      palpites: [], sem_base: [], descartadas: 0,
     };
-    const { rotas, puts } = mundo({ sugestoes: { MLB1111111111: MISTO } });
-    const { M, el } = carregar({ rotas });
-    await M.abrirFichaIA('MLB1111111111');
+    {
+      const { rotas, puts } = mundo({ sugestoes: { MLB1111111111: MISTO } });
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
 
-    const body = el('ficha-ia-body');
-    // marca a palavra nova de propósito: nem marcada ela pode entrar no lote
-    const checkNova = body.querySelector('.fia-check-nova');
-    if (checkNova) checkNova.checked = true;
-    await body.querySelector('.fia-lote').click();
+      check('a palavra nova nasce desmarcada', body.querySelector('.fia-check-nova').checked === false);
+      await body.querySelector('.fia-aplicar-tudo').click();
+      const enviado = ((puts[0] || {}).corpo || {}).attributes || [];
+      check('sem marcar, o aplicar tudo não a leva',
+        enviado.length === 1 && enviado[0].id === 'MATERIAL', JSON.stringify(enviado));
+    }
+    {
+      const { rotas, puts } = mundo({ sugestoes: { MLB1111111111: MISTO } });
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
 
-    const enviado = ((puts[0] || {}).corpo || {}).attributes || [];
-    check('o lote salvou só o que tem base no anúncio',
-      enviado.length === 1 && enviado[0].id === 'MATERIAL', JSON.stringify(enviado));
+      const cn = body.querySelector('.fia-check-nova');
+      cn.checked = true;
+      await cn.dispatchEvent({ type: 'change', target: cn });
+      await body.querySelector('.fia-aplicar-tudo').click();
+
+      const ids = (((puts[0] || {}).corpo || {}).attributes || []).map((a) => a.id).sort();
+      check('marcada pelo vendedor, ela entra', ids.join() === 'BRAND,MATERIAL', ids.join());
+    }
   }
 
   console.log('\n== as palavras do Agente são DO anúncio, não da sessão ==');
@@ -531,6 +547,135 @@ const RESPOSTA_B = {
     const t = el('ficha-ia-body').textContent;
     check('item sem categoria não vira /attributes/undefined',
       /n[ãa]o deu pra consultar|instabilidade/i.test(t), t.slice(0, 90));
+  }
+
+  console.log('\n== aplicar por bloco e aplicar tudo ==');
+  {
+    // Aceitar as 4 sugestões de uma lista era clicar 4 vezes em "Aplicar só este" — e o
+    // vendedor abandonava no meio (Lucas, 31/08). Agora cada bloco tem o seu botão, e
+    // existe um que resolve a tela inteira.
+    const COMPLETO = {
+      ok: true,
+      sugestoes: [
+        { id: 'MATERIAL', acao: 'preencher', valor: 'Aco inox', origens: [], palavras_novas: ['inox'], caracteres: 8 },
+        { id: 'BRAND', acao: 'preencher', valor: 'Tramontina', origens: [], palavras_novas: ['tramontina'], caracteres: 10 },
+      ],
+      palavras_novas_sugeridas: [
+        { id: 'MPN', name: 'MPN', valor: 'cropped basica', palavra: 'cropped', buscas: 7, combos: [], caracteres: 14 },
+      ],
+      palpites: [
+        { id: 'AGID', name: 'AGID', valor: 'passeio noite', porque: 'ocasiões de uso', palavras_novas: ['passeio', 'noite'], caracteres: 13 },
+      ],
+      sem_base: [], descartadas: 0,
+    };
+    const CAT = [
+      { id: 'MATERIAL', name: 'Material', value_type: 'string', value_max_length: 255, tags: {} },
+      { id: 'BRAND', name: 'Marca', value_type: 'string', value_max_length: 255, tags: {} },
+      { id: 'MPN', name: 'MPN', value_type: 'string', value_max_length: 255, tags: {} },
+      { id: 'AGID', name: 'AGID', value_type: 'string', value_max_length: 255, tags: {} },
+    ];
+    const mundoCompleto = () => {
+      const puts = [];
+      const rotas = [
+        [/getAccessToken2/, async () => ({ body: { response: { access_token: 'T' } } })],
+        [/get-user-id/, async () => ({ body: { response: { user_id: 'u1' } } })],
+        [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 200, body: { id: 'MLB1111111111', title: 'Panela', category_id: 'C1', site_id: 'MLB', attributes: [] }, description: { plain_text: 'd' } }] })],
+        [/\/api\/attributes\//, async () => ({ body: CAT })],
+        [/\/api\/catalog-quality/, async () => ({ status: 404, body: {} })],
+        [/\/api\/gpt-ficha/, async () => ({ body: COMPLETO })],
+        [/\/api\/fetch-item-update/, async (u, init) => { puts.push(JSON.parse(init.body || '{}')); return { body: {} }; }],
+      ];
+      return { rotas, puts };
+    };
+
+    {
+      const { rotas, puts } = mundoCompleto();
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
+
+      const btTudo = body.querySelector('.fia-aplicar-tudo');
+      check('o botão de aplicar tudo aparece', !!btTudo);
+      check('e conta só o que nasce marcado (2, não 4)',
+        /\(2\)/.test(btTudo.textContent), btTudo.textContent);
+
+      await btTudo.click();
+      check('um clique, um PUT só', puts.length === 1, String(puts.length));
+      const ids = ((puts[0] || {}).attributes || []).map((a) => a.id).sort();
+      check('com os dois campos marcados juntos', ids.join() === 'BRAND,MATERIAL', ids.join());
+    }
+    {
+      // marcar um palpite muda o número do botão e o que ele salva
+      const { rotas, puts } = mundoCompleto();
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
+
+      const checkPalpite = body.querySelector('.fia-secao-palpites .fia-check-nova');
+      checkPalpite.checked = true;
+      await checkPalpite.dispatchEvent({ type: 'change', target: checkPalpite });
+
+      const btTudo = body.querySelector('.fia-aplicar-tudo');
+      check('o número sobe quando o vendedor marca um palpite', /\(3\)/.test(btTudo.textContent), btTudo.textContent);
+
+      await btTudo.click();
+      const ids = ((puts[0] || {}).attributes || []).map((a) => a.id).sort();
+      check('e o palpite marcado entra no PUT', ids.join() === 'AGID,BRAND,MATERIAL', ids.join());
+    }
+    {
+      // botão de um bloco só salva o daquele bloco
+      const { rotas, puts } = mundoCompleto();
+      const { M, el } = carregar({ rotas });
+      await M.abrirFichaIA('MLB1111111111');
+      const body = el('ficha-ia-body');
+
+      // marca o palpite: se o botão do bloco "achei" levasse a tela toda, ele viria junto
+      const cn = body.querySelector('.fia-secao-palpites .fia-check-nova');
+      cn.checked = true;
+      await cn.dispatchEvent({ type: 'change', target: cn });
+
+      const secaoAchei = body.querySelectorAll('.fia-secao').find((s) => (s.getAttribute('data-secao') || '') === 'achei');
+      check('o bloco tem o seu próprio botão', !!(secaoAchei && secaoAchei.querySelector('.fia-aplicar-secao')));
+      await secaoAchei.querySelector('.fia-aplicar-secao').click();
+
+      const ids = ((puts[0] || {}).attributes || []).map((a) => a.id).sort();
+      check('salva os do bloco e nada de fora dele',
+        ids.join() === 'BRAND,MATERIAL', ids.join());
+      check('o palpite marcado em OUTRO bloco não foi junto', !ids.includes('AGID'), ids.join());
+    }
+  }
+  {
+    // O campo que muda o link NÃO entra no aplicar tudo — nem por engano.
+    const CARO = {
+      ok: true,
+      sugestoes: [
+        { id: 'MATERIAL', acao: 'preencher', valor: 'Aco inox', origens: [], palavras_novas: ['inox'], caracteres: 8 },
+        { id: 'COLOR', acao: 'trocar', valor: 'Rosa claro', atual: 'Rosa', origens: [], palavras_novas: ['claro'], caracteres: 10 },
+      ],
+      palavras_novas_sugeridas: [], palpites: [], sem_base: [], descartadas: 0,
+    };
+    const CAT = [
+      { id: 'MATERIAL', name: 'Material', value_type: 'string', value_max_length: 255, tags: {} },
+      { id: 'COLOR', name: 'Cor', value_type: 'string', value_max_length: 255, tags: {}, hierarchy: 'CHILD_PK' },
+    ];
+    const puts = [];
+    const rotas = [
+      [/getAccessToken2/, async () => ({ body: { response: { access_token: 'T' } } })],
+      [/get-user-id/, async () => ({ body: { response: { user_id: 'u1' } } })],
+      [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 200, body: { id: 'MLB1111111111', title: 'Panela Rosa', category_id: 'C1', site_id: 'MLB', user_product_id: 'MLBU9', attributes: [{ id: 'COLOR', name: 'Cor', value_name: 'Rosa' }] }, description: { plain_text: 'd' } }] })],
+      [/\/api\/attributes\//, async () => ({ body: CAT })],
+      [/\/api\/catalog-quality/, async () => ({ status: 404, body: {} })],
+      [/\/api\/gpt-ficha/, async () => ({ body: CARO })],
+      [/\/api\/fetch-item-update/, async (u, init) => { puts.push(JSON.parse(init.body || '{}')); return { body: {} }; }],
+    ];
+    const { M, el } = carregar({ rotas });
+    await M.abrirFichaIA('MLB1111111111');
+    const body = el('ficha-ia-body');
+
+    check('a tela avisa quantos ficam de fora', /fica de fora|ficam de fora/.test(body.textContent), body.textContent.slice(0, 200));
+    await body.querySelector('.fia-aplicar-tudo').click();
+    const ids = ((puts[0] || {}).attributes || []).map((a) => a.id);
+    check('o campo que muda o link NÃO entra no aplicar tudo', ids.join() === 'MATERIAL', ids.join());
   }
 
   console.log(`\n${pass} passaram, ${fail} falharam`);

@@ -162,7 +162,9 @@ console.log('\n== render: sucesso ==');
   check('e diz por que está vazio', /ficaram com voc|nem o an[úu]ncio diz/i.test(txt), txt.slice(0, 200));
   check('sem prometer que a IA não chuta (ela chuta agora)', !/n[ãa]o chuta/i.test(txt));
   check('não conta pro vendedor quantas a peneira descartou', !/descartad/i.test(txt));
-  check('o botão de lote existe', /aceitar tudo|salvar os/i.test(txt));
+  // 31/08: em vez de um botão de lote só, cada bloco tem o seu e existe um "aplicar tudo".
+  check('o botão de aplicar tudo existe', /Aplicar tudo que está marcado/i.test(txt), txt.slice(0, 160));
+  check('e cada bloco tem o seu botão', /Aplicar os marcados|Aplicar as/i.test(txt));
   check('avisa que o campo caro renomeia', /perde a exposi|muda o link/i.test(txt));
   check('nunca escreve "atributo"', !/atributo/i.test(txt), txt.slice(0, 200));
   check('nunca escreve GPT/OpenAI', !/gpt|openai/i.test(txt));
@@ -183,7 +185,10 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   const bloco = html.slice(html.indexOf('fia-nova'));
   check('nasce DESMARCADA', bloco.indexOf('checked') === -1 || bloco.indexOf('data-nova') < bloco.indexOf('checked'),
     bloco.slice(0, 200));
-  check('o botão de lote conta só as 2 do anúncio, não a palavra nova', /Salvar os 2/.test(txt), txt.slice(0, 400));
+  // O botão conta o que está MARCADO. A palavra nova nasce desmarcada, então não entra no
+  // número — e o bloco dela abre em "(0)" até o vendedor escolher.
+  check('o "aplicar tudo" conta só o que nasce marcado', /Aplicar tudo que está marcado[\s\S]{0,60}\(2\)/.test(html), txt.slice(0, 300));
+  check('o bloco das palavras novas abre em zero', /Aplicar as palavras marcadas[\s\S]{0,60}\(0\)/.test(html), txt.slice(0, 300));
 }
 
 console.log('\n== render: nada passou na régua != falha ==');

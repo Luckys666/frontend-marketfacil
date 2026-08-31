@@ -125,11 +125,15 @@ console.log('\n== #2 a descrição do /api/fetch-item é IRMÃ do body ==');
     const fonte = ler('js', 'ficha-ia.js');
     check('ligarBotoes tem guarda de uma vez só', /_botoesLigados/.test(fonte));
     const { M, box } = carregar();
-    let ligados = 0;
+    const ligados = [];
     const body = box.document.getElementById('ficha-ia-body');
-    body.addEventListener = () => { ligados++; };
+    body.addEventListener = (tipo) => { ligados.push(tipo); };
     M.ligarBotoes(); M.ligarBotoes(); M.ligarBotoes();
-    check('3 chamadas = 1 listener', ligados === 1, String(ligados));
+    // São dois: `click` (aplicar) e `change` (recontar os botões ao marcar/desmarcar).
+    // O que importa é que 3 chamadas não virem 6 listeners — aí um clique salvaria em
+    // duplicata.
+    check('3 chamadas não empilham listener', ligados.length === 2, ligados.join(','));
+    check('e são um de cada tipo', ligados.includes('click') && ligados.includes('change'), ligados.join(','));
   }
 
   console.log('\n== #5 o retry nunca escreve no anúncio errado ==');

@@ -58,8 +58,25 @@ console.log('\n== seletores ==');
   check('checked vem do atributo', box.querySelector('.fia-check').checked === true);
   check('sem checked é false', box.querySelectorAll('.fia-check')[1].checked === false);
   let lancou = false;
-  try { box.querySelector('.a .b'); } catch (e) { lancou = true; }
-  check('seletor com combinador LANÇA em vez de mentir "não achei"', lancou);
+  try { box.querySelector('.a > .b'); } catch (e) { lancou = true; }
+  check('combinador NÃO suportado (>) LANÇA em vez de mentir "não achei"', lancou);
+  // vírgula é OU, como no CSS — e é assim que o painel junta os dois tipos de checkbox
+  check('lista de seletores (".a, .b") pega os dois',
+    box.querySelectorAll('.fia-check, .fia-valor').length === 4,
+    String(box.querySelectorAll('.fia-check, .fia-valor').length));
+}
+
+console.log('\n== descendente: ".bloco .item" ==');
+{
+  const doc = criarDocumento();
+  const box = doc.getElementById('desc');
+  box.innerHTML = '<div class="bloco a"><span class="item">1</span><span class="item">2</span></div>'
+    + '<div class="bloco b"><span class="item">3</span></div>';
+  check('pega só os de dentro do bloco pedido', box.querySelectorAll('.a .item').length === 2,
+    String(box.querySelectorAll('.a .item').length));
+  check('e o outro bloco tem o seu', box.querySelectorAll('.b .item').length === 1);
+  check('sem prefixo, pega todos', box.querySelectorAll('.item').length === 3);
+  check('na ordem do documento', box.querySelectorAll('.item')[0].textContent === '1');
 }
 
 console.log('\n== closest ==');
