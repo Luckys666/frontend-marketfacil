@@ -168,24 +168,25 @@ function palavrasDoAnuncio(itemId) {
  * faltam é uma só. Falhar aqui não é erro fatal — a ficha ainda vale pelo que o texto do
  * anúncio sustenta, então o erro é engolido e a lista fica vazia.
  */
-async function cacarPalavras(itemId, signal) {
+async function cacarPalavras(itemId, detail, descricao, signal) {
   const Kw = window.MFKw;
   if (!Kw || palavrasPorAnuncio.has(String(itemId).toUpperCase())) return;
   try {
     const uid = await Kw.fetchUserIdForScraping();
     if (!uid) return;
-    const url = Kw.buildScraperUrl({ id: itemId, type: 'item' });
-    if (!url) return;
 
-    // GET com a url na query e `x-user-id` no header — é assim que o Agente chama, e o
-    // formato importa: um POST com o link no corpo volta 404 e a caça morre em silêncio.
-    const resp = await Kw.withMintRetry((u) => fetch(
-      Kw.SCRAPER_ENDPOINT + '?url=' + encodeURIComponent(url),
-      { headers: { 'x-user-id': u }, signal: signal || undefined }
-    ));
-    if (!resp.ok) return;
-    const produto = await resp.json().catch(() => null);
-    if (!produto || !produto.title) return;
+    // ⚠️ NADA DE SCRAPER AQUI. O anúncio é da conta de quem está usando, e o item já veio
+    // pela API do ML no começo desta mesma abertura — raspar a página seria pedir de novo,
+    // por fora, o que já está na mão. O scraper existe no Agente porque lá o vendedor cola
+    // QUALQUER link, inclusive de concorrente; aqui não. Custava crédito de Decodo, corria
+    // risco de Anubis e de página instável, e somava segundos ao carregamento (Lucas,
+    // 31/08). `extractIndexedWords` só precisa de title + attributes, que o item tem.
+    const produto = {
+      title: (detail && detail.title) || '',
+      attributes: (detail && detail.attributes) || [],
+      description: descricao || '',
+    };
+    if (!produto.title) return;
 
     const gpt = await Kw.withMintRetry((u) => fetch(Kw.GPT_KEYWORDS_ENDPOINT, {
       method: 'POST',
@@ -1033,6 +1034,10 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     const envelope = Array.isArray(detalhe) ? detalhe[0] : null;
     const detail = envelope ? envelope.body : detalhe;
     if (!detail || !detail.id) throw new Error('sem detalhe');
+    // A descrição não vai mais no payload da ficha (quem lê é o proxy, no ML), mas serve
+    // aqui: é dela que a caça de palavras tira o texto, sem precisar raspar a página.
+    const d = (envelope && envelope.description) || detail.description || {};
+    const descricao = d.plain_text || d.text || '';
 
     const nota = document.getElementById('ficha-ia-head');
     if (nota) {
@@ -1068,7 +1073,7 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     // segunda chamada paga pro mesmo anúncio.
     if (!palavrasPorAnuncio.has(String(detail.id).toUpperCase())) {
       body.innerHTML = '<div class="fia-carregando">Procurando palavras que seu anúncio ainda não alcança…</div>';
-      await cacarPalavras(detail.id, signal);
+      await cacarPalavras(detail.id, detail, descricao, signal);
       if (!geracaoVigente(geracao)) return;
     }
 

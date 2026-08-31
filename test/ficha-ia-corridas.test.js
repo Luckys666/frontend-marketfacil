@@ -326,8 +326,13 @@ const RESPOSTA_B = {
 
     await M.abrirFichaIA('MLB1111111111');
 
-    check('a caça chamou o scraper', chamadas.some((u) => u.includes('ml-scraper')), JSON.stringify(chamadas.slice(0, 4)));
-    check('e o gerador de palavras', chamadas.some((u) => u.includes('gpt-palavras')));
+    // ⚠️ NADA de scraper aqui: o anúncio é da conta de quem está usando e o item já veio
+    // pela API do ML nesta mesma abertura. Raspar a página seria pedir de novo, por fora, o
+    // que já está na mão — com crédito de Decodo, risco de Anubis e segundos a mais
+    // (Lucas, 31/08: "por que raios estamos usando o scraper se o anúncio é da conta da
+    // própria pessoa?").
+    check('a caça NÃO chama o scraper', !chamadas.some((u) => u.includes('ml-scraper')), JSON.stringify(chamadas));
+    check('e o gerador de palavras é chamado', chamadas.some((u) => u.includes('gpt-palavras')));
     const p = (payload || {}).palavras_que_faltam || [];
     check('as palavras chegaram na análise da ficha', p.length === 1 && p[0].palavra === 'antiaderente', JSON.stringify(p));
     check('com as buscas que cada uma abre', p[0] && p[0].buscas === 6, JSON.stringify(p[0]));
