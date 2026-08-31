@@ -298,11 +298,29 @@ const RESPOSTA_B = {
       buildMissingWordsMap: () => [['antiaderente', { count: 6, categories: new Set(['beneficios']), phrases: ['panela antiaderente'] }]],
     };
     const fetchAntigo = box.fetch;
+    // O mock exige o formato REAL de cada endpoint. Na primeira versão ele aceitava
+    // qualquer coisa, então passou com um POST inventado — e o proxy respondeu 404 na
+    // conta real. Mock que aceita o que o código manda mede a intenção, não o sistema.
     box.fetch = async (url, init) => {
       const u = String(url);
+      const cfg = init || {};
       chamadas.push(u);
-      if (u.includes('ml-scraper')) return { ok: true, status: 200, json: async () => ({ title: 'Panela', description: 'inox' }) };
-      if (u.includes('gpt-palavras')) return { ok: true, status: 200, json: async () => ({ beneficios: ['antiaderente'] }) };
+      if (u.includes('ml-scraper')) {
+        const metodo = (cfg.method || 'GET').toUpperCase();
+        const temUrlNaQuery = /[?&]url=/.test(u);
+        const temUserId = !!(cfg.headers && cfg.headers['x-user-id']);
+        if (metodo !== 'GET' || !temUrlNaQuery || !temUserId) {
+          return { ok: false, status: 404, json: async () => ({ error: 'formato errado' }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ title: 'Panela', description: 'inox' }) };
+      }
+      if (u.includes('gpt-palavras')) {
+        const corpo = JSON.parse(cfg.body || '{}');
+        if ((cfg.method || '').toUpperCase() !== 'POST' || !corpo.texto) {
+          return { ok: false, status: 400, json: async () => ({}) };
+        }
+        return { ok: true, status: 200, json: async () => ({ beneficios: ['antiaderente'] }) };
+      }
       return fetchAntigo(url, init);
     };
 

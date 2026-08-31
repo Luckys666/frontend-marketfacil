@@ -177,12 +177,12 @@ async function cacarPalavras(itemId, signal) {
     const url = Kw.buildScraperUrl({ id: itemId, type: 'item' });
     if (!url) return;
 
-    const resp = await Kw.withMintRetry((u) => fetch(Kw.SCRAPER_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + u },
-      body: JSON.stringify({ url }),
-      signal: signal || undefined,
-    }));
+    // GET com a url na query e `x-user-id` no header — é assim que o Agente chama, e o
+    // formato importa: um POST com o link no corpo volta 404 e a caça morre em silêncio.
+    const resp = await Kw.withMintRetry((u) => fetch(
+      Kw.SCRAPER_ENDPOINT + '?url=' + encodeURIComponent(url),
+      { headers: { 'x-user-id': u }, signal: signal || undefined }
+    ));
     if (!resp.ok) return;
     const produto = await resp.json().catch(() => null);
     if (!produto || !produto.title) return;
