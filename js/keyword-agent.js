@@ -826,6 +826,27 @@ window.__kwCopySingleTitle = function(btn, i) {
   });
 };
 
+/**
+ * As peças puras da análise, para a ficha técnica caçar palavras sozinha.
+ *
+ * `handleAnalyzeKeywords` não serve pra isso: ele lê o input da tela e redesenha o painel
+ * inteiro do Agente, o que atropelaria a ficha aberta por cima. O que a ficha precisa é do
+ * miolo — de onde saem as palavras que o anúncio NÃO tem — sem nada de UI.
+ *
+ * Só exporta o que já existe: nenhuma régua muda de lugar, e o fluxo do botão continua
+ * exatamente o mesmo.
+ */
+window.MFKw = {
+  extractIndexedWords,
+  buildMissingWordsMap,
+  normalizeMlInput,
+  buildScraperUrl,
+  fetchUserIdForScraping,
+  withMintRetry,
+  SCRAPER_ENDPOINT,
+  GPT_KEYWORDS_ENDPOINT,
+};
+
 function bindButton() {
   const btn = document.getElementById('btn-analisar');
   if (btn && !btn.__kwBound) {

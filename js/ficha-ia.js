@@ -157,6 +157,55 @@ function palavrasDoAnuncio(itemId) {
 }
 
 /**
+ * Caça as palavras que este anúncio NÃO tem, sem passar pela tela do Agente.
+ *
+ * É o maior ganho da ferramenta e, até aqui, o vendedor só o alcançava se colasse o link
+ * no campo de cima e clicasse em ANALISAR. Quem escolhia o anúncio pela lista do Seletor
+ * — o caminho principal — recebia a ficha sem nenhuma palavra nova: sobrava só organizar
+ * o que o anúncio já dizia, que é o ganho menor.
+ *
+ * Usa as MESMAS peças do Agente (`window.MFKw`), não uma cópia: a régua de quais palavras
+ * faltam é uma só. Falhar aqui não é erro fatal — a ficha ainda vale pelo que o texto do
+ * anúncio sustenta, então o erro é engolido e a lista fica vazia.
+ */
+async function cacarPalavras(itemId, signal) {
+  const Kw = window.MFKw;
+  if (!Kw || palavrasPorAnuncio.has(String(itemId).toUpperCase())) return;
+  try {
+    const uid = await Kw.fetchUserIdForScraping();
+    if (!uid) return;
+    const url = Kw.buildScraperUrl({ id: itemId, type: 'item' });
+    if (!url) return;
+
+    const resp = await Kw.withMintRetry((u) => fetch(Kw.SCRAPER_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + u },
+      body: JSON.stringify({ url }),
+      signal: signal || undefined,
+    }));
+    if (!resp.ok) return;
+    const produto = await resp.json().catch(() => null);
+    if (!produto || !produto.title) return;
+
+    const gpt = await Kw.withMintRetry((u) => fetch(Kw.GPT_KEYWORDS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + u },
+      body: JSON.stringify({
+        texto: produto.title + (produto.description ? '. ' + produto.description : ''),
+        site_id: String(itemId).slice(0, 3).toUpperCase(),
+      }),
+      signal: signal || undefined,
+    }));
+    if (!gpt.ok) return;
+    const keywords = await gpt.json().catch(() => null);
+    if (!keywords) return;
+
+    const faltantes = Kw.buildMissingWordsMap(keywords, Kw.extractIndexedWords(produto));
+    registrarPalavras(itemId, faltantes.slice(0, 30));
+  } catch (e) { /* sem palavras novas a ficha ainda serve; não vira erro na tela */ }
+}
+
+/**
  * As palavras que o Agente descobriu, no formato que o proxy espera.
  * Entrada: o que o `buildMissingWordsMap` do keyword-agent já produz —
  * `[palavra, { count, categories: Set, phrases: [] }]`.
@@ -192,8 +241,11 @@ function formatarPalavrasQueFaltam(lista) {
 function montarPayload({ detail, categoryAttributes, obrigatoriosML, palavrasQueFaltam }) {
   return {
     item_id: (detail && detail.id) || '',
+    // `renomeia_variacao` viaja: é o proxy que decide o que oferecer ao modelo, e campo que
+    // renomeia a variação não pode entrar na caça de palavras — o ganho é um token e o
+    // custo é o anúncio recomeçar sem a exposição que tinha (Lucas, 31/08).
     campos: camposElegiveis(categoryAttributes, detail, obrigatoriosML)
-      .map(({ _extra, _renomeia, _mudaLink, ...limpo }) => limpo),
+      .map(({ _extra, _renomeia, _mudaLink, ...limpo }) => ({ ...limpo, renomeia_variacao: !!_renomeia })),
     palavras_que_faltam: formatarPalavrasQueFaltam(palavrasQueFaltam),
   };
 }
@@ -817,6 +869,15 @@ async function abrirFichaIA(itemId) {
     estadoFicha.itemId = detail.id;
     estadoFicha.detail = detail;
     estadoFicha.campos = camposElegiveis(cats, detail, obrigatorios);
+
+    // As palavras que o anúncio não tem vêm ANTES da chamada da ficha, não depois: a IA
+    // precisa delas na mão pra propor onde cada uma cabe. Buscar depois custaria uma
+    // segunda chamada paga pro mesmo anúncio.
+    if (!palavrasPorAnuncio.has(String(detail.id).toUpperCase())) {
+      body.innerHTML = '<div class="fia-carregando">Procurando palavras que seu anúncio ainda não alcança…</div>';
+      await cacarPalavras(detail.id, signal);
+      if (!geracaoVigente(geracao)) return;
+    }
 
     const payload = montarPayload({
       detail, categoryAttributes: cats, obrigatoriosML: obrigatorios,

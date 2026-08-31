@@ -273,6 +273,80 @@ const RESPOSTA_B = {
     check('e a categoria, que o proxy usa pra barrar concorrência', !!(p[0] && p[0].categorias));
   }
 
+  console.log('\n== a ficha caça sozinha as palavras que o anúncio não tem ==');
+  {
+    // O maior ganho da ferramenta é entrar em buscas que o anúncio não alcança. Até aqui,
+    // isso só acontecia se o vendedor colasse o link no campo de cima e clicasse ANALISAR;
+    // quem escolhia pela lista do Seletor — o caminho principal — recebia a ficha sem
+    // nenhuma palavra nova.
+    let payload = null;
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const comEspiao = rotas.map(([p, fn]) => [p, async (url, init) => {
+      if (/gpt-ficha/.test(url)) payload = JSON.parse(init.body || '{}');
+      return fn(url, init);
+    }]);
+    const { M, box } = carregar({ rotas: comEspiao });
+
+    const chamadas = [];
+    box.MFKw = {
+      SCRAPER_ENDPOINT: 'https://proxy/api/ml-scraper',
+      GPT_KEYWORDS_ENDPOINT: 'https://proxy/api/gpt-palavras',
+      fetchUserIdForScraping: async () => 'user-1',
+      buildScraperUrl: ({ id }) => 'https://produto/' + id,
+      withMintRetry: async (fn) => fn('user-1'),
+      extractIndexedWords: () => new Set(['panela']),
+      buildMissingWordsMap: () => [['antiaderente', { count: 6, categories: new Set(['beneficios']), phrases: ['panela antiaderente'] }]],
+    };
+    const fetchAntigo = box.fetch;
+    box.fetch = async (url, init) => {
+      const u = String(url);
+      chamadas.push(u);
+      if (u.includes('ml-scraper')) return { ok: true, status: 200, json: async () => ({ title: 'Panela', description: 'inox' }) };
+      if (u.includes('gpt-palavras')) return { ok: true, status: 200, json: async () => ({ beneficios: ['antiaderente'] }) };
+      return fetchAntigo(url, init);
+    };
+
+    await M.abrirFichaIA('MLB1111111111');
+
+    check('a caça chamou o scraper', chamadas.some((u) => u.includes('ml-scraper')), JSON.stringify(chamadas.slice(0, 4)));
+    check('e o gerador de palavras', chamadas.some((u) => u.includes('gpt-palavras')));
+    const p = (payload || {}).palavras_que_faltam || [];
+    check('as palavras chegaram na análise da ficha', p.length === 1 && p[0].palavra === 'antiaderente', JSON.stringify(p));
+    check('com as buscas que cada uma abre', p[0] && p[0].buscas === 6, JSON.stringify(p[0]));
+
+    // segunda abertura do MESMO anúncio não paga de novo
+    const antes = chamadas.filter((u) => u.includes('gpt-palavras')).length;
+    await M.abrirFichaIA('MLB1111111111');
+    const depois = chamadas.filter((u) => u.includes('gpt-palavras')).length;
+    check('reabrir o mesmo anúncio não caça de novo', depois === antes, `${antes} -> ${depois}`);
+  }
+  {
+    // A caça é um bônus: se ela falhar, a ficha ainda vale pelo que o texto sustenta.
+    let payload = null;
+    const { rotas } = mundo({ sugestoes: { MLB1111111111: RESPOSTA_A } });
+    const comEspiao = rotas.map(([p, fn]) => [p, async (url, init) => {
+      if (/gpt-ficha/.test(url)) payload = JSON.parse(init.body || '{}');
+      return fn(url, init);
+    }]);
+    const { M, box } = carregar({ rotas: comEspiao });
+    box.MFKw = {
+      SCRAPER_ENDPOINT: 'https://proxy/api/ml-scraper',
+      GPT_KEYWORDS_ENDPOINT: 'https://proxy/api/gpt-palavras',
+      fetchUserIdForScraping: async () => { throw new Error('scraper fora'); },
+      buildScraperUrl: () => 'https://produto/x',
+      withMintRetry: async (fn) => fn('u'),
+      extractIndexedWords: () => new Set(),
+      buildMissingWordsMap: () => [],
+    };
+
+    await M.abrirFichaIA('MLB1111111111');
+    check('a caça falhar não derruba a ficha', !!payload, 'a análise da ficha nem aconteceu');
+    check('e ela segue com o que o anúncio sustenta',
+      (payload.palavras_que_faltam || []).length === 0 && !!payload.item_id, JSON.stringify(payload && payload.item_id));
+    const corpo = ((box.document.getElementById('ficha-ia-body') || {}).innerHTML) || '';
+    check('a tela não mostra erro por causa disso', !/não deu pra consultar/i.test(corpo), corpo.slice(0, 90));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();
