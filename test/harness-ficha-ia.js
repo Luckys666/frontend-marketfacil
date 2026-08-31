@@ -1,51 +1,53 @@
 'use strict';
 /*
- * Harness do módulo ficha-ia. Mesmo desenho do harness-analyzer: sandbox vm com stubs
- * mínimos de DOM, porque o módulo é acoplado ao DOM e não dá pra require() direto.
+ * Harness do módulo ficha-ia. Sandbox vm, porque o módulo é acoplado ao DOM e não dá pra
+ * require() direto.
+ *
+ * O DOM aqui é o mini-dom: ele PARSEIA o HTML que o render gera, em vez de devolver stubs.
+ * Antes, `querySelector` e `closest` devolviam null sempre — e por isso `marcadosNoLote`,
+ * `umCampo` e o handler de clique nunca rodaram em teste nenhum (foi por essa fresta que o
+ * P3 passou).
  *
  * Uso:
  *   const { carregar } = require('./harness-ficha-ia');
- *   const { M, box } = carregar();          // M = window.MFFicha
- *   const { M, box } = carregar({ resposta: {...} });   // fetch devolve isso
+ *   const { M, box } = carregar();                      // fetch devolve o padrão
+ *   const { M, box } = carregar({ resposta: {...} });    // fetch devolve isso
+ *   const { M, box } = carregar({ rotas: [[/regex/, () => ({...})]] });  // por URL
  */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-
-function mkEl(id) {
-  const el = {
-    id: id || '', _html: '', value: '', hidden: false, disabled: false, checked: false,
-    style: { removeProperty() {}, setProperty() {} }, dataset: {}, children: [], _attrs: {},
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    setAttribute(k, v) { this._attrs[k] = v; }, getAttribute(k) { return this._attrs[k] || null; },
-    appendChild(n) { this.children.push(n); return n; }, removeChild() {},
-    // salvar() insere o aviso de erro/sucesso no topo do container. Sem estes dois o
-    // caminho inteiro de salvar morria no harness — e foi só o teste de integração,
-    // que chama salvar() de verdade, que percebeu.
-    insertBefore(n) { this.children.unshift(n); return n; },
-    get firstChild() { return this.children[0] || null; },
-    addEventListener() {}, removeEventListener() {}, click() {}, focus() {}, remove() {},
-    querySelector() { return null; }, querySelectorAll() { return []; }, closest() { return null; },
-  };
-  Object.defineProperty(el, 'innerHTML', { get() { return el._html; }, set(v) { el._html = String(v); } });
-  const semTags = () => String(el._html).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-  Object.defineProperty(el, 'textContent', { get: semTags, set(v) { el._html = String(v); }, configurable: true });
-  return el;
-}
+const { criarDocumento } = require('./mini-dom');
 
 function carregar(opts = {}) {
-  const reg = {};
+  const doc = criarDocumento();
   const box = {
     console, JSON, Object, Array, Math, RegExp, Set, Map, Date, Number, String, Boolean,
     parseInt, parseFloat, isFinite, isNaN, Promise, Error, encodeURIComponent, decodeURIComponent,
-    URLSearchParams, setTimeout: (fn) => { try { fn(); } catch (_) {} return 0; }, clearTimeout() {},
+    URLSearchParams, AbortController: global.AbortController,
+    setTimeout: (fn) => { try { fn(); } catch (_) {} return 0; }, clearTimeout() {},
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     navigator: { clipboard: { writeText: async () => {} }, userAgent: 'node' },
   };
   box.chamadas = [];
+
+  // `rotas` responde por URL — é o que permite encenar "o anúncio A demora mais que o B",
+  // que é o cenário do P1. Sem ela, todo fetch devolve a mesma coisa e a corrida não existe.
   box.fetch = async (url, init) => {
-    box.chamadas.push({ url: String(url), init: init || {} });
+    const reg = { url: String(url), init: init || {} };
+    box.chamadas.push(reg);
+    for (const [padrao, responder] of (opts.rotas || [])) {
+      if (padrao.test(String(url))) {
+        const r = await responder(String(url), init || {});
+        if (r && r.__erro) throw new Error(r.__erro);
+        return {
+          ok: r.status ? r.status < 400 : true,
+          status: r.status || 200,
+          json: async () => (r.body === undefined ? {} : r.body),
+        };
+      }
+    }
     if (opts.falhar) throw new Error('rede caiu');
     return {
       ok: opts.status ? opts.status < 400 : true,
@@ -53,12 +55,8 @@ function carregar(opts = {}) {
       json: async () => opts.resposta || { ok: true, sugestoes: [], sem_base: [], descartadas: 0 },
     };
   };
-  box.document = {
-    readyState: 'complete',
-    getElementById(id) { if (!reg[id]) reg[id] = mkEl(id); return reg[id]; },
-    createElement: () => mkEl(), body: mkEl('body'), head: mkEl('head'),
-    addEventListener() {}, querySelector: () => null, querySelectorAll: () => [],
-  };
+
+  box.document = doc;
   box.window = box; box.globalThis = box;
   box.location = { href: 'https://app.marketfacil.com.br/agente-de-palavras-chave', search: '', pathname: '/agente-de-palavras-chave' };
   box.window.location = box.location;
@@ -66,7 +64,7 @@ function carregar(opts = {}) {
   const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'ficha-ia.js'), 'utf8');
   vm.createContext(box);
   vm.runInContext(src, box, { filename: 'ficha-ia.js' });
-  return { M: box.MFFicha, box, el: (id) => box.document.getElementById(id) };
+  return { M: box.MFFicha, box, doc, el: (id) => doc.getElementById(id) };
 }
 
-module.exports = { carregar, mkEl };
+module.exports = { carregar };
