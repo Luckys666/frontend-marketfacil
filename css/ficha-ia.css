@@ -37,7 +37,9 @@
 
 .kw-wrapper .fia-secao { margin-bottom: 20px; }
 .kw-wrapper .fia-secao-titulo { font-size: .92rem; font-weight: 600; margin-bottom: 10px; color: var(--text, #1e3a5f); }
-.kw-wrapper .fia-sem-base { opacity: .78; }
+/* Opacidade em bloco apagava o texto inteiro junto com a borda — o que distingue esta
+   seção é o título e o aviso, não um véu por cima. */
+.kw-wrapper .fia-sem-base { border-top: 1px solid var(--border, #e2e8f0); padding-top: 16px; }
 
 .kw-wrapper .fia-linha { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
 .kw-wrapper .fia-linha-topo { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -64,8 +66,13 @@
 .kw-wrapper .fia-trecho { color: var(--text-muted, #64748b); font-style: italic; word-break: break-word; }
 
 /* Lista 4 — palavras novas. Visualmente diferente de propósito: não é fato do anúncio. */
-.kw-wrapper .fia-secao-novas { border-top: 2px dashed #cbd5e1; padding-top: 14px; }
-.kw-wrapper .fia-nova { border-style: dashed; background: #fcfcfd; }
+/* Separador no padrão do app: linha fina sólida, a mesma do .kw-indexed-header. */
+.kw-wrapper .fia-secao-novas { border-top: 1px solid var(--border, #e2e8f0); padding-top: 16px; }
+/* Mesmo card do resto do app: borda sólida, fundo branco. A borda tracejada e o fundo
+   acinzentado davam a estas listas cara de rascunho — e o que separa elas das outras é de
+   ONDE vem a afirmação, coisa que o título da seção, o aviso e o ícone da linha já dizem
+   (Lucas, 31/08: "precisa ser no mesmo padrão do app"). */
+.kw-wrapper .fia-nova { border-style: solid; background: #fff; }
 .kw-wrapper .fia-check-nova { width: 16px; height: 16px; accent-color: #8b5cf6; cursor: pointer; }
 .kw-wrapper .fia-combos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
 .kw-wrapper .fia-combo { font-size: .7rem; padding: 2px 8px; border-radius: 999px; background: #f5f3ff; color: #6d28d9; }
@@ -98,7 +105,7 @@
 /* Palpite: o anúncio não diz, a IA acha. A linha carrega o porquê à mostra, porque é isso
    que o vendedor lê pra decidir — e ele é quem afirma, não a ferramenta. */
 .kw-wrapper .fia-secao-palpites .fia-secao-titulo { color: var(--text, #1e3a5f); }
-.kw-wrapper .fia-porque { font-size: .78rem; line-height: 1.4; color: var(--text-muted, #64748b); font-style: italic; margin-top: 6px; }
+.kw-wrapper .fia-porque { font-size: .73rem; line-height: 1.5; color: var(--text-muted, #64748b); margin-top: 6px; }
 
 /* Botão por bloco e o "aplicar tudo". Aceitar as 4 sugestões de uma lista era clicar quatro
    vezes em "Aplicar só este" — e o vendedor abandonava no meio. */
@@ -114,7 +121,7 @@
 .kw-wrapper .fia-marcar { padding: 4px 10px; font-size: .74rem; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--text-muted, #64748b); cursor: pointer; }
 .kw-wrapper .fia-marcar:hover { border-color: var(--blue, #0066ff); color: var(--blue, #0066ff); }
 /* Campo que ficou com o vendedor: mesma linha das outras, só sem valor sugerido. */
-.kw-wrapper .fia-vazia { border-style: dashed; }
+.kw-wrapper .fia-vazia { border-style: solid; }
 .kw-wrapper select.fia-valor { appearance: auto; background: #fff; }
 
 /* ── P4–P17: o que a tela sabia e não dizia ─────────────────────────────────────
@@ -130,7 +137,7 @@
 .kw-wrapper .fia-legenda { font-size: .74rem; line-height: 1.4; color: var(--text-muted, #64748b); margin: -8px 0 14px; }
 
 /* "vai ficar assim" — o vendedor via a palavra solta e não sabia o que ia pro campo. */
-.kw-wrapper .fia-rotulo-valor { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #94a3b8); margin-bottom: 3px; }
+.kw-wrapper .fia-rotulo-valor { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted, #64748b); margin-bottom: 4px; }
 
 /* O estado sem saída ganhou saída. */
 .kw-wrapper .fia-cta { display: inline-block; margin-top: 10px; padding: 9px 18px; font-size: .84rem; font-weight: 600; border-radius: 8px; background: var(--navy, #0f172a); color: #fff; text-decoration: none; }

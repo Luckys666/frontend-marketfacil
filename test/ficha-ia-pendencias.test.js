@@ -297,6 +297,28 @@ console.log('\n== P19 — o campo do erro casava por pedaço do nome ==');
     await Promise.all([primeiro, segundo]);
   }
 
+  console.log('\n== o card é UM só, no padrão do app (31/08, noite) ==');
+  {
+    // Medido no navegador com o painel renderizado de verdade: as 7 linhas têm a MESMA
+    // casca (fundo, borda, raio, padding, opacidade). O que separa "achei no seu anúncio"
+    // de "palavras novas" é de ONDE vem a afirmação — e isso o título da seção, o aviso e o
+    // ícone da linha já dizem. Fundo acinzentado + borda tracejada davam a estas listas
+    // cara de rascunho (Lucas, 31/08: "precisa ser no mesmo padrão do app").
+    //
+    // A checagem aqui é sobre o CSS, que é onde a divergência morava; a medição do estilo
+    // computado foi feita no navegador, com o preview do painel.
+    const fs = require('fs');
+    const path = require('path');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'css', 'ficha-ia.css'), 'utf8');
+
+    check('a variante de palavra nova não tem casca própria',
+      !/\.fia-nova\s*\{[^}]*dashed/.test(css) && !/\.fia-nova\s*\{[^}]*background:\s*#fcfcfd/.test(css));
+    check('nem a de campo vazio', !/\.fia-vazia\s*\{[^}]*dashed/.test(css));
+    check('nenhuma seção fica apagada por opacidade', !/\.fia-sem-base\s*\{[^}]*opacity/.test(css));
+    check('e não sobrou borda tracejada em lugar nenhum', !/dashed/.test(css),
+      (css.match(/[^\n]*dashed[^\n]*/g) || []).join(' // '));
+  }
+
   console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
   process.exit(fail ? 1 : 0);
 })();
