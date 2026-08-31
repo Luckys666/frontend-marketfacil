@@ -426,8 +426,39 @@ function linhaPalpite(item) {
 }
 
 // Lista 4: nasce SEM checked, e o data-nova é o que o lote usa pra ignorá-la.
+/**
+ * O que este campo ganha — todas as palavras, não só a primeira.
+ *
+ * Um campo recebe quantas palavras couberem nos 30 caracteres. Enquanto a linha dizia
+ * `+ "look" · entra em 4 buscas` num campo que tinha recebido CINCO palavras, o vendedor
+ * decidia sobre um ganho cinco vezes menor do que o real — e podia desmarcar por achar
+ * que não valia a pena.
+ */
+function ganhoDaLinha(item) {
+  const entraram = Array.isArray(item.entraram) && item.entraram.length
+    ? item.entraram
+    : [{ palavra: item.palavra, buscas: Number(item.buscas) || 0 }];
+  const buscas = Number(item.buscas) || entraram.reduce((s, e) => s + (Number(e.buscas) || 0), 0);
+  const lista = entraram.map((e) => `"${escapeHtml(e.palavra)}"`).join(', ');
+  return entraram.length === 1
+    ? `+ ${lista} · entra em ${buscas} buscas`
+    : `+ ${entraram.length} palavras: ${lista} · entra em ${buscas} buscas`;
+}
+
 function linhaPalavraNova(item) {
   const combos = (item.combos || []).slice(0, 3).map((c) => `<span class="fia-combo">${escapeHtml(c)}</span>`).join('');
+  // Campo que já tinha valor recebe as palavras SOMADAS ao que estava lá — o servidor recusa
+  // qualquer proposta que perca palavra do valor antigo. Sem dizer isso, o vendedor lê o
+  // valor novo e acha que a tela vai apagar o que ele escreveu. Aqui não vai <s>riscado</s>
+  // de propósito: nada está saindo.
+  // Duas origens, duas frases. O valor que o anúncio JÁ TEM é fato; o que a análise acabou
+  // de propor ainda é proposta — dizer "já está lá" das duas afirmaria que o anúncio diz o
+  // que ele ainda não diz.
+  const acrescimo = item.atual
+    ? (item.atual_proposto
+      ? `<div class="fia-antes">junta com o que achei no seu anúncio: <b>${escapeHtml(item.atual)}</b></div>`
+      : `<div class="fia-antes">soma ao que já está lá: <b>${escapeHtml(item.atual)}</b></div>`)
+    : '';
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
       <div class="fia-linha-topo">
@@ -436,8 +467,9 @@ function linhaPalavraNova(item) {
         <span class="fia-marca">🔍</span>
         ${selosDeTamanho(item)}
       </div>
+      ${acrescimo}
       ${entradaDaLinha(item, ' data-nova="1"')}
-      <div class="fia-ganho">+ "${escapeHtml(item.palavra)}" · entra em ${Number(item.buscas) || 0} buscas</div>
+      <div class="fia-ganho">${ganhoDaLinha(item)}</div>
       <div class="fia-combos">${combos}</div>
       <div class="fia-alerta-nova">⚠️ Seu anúncio não diz isso hoje.</div>
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>

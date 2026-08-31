@@ -195,6 +195,100 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   check('cada bloco tem marcar/desmarcar todos', /Marcar todos[\s\S]{0,200}Desmarcar todos/.test(html));
 }
 
+// Campo que já tem valor curto ("Forro duplo", 11 de 30) também recebe palavra nova — o
+// servidor soma nos 19 que sobram e recusa qualquer proposta que perca palavra do valor
+// antigo. Mas quem lê a tela vê só o valor novo na caixa: sem dizer que é SOMA, o vendedor
+// desmarca com medo de apagar o que escreveu.
+console.log('\n== palavra nova em campo que já tinha valor: soma, não substitui ==');
+{
+  const { M, el } = carregar();
+  M.renderPainel('ficha-ia-body', {
+    estado: 'ok',
+    dados: {
+      ok: true,
+      sugestoes: [],
+      palavras_novas_sugeridas: [
+        { id: 'FINISH', name: 'Acabamento', valor: 'Inox antiaderente', atual: 'Inox',
+          palavra: 'antiaderente', combos: [], buscas: 6, caracteres: 17 },
+      ],
+      sem_base: [], descartadas: 0,
+    },
+    campos: CAMPOS,
+    placar: { preenchidos: 2, total: 4 },
+  });
+  const html = el('ficha-ia-body').innerHTML;
+  const txt = el('ficha-ia-body').textContent;
+  check('diz que soma ao que já está lá', /soma ao que já está lá/i.test(txt), txt.slice(0, 300));
+  check('e mostra qual era o valor', /Inox/.test(txt));
+  // Riscar diria que "Inox" está saindo, e não está.
+  check('não risca o valor antigo', !/<s>[\s\S]{0,40}Inox/.test(html), html.slice(0, 400));
+
+  // Campo vazio não pode ganhar a nota de soma — ali não há nada a que somar.
+  M.renderPainel('ficha-ia-body', {
+    estado: 'ok',
+    dados: {
+      ok: true,
+      sugestoes: [],
+      palavras_novas_sugeridas: [
+        { id: 'FINISH', name: 'Acabamento', valor: 'Antiaderente', palavra: 'antiaderente', combos: [], buscas: 6, caracteres: 12 },
+      ],
+      sem_base: [], descartadas: 0,
+    },
+    campos: CAMPOS,
+    placar: { preenchidos: 2, total: 4 },
+  });
+  check('campo vazio não fala em somar', !/soma ao que já está lá/i.test(el('ficha-ia-body').textContent));
+}
+
+// Um campo recebe quantas palavras couberem nos 30. Enquanto a linha mostrava só a
+// primeira, o vendedor via um ganho cinco vezes menor do que o real e podia desmarcar
+// achando que não valia a pena (visto em MLB6683355884, 31/08/2026).
+console.log('\n== a linha mostra TODAS as palavras que entraram, e a soma das buscas ==');
+{
+  const { M, el } = carregar();
+  M.renderPainel('ficha-ia-body', {
+    estado: 'ok',
+    dados: {
+      ok: true,
+      sugestoes: [],
+      palavras_novas_sugeridas: [
+        { id: 'AGID', name: 'AGID', valor: 'look,encontro,peca', palavra: 'look', buscas: 7,
+          entraram: [
+            { palavra: 'look', buscas: 4 },
+            { palavra: 'encontro', buscas: 2 },
+            { palavra: 'peca', buscas: 1 },
+          ],
+          combos: [], caracteres: 18 },
+      ],
+      sem_base: [], descartadas: 0,
+    },
+    campos: CAMPOS,
+    placar: { preenchidos: 2, total: 4 },
+  });
+  const txt = el('ficha-ia-body').textContent;
+  check('diz quantas palavras entraram', /3 palavras/.test(txt), txt.slice(0, 300));
+  check('e nomeia todas', /look/.test(txt) && /encontro/.test(txt) && /peca/.test(txt), txt.slice(0, 300));
+  check('com a soma das buscas, não só a da primeira', /entra em 7 buscas/.test(txt), txt.slice(0, 300));
+
+  // Uma palavra só continua lendo como antes — plural forçado soaria errado.
+  M.renderPainel('ficha-ia-body', {
+    estado: 'ok',
+    dados: {
+      ok: true,
+      sugestoes: [],
+      palavras_novas_sugeridas: [
+        { id: 'AGID', name: 'AGID', valor: 'look', palavra: 'look', buscas: 4,
+          entraram: [{ palavra: 'look', buscas: 4 }], combos: [], caracteres: 4 },
+      ],
+      sem_base: [], descartadas: 0,
+    },
+    campos: CAMPOS,
+    placar: { preenchidos: 2, total: 4 },
+  });
+  const um = el('ficha-ia-body').textContent;
+  check('uma palavra só não vira "1 palavras"', !/1 palavras/.test(um) && /entra em 4 buscas/.test(um), um.slice(0, 200));
+}
+
 console.log('\n== render: nada passou na régua != falha ==');
 {
   const { M, el } = carregar();
