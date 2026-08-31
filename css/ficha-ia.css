@@ -94,3 +94,8 @@
 }
 
 .kw-wrapper .fia-ok { font-size: .82rem; font-weight: 600; color: #065f46; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+
+/* Palpite: o anúncio não diz, a IA acha. A linha carrega o porquê à mostra, porque é isso
+   que o vendedor lê pra decidir — e ele é quem afirma, não a ferramenta. */
+.kw-wrapper .fia-secao-palpites .fia-secao-titulo { color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-porque { font-size: .78rem; line-height: 1.4; color: var(--text-muted, #64748b); font-style: italic; margin-top: 6px; }

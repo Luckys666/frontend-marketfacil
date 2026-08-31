@@ -324,13 +324,16 @@ function separarSecoes(resposta, campos) {
   // Lista 4 (D9): o anúncio NÃO diz isso. Nunca entra nas listas de lote — nem aqui, nem
   // no `marcadosNoLote`. Quem afirma que o produto tem a característica é o vendedor.
   const palavrasNovas = ((resposta && resposta.palavras_novas_sugeridas) || []).map(enfeitar);
+  // Lista 3 (31/08): o anúncio não diz, a IA acha. Mesmas travas da lista 4 — desmarcada e
+  // fora do lote —, porque quem afirma continua sendo o vendedor.
+  const palpites = ((resposta && resposta.palpites) || []).map(enfeitar);
 
   const obrigatorioPrimeiro = (a, b) => (b.obrigatorio ? 1 : 0) - (a.obrigatorio ? 1 : 0);
   comEvidencia.sort(obrigatorioPrimeiro);
   trocas.sort(obrigatorioPrimeiro);
   sohUmAUm.sort(obrigatorioPrimeiro);
   palavrasNovas.sort((a, b) => (b.buscas || 0) - (a.buscas || 0));   // mais buscas primeiro
-  return { comEvidencia, trocas, sohUmAUm, palavrasNovas };
+  return { comEvidencia, trocas, sohUmAUm, palavrasNovas, palpites };
 }
 
 /**
@@ -391,6 +394,33 @@ function linhaSugestao(item, comCheckbox) {
       ${ganho}
       <div class="fia-evidencia">${origens}</div>
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}">Aplicar só este</button>
+    </div>`;
+}
+
+/**
+ * Lista 3: o palpite. O anúncio não diz — a IA acha que é assim para este produto.
+ *
+ * Nasce desmarcado e fora do lote, igual à palavra nova: o que muda é a origem da
+ * afirmação, e ela fica escrita na linha ("por quê"). Campo vazio não indexa nada, e o
+ * vendedor perde mais com o campo em branco do que com um palpite que ele corrige em um
+ * clique (Lucas, 31/08).
+ */
+function linhaPalpite(item) {
+  const ganho = (item.palavras_novas || []).length
+    ? `<div class="fia-ganho">+${item.palavras_novas.length} ${item.palavras_novas.length === 1 ? 'palavra nova' : 'palavras novas'}: ${escapeHtml(item.palavras_novas.join(', '))}</div>`
+    : '';
+  return `
+    <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1">
+      <div class="fia-linha-topo">
+        <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" />
+        <span class="fia-nome">${escapeHtml(item.name || item.id)}</span>
+        <span class="fia-marca">🤔</span>
+        ${selosDeTamanho(item)}
+      </div>
+      <input type="text" class="fia-valor" data-campo="${escapeHtml(item.id)}" data-nova="1" value="${escapeHtml(item.valor)}" />
+      ${ganho}
+      ${item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : ''}
+      <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
     </div>`;
 }
 
@@ -499,11 +529,11 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
     return;
   }
 
-  const { comEvidencia, trocas, sohUmAUm, palavrasNovas } = separarSecoes(dados, campos);
+  const { comEvidencia, trocas, sohUmAUm, palavrasNovas, palpites } = separarSecoes(dados, campos);
   const p = placar || contarPlacar(campos);
   const completo = p.total > 0 && p.preenchidos === p.total;
   const nadaPraFazer = comEvidencia.length === 0 && trocas.length === 0
-    && sohUmAUm.length === 0 && palavrasNovas.length === 0;
+    && sohUmAUm.length === 0 && palavrasNovas.length === 0 && palpites.length === 0;
   const semBase = (dados && dados.sem_base) || [];
   // Conta só o que nasce marcado — o número tem que bater com o que o botão vai salvar.
   const tokensNovos = contarTokensNovos(comEvidencia.concat(trocas));
@@ -547,11 +577,21 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       ${palavrasNovas.map(linhaPalavraNova).join('')}
     </div>` : '';
 
+  // Lista 3: o anúncio não diz, a IA acha. Campo vazio não indexa nada, então vale propor —
+  // desde que a tela deixe claríssimo de onde veio a afirmação e que quem decide é ele.
+  const secaoPalpites = palpites.length ? `
+    <div class="fia-secao fia-secao-palpites">
+      <div class="fia-secao-titulo">🤔 A IA acha que é isso — confirme <span class="fia-mono">(${palpites.length})</span></div>
+      <p class="fia-aviso">Seu anúncio não diz nada sobre estes campos, então isto é o que costuma valer para um produto assim. Campo em branco não aparece em busca nenhuma — vale conferir e marcar o que estiver certo.</p>
+      ${palpites.map(linhaPalpite).join('')}
+    </div>` : '';
+
   el.innerHTML = cabecalho
     + secao('✅ Achei no seu anúncio', comEvidencia, true)
     + secao('✏️ Vale trocar', trocas, true)
     + (totalLote ? `<button type="button" class="fia-lote">Salvar os ${totalLote} campos marcados</button>` : '')
     + secaoNovas
+    + secaoPalpites
     + secao('⚠️ Só um a um', sohUmAUm, false,
         '<p class="fia-aviso">Mexer nestes campos muda o link do anúncio e ele perde a exposição que tinha — recomeça como se fosse novo. Só vale se estiver mesmo errado. Por isso ficam fora do botão acima.</p>')
     + secaoSemBase(semBase);
@@ -1222,7 +1262,7 @@ window.MFFicha = {
   motivoBloqueado, renomeiaVariacao, mudaOLink, camposElegiveis, montarPayload,
   formatarPalavrasQueFaltam,
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
-  linhaPalavraNova, rotuloFonte, chaveCache, _cache: cacheSugestoes,
+  linhaPalavraNova, linhaPalpite, rotuloFonte, chaveCache, _cache: cacheSugestoes,
   montarAtributo, aplicar, traduzirErro, erroParcial,
   abrirFichaIA, voltarParaLista, registrarPalavras, palavrasDoAnuncio,
   // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos
