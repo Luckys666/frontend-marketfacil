@@ -433,10 +433,11 @@ function tokensDaLinha(item) {
 /**
  * Lista 3: o palpite. O anúncio não diz — a IA acha que é assim para este produto.
  *
- * Nasce desmarcado e fora do lote, igual à palavra nova: o que muda é a origem da
- * afirmação, e ela fica escrita na linha ("por quê"). Campo vazio não indexa nada, e o
- * vendedor perde mais com o campo em branco do que com um palpite que ele corrige em um
- * clique (Lucas, 31/08).
+ * Nasce MARCADO, como todo o resto da tela (Lucas, 31/08): campo vazio não indexa nada, e
+ * o vendedor perde mais com o campo em branco do que com um palpite que ele corrige em um
+ * clique. O que separa esta lista é a origem da afirmação, escrita na linha ("por quê"),
+ * mais o `data-nova`: ele mantém a linha fora do `marcadosNoLote`, o botão da seção que
+ * afirma ter base no anúncio. O "aplicar tudo" (`marcadosEm`) leva ela junto.
  */
 function linhaPalpite(item) {
   const ganho = (item.palavras_novas || []).length
@@ -458,7 +459,7 @@ function linhaPalpite(item) {
     </div>`;
 }
 
-// Lista 4: nasce SEM checked, e o data-nova é o que o lote usa pra ignorá-la.
+// Lista 4: nasce marcada, como as outras; o data-nova é o que o lote da lista 1 usa pra ignorá-la.
 /**
  * O que este campo ganha — todas as palavras, não só a primeira.
  *
