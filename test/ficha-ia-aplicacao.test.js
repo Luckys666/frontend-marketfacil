@@ -85,9 +85,9 @@ console.log('\n== campo bloqueado não vira requisição ==');
   {
     const { M } = carregar();
     check('value_not_in_allowed_values',
-      /lista de sugest|escolha uma op/i.test(M.traduzirErro({ cause: [{ code: 'value_not_in_allowed_values' }] }, MATERIAL)));
+      /escolha uma das opções da lista/i.test(M.traduzirErro({ cause: [{ code: 'value_not_in_allowed_values' }] }, MATERIAL)));
     check('required',
-      /obrigat/i.test(M.traduzirErro({ cause: [{ code: 'item.attributes.required' }] }, MATERIAL)));
+      /exige|obrigat/i.test(M.traduzirErro({ cause: [{ code: 'item.attributes.required' }] }, MATERIAL)));
     check('conflito de variação vira explicação, não código',
       /varia/i.test(M.traduzirErro({ cause: [{ message: 'Same attributes are used in more than one' }] }, COR)));
     check('recusa do proxy usa o texto pronto dele',

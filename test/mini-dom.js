@@ -59,7 +59,14 @@ class No {
       contains: (c) => lista().includes(c),
       add(c) { const l = lista(); if (!l.includes(c)) { l.push(c); self.setAttribute('class', l.join(' ')); } },
       remove(c) { self.setAttribute('class', lista().filter((x) => x !== c).join(' ')); },
-      toggle(c) { lista().includes(c) ? this.remove(c) : this.add(c); },
+      // O 2o argumento e o do browser: toggle(c, true) adiciona, toggle(c, false) remove.
+      // Sem ele, `i <= passo` do keyword-agent acendia TODOS os passos e o teste media a
+      // ausencia do recurso, nao o comportamento do codigo (02/09).
+      toggle(c, forca) {
+        if (forca === true) return this.add(c);
+        if (forca === false) return this.remove(c);
+        return lista().includes(c) ? this.remove(c) : this.add(c);
+      },
     };
   }
 

@@ -67,19 +67,19 @@ async function fetchWithRetry(url, options = {}, maxRetries = 3) {
       const resp = await fetch(url, options);
       if (resp.status === 429) {
         if (attempt === maxRetries) return resp;
-        updateLoadingStep(`Limite temporário... aguardando (${attempt}/${maxRetries})`);
+        updateLoadingStep(`Muita gente analisando agora. Tentando de novo (${attempt} de ${maxRetries})`);
         await new Promise(r => setTimeout(r, 2000 * attempt));
         continue;
       }
       if (resp.status >= 500 && attempt < maxRetries) {
-        updateLoadingStep(`Servidor ocupado... tentativa ${attempt + 1}/${maxRetries}`);
+        updateLoadingStep(`O Mercado Livre não respondeu. Tentando de novo (${attempt + 1} de ${maxRetries})`);
         await new Promise(r => setTimeout(r, 1500 * attempt));
         continue;
       }
       return resp;
     } catch (err) {
       if (attempt === maxRetries) throw err;
-      updateLoadingStep(`Reconectando... tentativa ${attempt + 1}/${maxRetries}`);
+      updateLoadingStep(`A conexão caiu. Tentando de novo (${attempt + 1} de ${maxRetries})`);
       await new Promise(r => setTimeout(r, 1500 * attempt));
     }
   }
@@ -202,7 +202,7 @@ async function read401Message(resp) {
     const body = await resp.clone().json();
     if (body && typeof body.message === 'string' && body.message.trim()) return body.message;
   } catch (_) { /* body não-JSON */ }
-  return 'Sessão expirada. Recarregue a página e tente novamente.';
+  return 'Sua sessão expirou. Recarregue a página para continuar.';
 }
 
 // --- UI Helpers ---
@@ -226,18 +226,28 @@ function showLoading(show) {
   const results = document.getElementById('kw-results');
   if (results && show) results.style.display = 'none';
 }
-function updateLoadingStep(text) {
+/**
+ * A mensagem do loading e o passo que acende.
+ *
+ * O passo é DITO por quem chama (`passo`), não deduzido da frase. Antes um mapa procurava
+ * palavras dentro do texto ('credenciais', 'servidor', 'cruzando') para escolher o passo, e
+ * isso amarrava a barra de progresso à redação: em 02/09 reescrevi as mensagens para tirar
+ * o jargão e a barra passou a acender o passo errado sem ninguém perceber. Texto é para o
+ * vendedor ler; comportamento não pode depender de qual palavra ele tem.
+ *
+ * `passo` ausente = só troca a frase e deixa a barra onde está. É o caso do retry, que
+ * acontece dentro de qualquer etapa e não sabe em qual está.
+ */
+function updateLoadingStep(text, passo) {
   const el = document.querySelector('#kw-loading .kw-loading-msg');
   if (el) el.textContent = text;
-  // Update active step
+  if (passo === undefined || passo === null) return;
   const steps = document.querySelectorAll('#kw-loading .kw-step');
-  if (steps.length > 0) {
-    const stepMap = { 'credenciais': 0, 'anúncio': 1, 'buscando': 1, 'reconectando': 1, 'servidor': 1, 'limite': 1, 'palavras': 2, 'analisando': 2, 'cruzando': 3 };
-    const key = Object.keys(stepMap).find(k => text.toLowerCase().includes(k));
-    const activeIdx = key !== undefined ? stepMap[key] : 0;
-    steps.forEach((s, i) => { s.classList.toggle('active', i <= activeIdx); });
-  }
+  steps.forEach((s, i) => { s.classList.toggle('active', i <= passo); });
 }
+
+// Os quatro passos que a tela mostra, na ordem em que acendem.
+const KW_PASSO = { CONEXAO: 0, ANUNCIO: 1, PALAVRAS: 2, INDEXACAO: 3 };
 function updateProgress(pct) {
   const bar = document.querySelector('#kw-loading .kw-loading-bar-fill');
   if (bar) bar.style.width = pct + '%';
@@ -338,7 +348,7 @@ function renderIndexedWords(data, indexedWords) {
       <span class="mono" style="font-size:0.75rem;color:var(--green-dark);font-weight:600;">${indexedWords.size} palavras</span>
     </div>
     <div class="kw-indexed-words">${titleTags}${attrTags}</div>
-    <div class="kw-indexed-hint">Título: ${titleWords.length} palavras · Atributos (30 chars): ${attrWords.size} palavras extras</div>`;
+    <div class="kw-indexed-hint">Título: ${titleWords.length} palavras · Ficha técnica: ${attrWords.size} palavras a mais</div>`;
   el.style.display = 'block';
 }
 
@@ -389,7 +399,7 @@ function renderMissingWords(missingWords) {
   if (!container) return;
 
   if (missingWords.length === 0) {
-    container.innerHTML = `<div class="kw-missing-empty">Seu anúncio já cobre todas as palavras sugeridas pela IA!</div>`;
+    container.innerHTML = `<div class="kw-missing-empty">Nenhuma palavra faltando 🎉 Seu anúncio já usa todas as que eu encontrei.</div>`;
     container.style.display = 'block';
     return;
   }
@@ -463,7 +473,7 @@ function renderCategories(keywords, indexedWords, missingWords) {
     <div class="kw-category-card kw-full-width kw-fade-in" style="--cat-color:#0066ff">
       <div class="kw-category-header">
         <div class="kw-category-icon" style="background:var(--blue-light)">🎯</div>
-        <span class="kw-category-name">Geral — Todas as Palavras Faltando</span>
+        <span class="kw-category-name">Todas as palavras que faltam</span>
         <span class="kw-cat-new">+${missingWords.length} novas</span>
       </div>
       <div class="kw-tags">${geralTags}</div>
@@ -541,7 +551,7 @@ async function handleAnalyzeKeywords() {
 
   if (!rawInput) { showError('Cole o link ou ID do anúncio para analisar.'); return; }
   const parsed = normalizeMlInput(rawInput);
-  if (!parsed) { showError('Link ou ID inválido. Use um link do Mercado Livre ou ID (ex: MLB12345678).'); return; }
+  if (!parsed) { showError('Não reconheci esse link. Cole o endereço do anúncio no Mercado Livre, ou o código dele (ex: MLB12345678).'); return; }
 
   // i18n: deriva o site do ID (MLB/MCO/MLA/MLM/MLC/MLU) ou do domínio da URL → GPT responde no idioma/região certos
   globalSiteId = (((parsed.id || '').match(new RegExp(`^(${ML_SITE_PREFIXES})`, 'i')) || [])[1] || '').toUpperCase()
@@ -555,18 +565,18 @@ async function handleAnalyzeKeywords() {
 
   showLoading(true);
   updateProgress(5);
-  updateLoadingStep('Obtendo credenciais...');
+  updateLoadingStep('Preparando...', KW_PASSO.CONEXAO);
 
   try {
     if (!globalUserId) {
       globalUserId = await fetchUserIdForScraping();
-      if (!globalUserId) { showLoading(false); showError('Não foi possível obter suas credenciais. Recarregue a página.'); return; }
+      if (!globalUserId) { showLoading(false); showError('Sua sessão caiu. Recarregue a página para continuar.'); return; }
     }
     updateProgress(15);
 
-    updateLoadingStep('Buscando dados do anúncio...');
+    updateLoadingStep('Lendo o anúncio...', KW_PASSO.ANUNCIO);
     const scraperUrl = buildScraperUrl(parsed);
-    if (!scraperUrl) { showLoading(false); showError('Não foi possível montar a URL do produto.'); return; }
+    if (!scraperUrl) { showLoading(false); showError('Não consegui abrir esse anúncio. Confira o link e tente de novo.'); return; }
 
     // Check cache first
     const cacheKey = scraperUrl;
@@ -582,7 +592,7 @@ async function handleAnalyzeKeywords() {
       let pd = null;
       let last401 = null; // se a última falha foi 401, usar mensagem específica de sessão
       for (let tryN = 1; tryN <= MAX_SCRAPE_TRIES; tryN++) {
-        if (tryN > 1) { updateLoadingStep(`O Mercado Livre está instável agora — tentando de novo (${tryN}/${MAX_SCRAPE_TRIES}), aguarde alguns segundos...`); updateProgress(15 + tryN * 8); }
+        if (tryN > 1) { updateLoadingStep(`O Mercado Livre está lento agora. Tentando de novo (${tryN} de ${MAX_SCRAPE_TRIES}).`, KW_PASSO.ANUNCIO); updateProgress(15 + tryN * 8); }
         // maxRetries=1 aqui: este loop é a autoridade de retry do scrape (evita multiplicar custo)
         // withMintRetry: em 401, refresca globalUserId e re-tenta 1× (transparente ao loop)
         const scraperResp = await withMintRetry((uid) => fetchWithRetry(`${SCRAPER_ENDPOINT}?url=${encodeURIComponent(scraperUrl)}`, {
@@ -593,7 +603,7 @@ async function handleAnalyzeKeywords() {
           break; // mint+retry já falharam — não adianta loopar
         }
         if (scraperResp.status === 403) { showLoading(false); showError('Acesso restrito. Verifique seu plano.'); return; }
-        if (scraperResp.status === 429) { showLoading(false); showError('Muitas requisições. Aguarde alguns minutos e tente novamente.'); return; }
+        if (scraperResp.status === 429) { showLoading(false); showError('Muita análise ao mesmo tempo. Espere alguns minutos e tente de novo.'); return; }
         if (scraperResp.ok) {
           pd = await scraperResp.json().catch(() => null);
           if (pd && pd.title) { resultCache.set(cacheKey, pd); break; } // sucesso → cacheia e sai
@@ -608,7 +618,7 @@ async function handleAnalyzeKeywords() {
 
     globalProductData = productData;
 
-    if (!productData.title) { showLoading(false); showError('A página do anúncio está instável no Mercado Livre agora. Aguarde alguns instantes e clique em Analisar de novo.'); return; }
+    if (!productData.title) { showLoading(false); showError('O Mercado Livre não abriu esse anúncio agora. Espere um instante e clique em Analisar de novo.'); return; }
 
     // Set title max chars based on product type
     globalTitleMaxChars = productData.is_catalog ? 200 : 60;
@@ -621,7 +631,7 @@ async function handleAnalyzeKeywords() {
     renderIndexedWords(productData, globalIndexedWords);
 
     // Build GPT text
-    updateLoadingStep('Analisando palavras-chave com IA...');
+    updateLoadingStep('Procurando palavras que faltam...', KW_PASSO.PALAVRAS);
     let texto = productData.title || '';
     if (productData.attributes?.length > 0) {
       const attrs = productData.attributes.filter(a => a.value_name?.length > 1).map(a => `${a.id}: ${a.value_name}`).join('. ');
@@ -639,14 +649,14 @@ async function handleAnalyzeKeywords() {
       showLoading(false);
       if (gptResp.status === 401) { showError(await read401Message(gptResp)); return; }
       if (gptResp.status === 403) { showError('Acesso restrito. Verifique seu plano.'); return; }
-      if (gptResp.status === 429) { showError('Limite de análises GPT atingido. Aguarde alguns minutos.'); return; }
+      if (gptResp.status === 429) { showError('Você atingiu o limite de análises. Espere alguns minutos e tente de novo.'); return; }
       const err = await gptResp.json().catch(() => ({}));
       showError(err.error || `Erro ${gptResp.status}. Tente novamente.`);
       return;
     }
 
     updateProgress(90);
-    updateLoadingStep('Cruzando dados de indexação...');
+    updateLoadingStep('Vendo o que seu anúncio já cobre...', KW_PASSO.INDEXACAO);
     const keywords = await gptResp.json();
 
     // Build word-centric analysis
@@ -837,6 +847,8 @@ window.__kwCopySingleTitle = function(btn, i) {
  * exatamente o mesmo.
  */
 window.MFKw = {
+  updateLoadingStep,
+  KW_PASSO,
   extractIndexedWords,
   buildMissingWordsMap,
   normalizeMlInput,

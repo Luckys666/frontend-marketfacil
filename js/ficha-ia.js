@@ -666,20 +666,20 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="Cada palavra nova abre buscas que o anúncio não alcançava.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
       ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
     </div>
-    <p class="fia-legenda"><b>8/30</b>: você usou 8 dos 30 caracteres que o Mercado Livre lê em cada campo.</p>`;
+    <p class="fia-legenda">O Mercado Livre lê os primeiros <b>30 caracteres</b> de cada campo. O número na linha mostra quanto você já usou.</p>`;
 
   if (nadaPraFazer && completo) {
     // Um 🎉 só. Dois selos de festa para a mesma conquista, colados um no outro, transformam
     // a comemoração em enfeite.
     el.innerHTML = cabecalho + blocoErro('✅', 'Ficha completa',
-      'Todos os campos que você pode preencher já estão preenchidos.', false);
+      'Não há mais nada esperando por você aqui.', false);
     return;
   }
 
   // "Nada passou na régua" é resultado, com caminho — diferente de falha.
   if (nadaPraFazer) {
     el.innerHTML = cabecalho + blocoErro('🔎', 'Não achei base no texto deste anúncio',
-      'O título e a descrição não dizem o que preencher aqui. Complete a descrição e tente de novo.', true)
+      'O título e a descrição não contam nada que sirva para estes campos. Escreva mais sobre o produto e tente de novo.', true)
       + secaoSemBase(semBase, campos);
     return;
   }
@@ -820,7 +820,7 @@ function montarAtributo(item, campo) {
  */
 function traduzirErro(errData, campo) {
   const nome = (campo && campo.name) || 'campo';
-  if (!errData) return 'Erro desconhecido.';
+  if (!errData) return 'Não consegui salvar agora.';
 
   const codigoProxy = String(errData.code || '');
   if (/^(child_pk_|attr_|category_unavailable_in_family|item_unavailable|title_not_editable)/.test(codigoProxy)) {
@@ -835,15 +835,15 @@ function traduzirErro(errData, campo) {
   if (/Same attributes are used in/i.test(msg)) {
     return `${nome} é definido em cada variação deste anúncio. Edite pela tela de variações no Mercado Livre.`;
   }
-  if (/value_not_in_allowed_values/i.test(code)) return `${nome}: escolha uma opção da lista de sugestões — texto livre não é aceito aqui.`;
-  if (/required|missing/i.test(code)) return `${nome} é obrigatório — precisa ser preenchido.`;
-  if (/invalid_length|too_long|too_short|max_length|min_length/i.test(code)) return `${nome}: tamanho fora do permitido.`;
-  if (/invalid_format/i.test(code)) return `${nome}: formato não aceito pelo Mercado Livre.`;
+  if (/value_not_in_allowed_values/i.test(code)) return `${nome}: escolha uma das opções da lista. Aqui o Mercado Livre não aceita texto livre.`;
+  if (/required|missing/i.test(code)) return `O Mercado Livre exige ${nome} neste anúncio.`;
+  if (/invalid_length|too_long|too_short|max_length|min_length/i.test(code)) return `${nome}: esse texto está fora do tamanho que o Mercado Livre aceita.`;
+  if (/invalid_format/i.test(code)) return `${nome}: o Mercado Livre não aceita esse formato.`;
   if (/duplicated|already_exists/i.test(code)) return `${nome}: esse valor já está em uso em outro anúncio seu.`;
   if (/read[_\s-]?only/i.test(code)) return `${nome} não pode ser alterado depois que o anúncio foi publicado.`;
-  if (/forbidden|not_allowed|not_authorized/i.test(code)) return `${nome}: esse campo não pode ser alterado nesse anúncio.`;
+  if (/forbidden|not_allowed|not_authorized/i.test(code)) return `${nome}: este campo não pode ser mudado neste anúncio.`;
   // Nunca devolver o texto cru do ML: ele fala "atributo", às vezes em espanhol.
-  return `Não foi possível salvar ${nome} agora.`;
+  return `Não consegui salvar ${nome} agora.`;
 }
 
 function erroParcial(payload, campo) {
@@ -876,9 +876,9 @@ async function aplicar(itemId, itens, campos, detail, token) {
     if (motivo) {
       const nome = (campo && campo.name) || 'Esse campo';
       const texto = motivo === 'familia'
-        ? `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo — edite no Mercado Livre.`
+        ? `${nome} define o grupo de variações deste produto. Mudar por aqui tiraria o anúncio do grupo. Edite no Mercado Livre.`
         : motivo === 'variacao'
-          ? `${nome} é definido em cada variação — edite pela tela de variações.`
+          ? `${nome} é definido em cada variação. Edite pela tela de variações.`
           : `${nome} é preenchido pelo próprio Mercado Livre.`;
       return { ok: false, salvos: 0, erro: texto };
     }

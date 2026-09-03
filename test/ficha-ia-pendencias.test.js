@@ -112,7 +112,7 @@ console.log('\n== P9 — o número entre parênteses significava duas coisas dif
 console.log('\n== P10 — "X/30" sem legenda em nenhuma das sete telas ==');
 {
   const { txt } = pintar();
-  check('a tela explica o que é o X/30, uma vez', /caracteres que o Mercado Livre/i.test(txt), txt.slice(0, 400));
+  check('a tela explica o que é o X/30, uma vez', /lê os primeiros/i.test(txt) && /30 caracteres/i.test(txt), txt.slice(0, 400));
 }
 
 console.log('\n== P12 — o título da seção diz o CONTEÚDO, não o processo ==');
