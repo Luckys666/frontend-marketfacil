@@ -1107,7 +1107,10 @@ async function carregarCota() {
     const uid = await obterUserId();
     if (!uid) return null;
     // Primeiro o ledger; desligado, a cota simples da Fase 1.
-    const s = await proxyGet('/api/creditos/saldo', uid);
+    // Se o ledger nao existe, esta desligado ou o proxy cai, trata como inativo (nao e falha do
+    // contador — o contador da Fase 1 continua funcionando).
+    let s = null;
+    try { s = await proxyGet('/api/creditos/saldo', uid); } catch (e) { s = null; }
     if (s && s.ativo && s.saldo) { mostrarCotaNoTopo(s.saldo.mes, s.saldo.comprados); return s.saldo.mes; }
     const r = await proxyGet('/api/gpt-ficha/cota', uid);
     const cota = (r && r.cota) || null;

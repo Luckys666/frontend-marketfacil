@@ -170,6 +170,44 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     check('compradas = 0: não aparece a parte das compradas', !/compradas/.test(el('fia-cota-topo').innerHTML));
   }
 
+  console.log('\n== ledger indisponivel: cai em Fase 1, contador nao some ==');
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ status: 503, body: { error: 'x', code: 'creditos_indisponiveis' } })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: { limite: 50, usadas: 3, restante: 47, renova_em: '2026-10-01' } } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    await M.carregarCota();
+    check('ledger fora (503): cai na cota da Fase 1, o contador nao some', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
+  }
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ status: 404, body: { error: 'Not found' } })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: { limite: 50, usadas: 3, restante: 47, renova_em: '2026-10-01' } } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    await M.carregarCota();
+    check('rota de saldo ainda nao existe (404): cai na cota da Fase 1', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
+  }
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ status: 503, body: { error: 'x' } })],
+      [/gpt-ficha\/cota$/, () => ({ status: 500, body: { error: 'x' } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    const r = await M.carregarCota();
+    check('as duas falham: null e escondido, nunca "0 de 50"', r === null && el('fia-cota-topo').hasAttribute('hidden'));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();
