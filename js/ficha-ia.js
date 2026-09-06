@@ -1080,6 +1080,35 @@ async function proxyGet(rota, token, signal) {
   return r.json();
 }
 
+/**
+ * Contador do topo: "Você ainda tem 12 de 50 análises este mês · renovam dia 01/10".
+ * Sem número, some. Mostrar "0 de 50" por falha de leitura mandaria o vendedor embora
+ * de uma ferramenta que está funcionando (§8.3).
+ */
+function mostrarCotaNoTopo(cota) {
+  const alvo = document.querySelector('#fia-cota-topo');
+  if (!alvo) return;
+  if (!cota || !Number.isFinite(Number(cota.limite))) { alvo.setAttribute('hidden', ''); return; }
+  const renova = formatarDia(cota.renova_em);
+  alvo.innerHTML = `Você ainda tem <span class="fia-cota-num">${Number(cota.restante) || 0}</span> de ${Number(cota.limite)} análises este mês`
+    + (renova ? ` <span class="fia-cota-renova">· renovam dia ${escapeHtml(renova)}</span>` : '');
+  alvo.removeAttribute('hidden');
+}
+
+async function carregarCota() {
+  if (!document.querySelector('#fia-cota-topo')) return null;
+  try {
+    const uid = await obterUserId();
+    if (!uid) return null;
+    const r = await proxyGet('/api/gpt-ficha/cota', uid);
+    const cota = (r && r.cota) || null;
+    mostrarCotaNoTopo(cota);
+    return cota;
+  } catch (e) {
+    return null; // sem número é melhor que número errado
+  }
+}
+
 const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null };
 
 /**
@@ -1381,6 +1410,8 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
       if (r.estado === 'ok') cacheSugestoes.set(chave, r);
     }
     estadoFicha.resposta = r.estado === 'ok' ? r.dados : null;
+    // O placar do topo acompanha a análise que acabou de acontecer.
+    if (r.estado === 'ok' && r.dados && r.dados.cota) mostrarCotaNoTopo(r.dados.cota);
     renderPainel('ficha-ia-body', {
       estado: r.estado, dados: r.dados, campos: estadoFicha.campos,
       placar: contarPlacar(estadoFicha.campos),
@@ -1739,6 +1770,10 @@ document.addEventListener('click', (ev) => {
   voltarParaLista();
 });
 
+// O contador do topo carrega junto com a página. `setTimeout` deixa o Bubble terminar de
+// montar o DOM; no harness ele roda na hora.
+setTimeout(() => { carregarCota(); }, 0);
+
 window.MFFicha = {
   motivoBloqueado, renomeiaVariacao, mudaOLink, camposElegiveis, montarPayload,
   formatarPalavrasQueFaltam,
@@ -1749,7 +1784,7 @@ window.MFFicha = {
   abrirFichaIA, voltarParaLista, registrarPalavras, palavrasDoAnuncio,
   // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos
   // de 30/08 se esconderam enquanto a suíte de lógica pura ficava verde.
-  ligarBotoes, salvar, obterUserId,
+  ligarBotoes, salvar, obterUserId, carregarCota, mostrarCotaNoTopo,
   _estado: function () { return estadoFicha; },
   escapeHtml, chaveTexto, atributoPreenchido, valorAtual,
   _PROXY: MFFICHA_PROXY,

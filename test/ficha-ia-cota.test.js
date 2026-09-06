@@ -82,6 +82,58 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
   check('formatarDia: 2026-10-01 -> 01/10', M0.formatarDia('2026-10-01') === '01/10', M0.formatarDia('2026-10-01'));
   check('formatarDia: lixo -> vazio', M0.formatarDia('') === '' && M0.formatarDia(null) === '');
 
+  console.log('\n== contador no topo: aparece com saldo lido, some sem ele ==');
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: { limite: 50, usadas: 38, restante: 12, renova_em: '2026-10-01' } } })],
+    ] });
+    // O mini-dom não linka `body.innerHTML` ao cache de `getElementById` (`el()` usa
+    // `getElementById`): criar o nó por `body.innerHTML` deixaria `el()` devolver um div
+    // fantasma, desconectado do que `carregarCota` de fato altera. Criar pelo próprio
+    // `getElementById` mantém os dois olhando o MESMO nó.
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    doc.getElementById('ficha-ia-body');
+    const cota = await M.carregarCota();
+    const topo = el('fia-cota-topo');
+    check('carregarCota devolve a cota', cota && cota.restante === 12, JSON.stringify(cota));
+    check('topo visível', !topo.hasAttribute('hidden'));
+    check('topo diz "Você ainda tem 12 de 50 análises este mês"', /Você ainda tem[\s\S]*12[\s\S]*de 50 análises este mês/.test(topo.innerHTML), topo.innerHTML);
+    check('e quando renova', /renovam dia 01\/10/.test(topo.innerHTML));
+  }
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: null } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    await M.carregarCota();
+    check('sem cota configurada: topo continua escondido', el('fia-cota-topo').hasAttribute('hidden'));
+  }
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/gpt-ficha\/cota$/, () => ({ status: 500, body: { error: 'x' } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    const r = await M.carregarCota();
+    check('falha ao ler: devolve null e NÃO mostra "0 de 50"', r === null && el('fia-cota-topo').hasAttribute('hidden'));
+  }
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 50, restante: 0, renova_em: '2026-10-01' });
+    check('restante 0 é número real, não falha: mostra "0 de 50"', /0[\s\S]*de 50 análises/.test(el('fia-cota-topo').innerHTML) && !el('fia-cota-topo').hasAttribute('hidden'));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();
