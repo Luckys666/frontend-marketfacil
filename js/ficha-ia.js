@@ -286,7 +286,14 @@ async function buscarSugestoes(payload, userId, mlToken, signal) {
     return { estado: code === 'anuncio_de_outra_conta' ? 'outra_conta' : 'sem_plano', dados: null };
   }
   if (resp.status === 404) return { estado: 'nao_encontrado', dados: null };
-  if (resp.status === 429) return { estado: 'ocupado', dados: null };
+  // 429 tem dois donos: a IA ocupada (sem código) e as análises do mês que acabaram
+  // (`cota_mensal` hoje, `sem_creditos` quando o ledger nascer). Misturar os dois mandava o
+  // vendedor "esperar alguns segundos" por um limite que só renova no dia 1.
+  if (resp.status === 429) {
+    return (code === 'cota_mensal' || code === 'sem_creditos')
+      ? { estado: 'cota', dados: corpo }
+      : { estado: 'ocupado', dados: null };
+  }
   if (code === 'anuncio_ilegivel' || code === 'ml_indisponivel') return { estado: 'anuncio_ilegivel', dados: null };
   return { estado: 'falha', dados: null };
 }
