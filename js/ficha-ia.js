@@ -1085,13 +1085,19 @@ async function proxyGet(rota, token, signal) {
  * Sem número, some. Mostrar "0 de 50" por falha de leitura mandaria o vendedor embora
  * de uma ferramenta que está funcionando (§8.3).
  */
-function mostrarCotaNoTopo(cota) {
+function mostrarCotaNoTopo(cota, comprados) {
   const alvo = document.querySelector('#fia-cota-topo');
   if (!alvo) return;
   if (!cota || !Number.isFinite(Number(cota.limite))) { alvo.setAttribute('hidden', ''); return; }
   const renova = formatarDia(cota.renova_em);
-  alvo.innerHTML = `Você ainda tem <span class="fia-cota-num">${Number(cota.restante) || 0}</span> de ${Number(cota.limite)} análises este mês`
+  let html = `Você ainda tem <span class="fia-cota-num">${Number(cota.restante) || 0}</span> de ${Number(cota.limite)} análises este mês`
     + (renova ? ` <span class="fia-cota-renova">· renovam dia ${escapeHtml(renova)}</span>` : '');
+  const c = comprados && Number(comprados.restante) > 0 ? comprados : null;
+  if (c) {
+    const vence = formatarDia(c.vence_em);
+    html += ` <span class="fia-cota-compradas">· e <span class="fia-cota-num">${Number(c.restante).toLocaleString('pt-BR')}</span> compradas${vence ? `, vencem dia ${escapeHtml(vence)}` : ''}</span>`;
+  }
+  alvo.innerHTML = html;
   alvo.removeAttribute('hidden');
 }
 
@@ -1100,12 +1106,15 @@ async function carregarCota() {
   try {
     const uid = await obterUserId();
     if (!uid) return null;
+    // Primeiro o ledger; desligado, a cota simples da Fase 1.
+    const s = await proxyGet('/api/creditos/saldo', uid);
+    if (s && s.ativo && s.saldo) { mostrarCotaNoTopo(s.saldo.mes, s.saldo.comprados); return s.saldo.mes; }
     const r = await proxyGet('/api/gpt-ficha/cota', uid);
     const cota = (r && r.cota) || null;
     mostrarCotaNoTopo(cota);
     return cota;
   } catch (e) {
-    return null; // sem número é melhor que número errado
+    return null;
   }
 }
 
@@ -1411,7 +1420,7 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     }
     estadoFicha.resposta = r.estado === 'ok' ? r.dados : null;
     // O placar do topo acompanha a análise que acabou de acontecer.
-    if (r.estado === 'ok' && r.dados && r.dados.cota) mostrarCotaNoTopo(r.dados.cota);
+    if (r.estado === 'ok' && r.dados && r.dados.cota) mostrarCotaNoTopo(r.dados.cota, r.dados.creditos);
     renderPainel('ficha-ia-body', {
       estado: r.estado, dados: r.dados, campos: estadoFicha.campos,
       placar: contarPlacar(estadoFicha.campos),

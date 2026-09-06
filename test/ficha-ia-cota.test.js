@@ -106,6 +106,7 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
   {
     const { M, el, doc } = carregar({ rotas: [
       [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ body: { ok: true, ativo: false, saldo: null } })],
       [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: null } })],
     ] });
     const topoEl = doc.getElementById('fia-cota-topo');
@@ -132,6 +133,41 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     topoEl.setAttribute('hidden', '');
     M.mostrarCotaNoTopo({ limite: 50, usadas: 50, restante: 0, renova_em: '2026-10-01' });
     check('restante 0 é número real, não falha: mostra "0 de 50"', /0[\s\S]*de 50 análises/.test(el('fia-cota-topo').innerHTML) && !el('fia-cota-topo').hasAttribute('hidden'));
+  }
+
+  console.log('\n== créditos comprados aparecem no topo, quando existem ==');
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ body: { ok: true, ativo: true, saldo: { mes: { limite: 58, usadas: 58, restante: 0, renova_em: '2026-10-01' }, comprados: { restante: 1200, vence_em: '2026-09-06' }, total_restante: 1200 } } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    await M.carregarCota();
+    const html = el('fia-cota-topo').innerHTML;
+    check('mês zerado e compradas: "0 de 58" e "1.200 compradas"', /0[\s\S]*de 58 análises este mês/.test(html) && /1\.200[\s\S]*compradas/.test(html), html);
+    check('diz quando as compradas vencem', /vencem dia 06\/09/.test(html));
+  }
+  {
+    const { M, el, doc } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo$/, () => ({ body: { ok: true, ativo: false, saldo: null } })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: { limite: 50, usadas: 3, restante: 47, renova_em: '2026-10-01' } } })],
+    ] });
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    await M.carregarCota();
+    check('ledger desligado: cai na cota da Fase 1', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
+  }
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 1, restante: 49, renova_em: '2026-10-01' }, { restante: 0, vence_em: null });
+    check('compradas = 0: não aparece a parte das compradas', !/compradas/.test(el('fia-cota-topo').innerHTML));
   }
 
   console.log(`\n${pass} passaram, ${fail} falharam`);
