@@ -361,6 +361,13 @@ function contarPlacar(campos) {
   return { preenchidos: lista.filter((c) => c.preenchido).length, total: lista.length };
 }
 
+/** "38 de 50 análises usadas este mês · renova dia 01/10". Sem cota, nada: número inventado é pior que nenhum. */
+function linhaCotaDoPlacar(cota) {
+  if (!cota || !Number.isFinite(Number(cota.limite))) return '';
+  const renova = formatarDia(cota.renova_em);
+  return `<span class="fia-placar-cota">${Number(cota.usadas) || 0} de ${Number(cota.limite)} análises usadas este mês${renova ? ` · renova dia ${escapeHtml(renova)}` : ''}</span>`;
+}
+
 /* ---------- Render ---------- */
 function linhaSugestao(item, comCheckbox) {
   const marca = item.acao === 'trocar' ? '✏️' : '✅';
@@ -592,6 +599,12 @@ function urlMinhaConta() {
     : 'https://app.marketfacil.com.br/minha-conta';
 }
 
+/** '2026-10-01' -> '01/10'. Só o dia e o mês: o ano não muda a decisão de ninguém. */
+function formatarDia(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${m[3]}/${m[2]}` : '';
+}
+
 function blocoErro(icone, titulo, texto, comBotao, cta) {
   const link = cta
     ? `<a class="fia-cta" href="${escapeHtml(cta.href)}">${escapeHtml(cta.label)}</a>`
@@ -619,6 +632,14 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   if (estado === 'ocupado') {
     el.innerHTML = blocoErro('⏱', 'Muita gente analisando agora',
       'Espere alguns segundos e tente de novo.', true);
+    return;
+  }
+  // As análises do mês acabaram: não é falha nem "muita gente". O número e a data vêm do
+  // servidor (a mensagem dele já diz quando renova); sem corpo, a frase genérica serve.
+  if (estado === 'cota') {
+    const msg = (dados && dados.error) ? String(dados.error) : 'Elas renovam no começo do mês.';
+    el.innerHTML = blocoErro('🗓', 'Suas análises deste mês acabaram', msg, false,
+      { label: 'Ver meus créditos →', href: urlMinhaConta() });
     return;
   }
   // Os dois estados que dependem de uma ação em OUTRA tela levam o caminho junto. "Ative
@@ -671,6 +692,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <span class="fia-placar-num">${p.preenchidos} de ${p.total}</span>
       <span class="fia-placar-lbl">campos preenchidos</span>
       <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="Cada palavra nova abre buscas que o anúncio não alcançava.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
+      ${linhaCotaDoPlacar(dados && dados.cota)}
       ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
     </div>
     <p class="fia-legenda">O Mercado Livre lê os primeiros <b>30 caracteres</b> de cada campo. O número na linha mostra quanto você já usou.</p>`;
@@ -1722,6 +1744,7 @@ window.MFFicha = {
   formatarPalavrasQueFaltam,
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
   linhaPalavraNova, linhaPalpite, rotuloFonte, chaveCache, _cache: cacheSugestoes,
+  formatarDia, linhaCotaDoPlacar,
   montarAtributo, aplicar, traduzirErro, erroParcial,
   abrirFichaIA, voltarParaLista, registrarPalavras, palavrasDoAnuncio,
   // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos

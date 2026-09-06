@@ -22,6 +22,8 @@ const COTA_ESGOTADA = {
 const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
 
 (async () => {
+  const M0 = carregar().M;
+
   console.log('\n== 429 com código de cota vira estado "cota" ==');
   {
     const { M } = carregar({ rotas: [[/gpt-ficha$/, () => ({ status: 429, body: COTA_ESGOTADA })]] });
@@ -39,6 +41,46 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     const r = await M.buscarSugestoes(PAYLOAD, 'user-1', 'tok', null);
     check('429 SEM código continua sendo "ocupado"', r.estado === 'ocupado' && r.dados === null, JSON.stringify(r));
   }
+
+  console.log('\n== estado "cota": diz quando renova e leva para Minha Conta ==');
+  {
+    const { M, el } = carregar();
+    M.renderPainel('ficha-ia-body', { estado: 'cota', dados: COTA_ESGOTADA, campos: [], placar: { preenchidos: 0, total: 0 } });
+    const html = el('ficha-ia-body').innerHTML;
+    check('título fala das análises do mês', /análises deste mês acabaram/i.test(html), html.slice(0, 300));
+    check('mostra a mensagem do servidor (a data de renovação está nela)', /01\/10\/2026/.test(html), html.slice(0, 300));
+    check('não é "muita gente analisando"', !/muita gente/i.test(html));
+    check('tem saída: Ver meus créditos', /Ver meus créditos/.test(html) && /minha-conta/.test(html));
+    check('sem botão "tentar de novo" (não adianta insistir)', !/fia-retry/.test(html));
+    check('sem travessão', !/[—–―]/.test(html));
+  }
+  {
+    const { M, el } = carregar();
+    M.renderPainel('ficha-ia-body', { estado: 'cota', dados: null, campos: [], placar: { preenchidos: 0, total: 0 } });
+    check('sem corpo do servidor ainda explica que renova no começo do mês', /começo do mês/i.test(el('ficha-ia-body').innerHTML));
+  }
+
+  console.log('\n== placar: as análises do mês aparecem quando a resposta traz cota ==');
+  {
+    const { M, el } = carregar();
+    const campos = [{ id: 'MATERIAL', name: 'Material', value_type: 'string', preenchido: false, obrigatorio: true, _mudaLink: false, _extra: false }];
+    const dados = { ok: true, sugestoes: [{ id: 'MATERIAL', acao: 'preencher', valor: 'Aço inox', caracteres: 8, palavras_novas: ['inox'], origens: [{ palavra: 'inox', fonte: 'descricao', trecho: 'inox' }] }],
+      palavras_novas_sugeridas: [], palpites: [], sem_base: [], descartadas: 0,
+      cota: { limite: 50, usadas: 38, restante: 12, renova_em: '2026-10-01' } };
+    M.renderPainel('ficha-ia-body', { estado: 'ok', dados, campos, placar: M.contarPlacar(campos) });
+    const html = el('ficha-ia-body').innerHTML;
+    check('placar mostra "38 de 50 análises usadas este mês"', /38 de 50 análises usadas este mês/.test(html), html.slice(0, 600));
+    check('e diz quando renova', /renova dia 01\/10/i.test(html));
+  }
+  {
+    const { M, el } = carregar();
+    const campos = [{ id: 'MATERIAL', name: 'Material', value_type: 'string', preenchido: false, obrigatorio: true, _mudaLink: false, _extra: false }];
+    const dados = { ok: true, sugestoes: [], palavras_novas_sugeridas: [], palpites: [], sem_base: [{ id: 'MATERIAL', name: 'Material' }], descartadas: 0 };
+    M.renderPainel('ficha-ia-body', { estado: 'ok', dados, campos, placar: M.contarPlacar(campos) });
+    check('sem cota na resposta, o placar NÃO inventa número', !/análises usadas/.test(el('ficha-ia-body').innerHTML));
+  }
+  check('formatarDia: 2026-10-01 -> 01/10', M0.formatarDia('2026-10-01') === '01/10', M0.formatarDia('2026-10-01'));
+  check('formatarDia: lixo -> vazio', M0.formatarDia('') === '' && M0.formatarDia(null) === '');
 
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
