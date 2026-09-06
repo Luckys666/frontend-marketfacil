@@ -159,7 +159,10 @@
 .kw-wrapper .kw-externo-dica { margin: 4px 0 0; font-size: .78rem; line-height: 1.45; color: var(--text-muted, #64748b); }
 
 /* Contador de análises do mês, no topo do Agente. Some sem saldo lido. */
-.fia-cota { margin: 12px 0 4px; font-size: 13px; color: var(--text-muted, #5f6b7a); }
-.fia-cota-num { font-weight: 700; color: var(--text, #1b2430); }
-.fia-cota-renova { opacity: .85; }
-.fia-placar-cota { display: block; margin-top: 4px; font-size: 12px; color: var(--text-muted, #5f6b7a); }
+.kw-wrapper .fia-cota { margin: 12px 0 4px; font-size: 13px; color: var(--text-muted, #5f6b7a); }
+.kw-wrapper .fia-cota-num { font-weight: 700; color: var(--text, #1b2430); }
+.kw-wrapper .fia-cota-renova { opacity: .85; }
+/* O placar é `display: flex; flex-wrap: wrap` — um `display: block` aqui quebrava o fluxo
+   dos outros itens da linha. `flex-basis: 100%` empurra este item pra própria linha sem
+   sair do sistema de flex do pai. */
+.kw-wrapper .fia-placar-cota { flex-basis: 100%; margin-top: 4px; font-size: 12px; color: var(--text-muted, #5f6b7a); }

@@ -363,9 +363,14 @@ function contarPlacar(campos) {
 
 /** "38 de 50 análises usadas este mês · renova dia 01/10". Sem cota, nada: número inventado é pior que nenhum. */
 function linhaCotaDoPlacar(cota) {
-  if (!cota || !Number.isFinite(Number(cota.limite))) return '';
+  const limite = Number(cota && cota.limite);
+  const usadas = Number(cota && cota.usadas);
+  // Mesma régua do contador do topo: `null`/`''` passam no `isFinite` como zero, e zero não é
+  // "sem cota" — a checagem explícita evita confundir os dois.
+  if (!cota || !Number.isFinite(limite) || !Number.isFinite(usadas)
+    || cota.limite === null || cota.limite === '' || cota.usadas === null || cota.usadas === '') return '';
   const renova = formatarDia(cota.renova_em);
-  return `<span class="fia-placar-cota">${Number(cota.usadas) || 0} de ${Number(cota.limite)} análises usadas este mês${renova ? ` · renova dia ${escapeHtml(renova)}` : ''}</span>`;
+  return `<span class="fia-placar-cota">${usadas} de ${limite} análises usadas este mês${renova ? ` · renova dia ${escapeHtml(renova)}` : ''}</span>`;
 }
 
 /* ---------- Render ---------- */
@@ -639,7 +644,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   if (estado === 'cota') {
     const msg = (dados && dados.error) ? String(dados.error) : 'Elas renovam no começo do mês.';
     el.innerHTML = blocoErro('🗓', 'Suas análises deste mês acabaram', msg, false,
-      { label: 'Ver meus créditos →', href: urlMinhaConta() });
+      { label: 'Ver meu plano →', href: urlMinhaConta() });
     return;
   }
   // Os dois estados que dependem de uma ação em OUTRA tela levam o caminho junto. "Ative
@@ -1088,9 +1093,18 @@ async function proxyGet(rota, token, signal) {
 function mostrarCotaNoTopo(cota, comprados) {
   const alvo = document.querySelector('#fia-cota-topo');
   if (!alvo) return;
-  if (!cota || !Number.isFinite(Number(cota.limite))) { alvo.setAttribute('hidden', ''); return; }
+  const limite = Number(cota && cota.limite);
+  const restante = Number(cota && cota.restante);
+  // `Number(null)` e `Number('')` valem 0 — um número que passaria no `isFinite` sem ser
+  // uma cota de verdade. Sem a checagem explícita de `null`/`''`, uma cota incompleta virava
+  // "0 de 50" em vez de sumir, e falha nunca pode virar zero.
+  if (!cota || !Number.isFinite(limite) || !Number.isFinite(restante)
+    || cota.limite === null || cota.limite === '' || cota.restante === null || cota.restante === '') {
+    alvo.setAttribute('hidden', '');
+    return;
+  }
   const renova = formatarDia(cota.renova_em);
-  let html = `Você ainda tem <span class="fia-cota-num">${Number(cota.restante) || 0}</span> de ${Number(cota.limite)} análises este mês`
+  let html = `Você ainda tem <span class="fia-cota-num">${restante}</span> de ${limite} análises este mês`
     + (renova ? ` <span class="fia-cota-renova">· renovam dia ${escapeHtml(renova)}</span>` : '');
   const c = comprados && Number(comprados.restante) > 0 ? comprados : null;
   if (c) {
@@ -1107,7 +1121,7 @@ async function carregarCota() {
     const uid = await obterUserId();
     if (!uid) return null;
     // Primeiro o ledger; desligado, a cota simples da Fase 1.
-    // Se o ledger nao existe, esta desligado ou o proxy cai, trata como inativo (nao e falha do
+    // Se o ledger não existe, está desligado ou o proxy cai, trata como inativo (não é falha do
     // contador, que continua funcionando na Fase 1).
     let s = null;
     try { s = await proxyGet('/api/creditos/saldo', uid); } catch (e) { s = null; }
@@ -1407,6 +1421,7 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     // Cache por anúncio + assinatura da ficha: voltar pra lista e reabrir o mesmo anúncio
     // não paga a IA de novo. Salvar um campo muda a assinatura e a chave se invalida.
     const chave = chaveCache(detail.id, estadoFicha.campos);
+    let fresco = false;
     let r = cacheSugestoes.get(chave);
     if (!r) {
       body.innerHTML = '<div class="fia-carregando">A IA está lendo o texto do seu anúncio…</div>';
@@ -1417,13 +1432,16 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
         return;
       }
       r = await buscarSugestoes(payload, uid, estadoFicha.token, signal);
+      fresco = true;
       if (!geracaoVigente(geracao)) return;
       // Falha não entra em cache — senão o botão "tentar de novo" devolveria a mesma falha.
       if (r.estado === 'ok') cacheSugestoes.set(chave, r);
     }
     estadoFicha.resposta = r.estado === 'ok' ? r.dados : null;
-    // O placar do topo acompanha a análise que acabou de acontecer.
-    if (r.estado === 'ok' && r.dados && r.dados.cota) mostrarCotaNoTopo(r.dados.cota, r.dados.creditos);
+    // O placar do topo acompanha a análise que acabou de acontecer, e só a que acabou de
+    // acontecer: a resposta do cache é de antes, e mostrar o número de antes faria o
+    // contador voltar para trás.
+    if (fresco && r.estado === 'ok' && r.dados && r.dados.cota) mostrarCotaNoTopo(r.dados.cota, r.dados.creditos);
     renderPainel('ficha-ia-body', {
       estado: r.estado, dados: r.dados, campos: estadoFicha.campos,
       placar: contarPlacar(estadoFicha.campos),

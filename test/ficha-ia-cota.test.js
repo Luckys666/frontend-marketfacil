@@ -50,7 +50,7 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     check('título fala das análises do mês', /análises deste mês acabaram/i.test(html), html.slice(0, 300));
     check('mostra a mensagem do servidor (a data de renovação está nela)', /01\/10\/2026/.test(html), html.slice(0, 300));
     check('não é "muita gente analisando"', !/muita gente/i.test(html));
-    check('tem saída: Ver meus créditos', /Ver meus créditos/.test(html) && /minha-conta/.test(html));
+    check('tem saída: Ver meu plano', /Ver meu plano/.test(html) && /minha-conta/.test(html));
     check('sem botão "tentar de novo" (não adianta insistir)', !/fia-retry/.test(html));
     check('sem travessão', !/[—–―]/.test(html));
   }
@@ -135,6 +135,38 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     check('restante 0 é número real, não falha: mostra "0 de 50"', /0[\s\S]*de 50 análises/.test(el('fia-cota-topo').innerHTML) && !el('fia-cota-topo').hasAttribute('hidden'));
   }
 
+  console.log('\n== número que não é número esconde o contador, nunca vira "0 de 50" ==');
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 50, restante: null, renova_em: '2026-10-01' });
+    check('restante null esconde o contador', el('fia-cota-topo').hasAttribute('hidden'));
+  }
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    M.mostrarCotaNoTopo({ limite: '', restante: 3 });
+    check('limite vazio esconde o contador', el('fia-cota-topo').hasAttribute('hidden'));
+  }
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    M.mostrarCotaNoTopo({ limite: 50, restante: 'abc' });
+    check('restante que não é número esconde o contador', el('fia-cota-topo').hasAttribute('hidden'));
+  }
+  {
+    check('linhaCotaDoPlacar: usadas null não vira "0 de 50"', M0.linhaCotaDoPlacar({ limite: 50, usadas: null, renova_em: '2026-10-01' }) === '');
+  }
+  {
+    check('linhaCotaDoPlacar: limite vazio some do placar', M0.linhaCotaDoPlacar({ limite: '', usadas: 3 }) === '');
+  }
+
   console.log('\n== créditos comprados aparecem no topo, quando existem ==');
   {
     const { M, el, doc } = carregar({ rotas: [
@@ -169,8 +201,20 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     M.mostrarCotaNoTopo({ limite: 50, usadas: 1, restante: 49, renova_em: '2026-10-01' }, { restante: 0, vence_em: null });
     check('compradas = 0: não aparece a parte das compradas', !/compradas/.test(el('fia-cota-topo').innerHTML));
   }
+  {
+    const { M, el, doc } = carregar();
+    const topoEl = doc.getElementById('fia-cota-topo');
+    topoEl.setAttribute('class', 'fia-cota');
+    topoEl.setAttribute('hidden', '');
+    // Compradas sem data de vencimento (ex: cortesia, ou o campo ainda não veio do ledger):
+    // mostra a quantidade e omite o "vencem", em vez de escrever "vencem dia" seguido de nada.
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 1, restante: 49, renova_em: '2026-10-01' }, { restante: 300, vence_em: null });
+    const html = el('fia-cota-topo').innerHTML;
+    check('compradas sem data de vencimento: mostra a quantidade e omite o "vencem"',
+      !el('fia-cota-topo').hasAttribute('hidden') && /300/.test(html) && /compradas/.test(html) && !/vencem/.test(html), html);
+  }
 
-  console.log('\n== ledger indisponivel: cai em Fase 1, contador nao some ==');
+  console.log('\n== ledger indisponível: cai em Fase 1, contador não some ==');
   {
     const { M, el, doc } = carregar({ rotas: [
       [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
@@ -181,7 +225,7 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     topoEl.setAttribute('class', 'fia-cota');
     topoEl.setAttribute('hidden', '');
     await M.carregarCota();
-    check('ledger fora (503): cai na cota da Fase 1, o contador nao some', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
+    check('ledger fora (503): cai na cota da Fase 1, o contador não some', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
   }
   {
     const { M, el, doc } = carregar({ rotas: [
@@ -193,7 +237,7 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     topoEl.setAttribute('class', 'fia-cota');
     topoEl.setAttribute('hidden', '');
     await M.carregarCota();
-    check('rota de saldo ainda nao existe (404): cai na cota da Fase 1', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
+    check('rota de saldo ainda não existe (404): cai na cota da Fase 1', /47[\s\S]*de 50/.test(el('fia-cota-topo').innerHTML));
   }
   {
     const { M, el, doc } = carregar({ rotas: [
@@ -206,6 +250,52 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     topoEl.setAttribute('hidden', '');
     const r = await M.carregarCota();
     check('as duas falham: null e escondido, nunca "0 de 50"', r === null && el('fia-cota-topo').hasAttribute('hidden'));
+  }
+
+  console.log('\n== abrirFichaIA de ponta a ponta: o contador do topo acompanha a análise ==');
+  {
+    // Mesmas rotas que test/ficha-ia-corridas.test.js monta para abrirFichaIA, com a
+    // diferença de que /api/gpt-ficha devolve `cota` (o que a análise de verdade traz) e o
+    // corpo é mutável: o segundo bloco troca os números pra provar que reabrir do cache não
+    // busca de novo.
+    let respostaGptFicha = {
+      ok: true,
+      sugestoes: [], palavras_novas_sugeridas: [], palpites: [], sem_base: [], descartadas: 0,
+      cota: { limite: 50, usadas: 12, restante: 38, renova_em: '2026-10-01' },
+    };
+    const rotas = [
+      [/getAccessToken2/, async () => ({ body: { response: { access_token: 'TOKEN-ML' } } })],
+      [/get-user-id/, async () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/\/api\/fetch-item\?/, async () => ({ body: [{ code: 200, body: { id: 'MLB1', title: 'Panela', category_id: 'C1', site_id: 'MLB', attributes: [] }, description: { plain_text: 'd' } }] })],
+      [/\/api\/attributes\//, async () => ({ body: [{ id: 'MATERIAL', name: 'Material', value_type: 'string', value_max_length: 255, tags: {} }] })],
+      [/\/api\/catalog-quality/, async () => ({ status: 404, body: {} })],
+      [/creditos\/saldo$/, async () => ({ body: { ok: true, ativo: false, saldo: null } })],
+      [/gpt-ficha\/cota$/, async () => ({ body: { ok: true, cota: { limite: 50, usadas: 11, restante: 39, renova_em: '2026-10-01' } } })],
+      [/gpt-ficha$/, async () => ({ body: respostaGptFicha })],
+    ];
+    const { M, el, doc, box } = carregar({ rotas });
+    doc.getElementById('fia-cota-topo').setAttribute('hidden', '');
+
+    await M.abrirFichaIA('MLB1');
+    const topo1 = el('fia-cota-topo').innerHTML;
+    check('refresh depois da análise: o contador do topo acompanha a resposta',
+      /38[\s\S]*de 50/.test(topo1), topo1);
+
+    // Entre a primeira e a segunda abertura, o vendedor analisou OUTRO anúncio: o número de
+    // verdade caiu para 20. Reabrir a ficha de MLB1 (que vem do cache, com o 38 antigo
+    // dentro) não pode reescrever por cima desse número mais recente.
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 30, restante: 20, renova_em: '2026-10-01' });
+
+    const chamadasAntes = box.chamadas.filter((c) => /gpt-ficha$/.test(c.url)).length;
+    // Se o cache falhasse e uma nova análise deste MESMO anúncio acontecesse, o servidor
+    // devolveria isto — mas ela não pode acontecer: a resposta já está em cache.
+    respostaGptFicha = { ...respostaGptFicha, cota: { limite: 50, usadas: 30, restante: 20, renova_em: '2026-10-01' } };
+    await M.abrirFichaIA('MLB1');
+    const chamadasDepois = box.chamadas.filter((c) => /gpt-ficha$/.test(c.url)).length;
+    const topo2 = el('fia-cota-topo').innerHTML;
+    check('reabrir do cache NÃO reescreve o contador (senão ele volta para trás)',
+      chamadasDepois === chamadasAntes && /20[\s\S]*de 50/.test(topo2) && !/38[\s\S]*de 50/.test(topo2),
+      `chamadas ${chamadasAntes}->${chamadasDepois} | ${topo2}`);
   }
 
   console.log(`\n${pass} passaram, ${fail} falharam`);
