@@ -1326,6 +1326,26 @@ function menuDeCreditosVisivel() {
 }
 
 /**
+ * Mostra ou esconde o contador do topo conforme o menu lateral está na tela AGORA. Roda ao
+ * pintar e a cada mudança de tamanho da janela (virar o celular, encolher a janela): medido em
+ * 07/09, a página aberta larga e depois estreitada ficava sem contador nenhum, porque a
+ * decisão era tomada uma vez só, na largura de antes.
+ */
+function reavaliarCotaTopo() {
+  const alvo = document.querySelector('#fia-cota-topo');
+  if (!alvo || !alvo.__temNumero) return;
+  if (menuDeCreditosVisivel()) alvo.setAttribute('hidden', '');
+  else alvo.removeAttribute('hidden');
+}
+let _resizeCota = null;
+if (typeof window.addEventListener === 'function') {
+  window.addEventListener('resize', () => {
+    if (_resizeCota) clearTimeout(_resizeCota);
+    _resizeCota = setTimeout(reavaliarCotaTopo, 150);
+  });
+}
+
+/**
  * Contador do topo: "Você ainda tem 12 de 50 análises este mês · renovam dia 01/10".
  * Sem número, some. Mostrar "0 de 50" por falha de leitura mandaria o vendedor embora
  * de uma ferramenta que está funcionando (§8.3).
@@ -1361,8 +1381,8 @@ function mostrarCotaNoTopo(cota, comprados) {
   // 07/09 (Lucas): "muita redundância de informação, principalmente sobre os créditos". O número
   // vive UM lugar: a linha do menu lateral. O contador do topo só aparece quando o menu não está
   // na tela (celular, onde o menu lateral não existe). Regra de tela, sem número novo.
-  if (menuDeCreditosVisivel()) alvo.setAttribute('hidden', '');
-  else alvo.removeAttribute('hidden');
+  alvo.__temNumero = true;
+  reavaliarCotaTopo();
   // Avisa o cartão do menu lateral (js/menu-saldo.js) com o MESMO número: menu dizendo 38 e
   // Agente dizendo 37 na mesma tela vira chamado no suporte. Só com número válido, que é o
   // que chegou até aqui; sem número, o menu mantém o que estava certo.
@@ -2547,7 +2567,7 @@ window.MFFicha = {
   abrirFichaIA, voltarParaLista, registrarPalavras, palavrasDoAnuncio,
   // Expostos para o teste de integração alcançar as bordas — foi ali que os 12 defeitos
   // de 30/08 se esconderam enquanto a suíte de lógica pura ficava verde.
-  ligarBotoes, salvar, obterUserId, carregarCota, mostrarCotaNoTopo,
+  ligarBotoes, salvar, obterUserId, carregarCota, mostrarCotaNoTopo, reavaliarCotaTopo,
   _estado: function () { return estadoFicha; },
   escapeHtml, chaveTexto, atributoPreenchido, valorAtual,
   _PROXY: MFFICHA_PROXY,

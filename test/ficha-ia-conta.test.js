@@ -82,6 +82,31 @@ function montar(conta) {
     check('página sem o bloco: não chama nada', d === null && !box.chamadas.some((c) => /gpt-ficha\/conta/.test(c.url)));
   }
 
+  console.log('\n== contador do topo: reavalia quando a tela muda de tamanho ==');
+  {
+    const { M, el, doc } = carregar();
+    const topo = el('fia-cota-topo');
+    // Um menu lateral "na tela" (largura > 0), como no desktop.
+    const menu = doc.createElement('div'); menu.setAttribute('class', 'mf-saldo'); menu.getBoundingClientRect = () => ({ width: 280, height: 48 });
+    doc.body.appendChild(menu);
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 12, restante: 38, renova_em: '2026-10-01' });
+    check('menu visível: o topo fica oculto', topo.hasAttribute('hidden'));
+    // Virou celular: o menu sumiu (largura 0). Sem resize, o topo continuaria oculto.
+    menu.getBoundingClientRect = () => ({ width: 0, height: 0 });
+    M.reavaliarCotaTopo();
+    check('menu sumiu (largura 0): reavaliar mostra o topo', !topo.hasAttribute('hidden'));
+    menu.getBoundingClientRect = () => ({ width: 280, height: 48 });
+    M.reavaliarCotaTopo();
+    check('menu voltou: o topo some de novo', topo.hasAttribute('hidden'));
+  }
+  {
+    const { M, el } = carregar();
+    const topo = el('fia-cota-topo');
+    M.mostrarCotaNoTopo(null);
+    M.reavaliarCotaTopo();
+    check('sem número lido, reavaliar nunca mostra o topo', topo.hasAttribute('hidden'));
+  }
+
   console.log('\n== htmlDaConta é puro e valida ==');
   {
     const { M } = carregar();
