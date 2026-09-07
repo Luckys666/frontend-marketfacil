@@ -159,7 +159,9 @@ console.log('\n== render: sucesso ==');
   // O texto mudou em 31/08: dizer "a IA não chuta fato de produto" virou mentira depois
   // que a lista de palpites passou a chutar. Agora a seção explica o que sobrou pro
   // vendedor — e por que vale preencher.
-  check('e diz por que está vazio', /ficaram com voc|nem o an[úu]ncio diz/i.test(txt), txt.slice(0, 200));
+  // 06/09: a seção virou "Só você sabe" (o que sobrou é o que nem o anúncio nem o tipo de
+  // produto respondem; tudo o mais agora vem pré-preenchido em "Revise antes de aceitar").
+  check('e diz por que está vazio', /s[óo] voc[êe] sabe|nem o an[úu]ncio nem o tipo de produto/i.test(txt), txt.slice(0, 200));
   check('sem prometer que a IA não chuta (ela chuta agora)', !/n[ãa]o chuta/i.test(txt));
   check('não conta pro vendedor quantas a peneira descartou', !/descartad/i.test(txt));
   // 31/08: em vez de um botão de lote só, cada bloco tem o seu e existe um "aplicar tudo".

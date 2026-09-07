@@ -336,11 +336,15 @@ function separarSecoes(resposta, campos) {
   // fora do lote —, porque quem afirma continua sendo o vendedor.
   const palpites = ((resposta && resposta.palpites) || []).map(enfeitar);
 
-  const obrigatorioPrimeiro = (a, b) => (b.obrigatorio ? 1 : 0) - (a.obrigatorio ? 1 : 0);
+  // Prioridade vem do proxy (modelo, linha, fabricante, MPN: "certeza de que adicionam novas
+  // palavras na busca", Lucas 06/09). Aqui só a ordem: prioridade, depois obrigatório.
+  const prio = (x) => (x.prioridade ? 1 : 0);
+  const obrigatorioPrimeiro = (a, b) => (prio(b) - prio(a)) || ((b.obrigatorio ? 1 : 0) - (a.obrigatorio ? 1 : 0));
   comEvidencia.sort(obrigatorioPrimeiro);
   trocas.sort(obrigatorioPrimeiro);
   sohUmAUm.sort(obrigatorioPrimeiro);
-  palavrasNovas.sort((a, b) => (b.buscas || 0) - (a.buscas || 0));   // mais buscas primeiro
+  palavrasNovas.sort((a, b) => (prio(b) - prio(a)) || ((b.buscas || 0) - (a.buscas || 0)));   // prioridade, depois mais buscas
+  palpites.sort((a, b) => prio(b) - prio(a));
   return { comEvidencia, trocas, sohUmAUm, palavrasNovas, palpites };
 }
 
@@ -389,9 +393,9 @@ function linhaSugestao(item, comCheckbox) {
     : '';
   // O selo diz por que vale a pena: obrigatório é o que o ML cobra; "campo extra" é o que
   // o ML nem mostra no formulário e quase nenhum concorrente preenche.
-  const selo = item.obrigatorio
+  const selo = seloPrioridade(item) + (item.obrigatorio
     ? '<span class="fia-selo fia-selo-obrig">o ML pede</span>'
-    : (item.extra ? '<span class="fia-selo fia-selo-extra" title="O Mercado Livre não mostra este campo no formulário. Quase ninguém preenche.">campo extra</span>' : '');
+    : (item.extra ? '<span class="fia-selo fia-selo-extra" title="O Mercado Livre não mostra este campo no formulário. Quase ninguém preenche.">campo extra</span>' : ''));
   // UMA linha de origem por palavra. Composição de fontes diferentes ("aço" de um campo,
   // "inox" da descrição) mostra as duas — é assim que o vendedor pega o caso raro em que a
   // junção não serve pro produto dele.
@@ -427,6 +431,7 @@ function linhaSugestao(item, comCheckbox) {
       ${rotuloDoValor(item)}
       ${entradaDaLinha(item)}
       ${ganho}
+      ${notaCompletado(item)}
       <div class="fia-evidencia">${origens}</div>
       ${botao}
     </div>`;
@@ -458,9 +463,29 @@ function tokensDaLinha(item) {
  * mais o `data-nova`: ele mantém a linha fora do `marcadosNoLote`, o botão da seção que
  * afirma ter base no anúncio. O "aplicar tudo" (`marcadosEm`) leva ela junto.
  */
+/** Selo dos campos em que palavra nova mais rende (vem pronto do proxy: `prioridade`). */
+function seloPrioridade(item) {
+  return item && item.prioridade
+    ? '<span class="fia-selo fia-selo-prio" title="Neste campo, palavra nova rende mais busca. Ele recebe primeiro as palavras mais procuradas.">rende busca</span>'
+    : '';
+}
+
+/** O que o servidor acrescentou para o campo não ficar pela metade (menos de 21 dos 30). */
+function notaCompletado(item) {
+  const lista = Array.isArray(item && item.completado_com) ? item.completado_com.filter(Boolean) : [];
+  return lista.length
+    ? `<div class="fia-completado">completado com: ${escapeHtml(lista.join(', '))} <span class="fia-completado-pq">(palavras do seu anúncio que a busca ainda não via)</span></div>`
+    : '';
+}
+
 function linhaPalpite(item) {
   const ganho = (item.palavras_novas || []).length
     ? `<div class="fia-ganho">+${item.palavras_novas.length} ${item.palavras_novas.length === 1 ? 'palavra nova' : 'palavras novas'}: ${escapeHtml(item.palavras_novas.join(', '))}</div>`
+    : '';
+  // 06/09: palpite apoiado no silêncio do anúncio ENTRA pré-preenchido, e a tela avisa. É o
+  // aviso que troca a régua de corte: quem decide é o vendedor, na hora, com a informação.
+  const silencio = item.silencio
+    ? '<div class="fia-silencio">O anúncio não afirma isso. Confira no rótulo do produto antes de aceitar.</div>'
     : '';
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1"${tokensDaLinha(item)}>
@@ -468,11 +493,14 @@ function linhaPalpite(item) {
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.name || item.id)}</span>
         <span class="fia-marca">🤔</span>
+        ${seloPrioridade(item)}
         ${selosDeTamanho(item)}
       </div>
       ${rotuloDoValor(item)}
       ${entradaDaLinha(item, ' data-nova="1"')}
       ${ganho}
+      ${notaCompletado(item)}
+      ${silencio}
       ${item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : ''}
       <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
     </div>`;
@@ -759,8 +787,8 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   // desde que a tela deixe claríssimo de onde veio a afirmação e que quem decide é ele.
   const secaoPalpites = palpites.length ? `
     <div class="fia-secao fia-secao-palpites" data-secao="palpites">
-      <div class="fia-secao-titulo">Confira estes <span class="fia-mono">(${palpites.length})</span></div>
-      <p class="fia-aviso">O anúncio não fala destes campos. Isto é o que costuma valer num produto assim.</p>
+      <div class="fia-secao-titulo">Revise antes de aceitar <span class="fia-mono">(${palpites.length})</span></div>
+      <p class="fia-aviso">O anúncio não fala destes campos. Já vieram preenchidos com o que costuma valer num produto assim. Corrija o que não for o seu caso.</p>
       ${palpites.map(linhaPalpite).join('')}
       ${botaoDaSecao('palpites', palpites.length, 'Aplicar os marcados')}
     </div>` : '';
@@ -831,8 +859,8 @@ function secaoSemBase(lista, campos) {
 
   return `
     <div class="fia-secao fia-sem-base" data-secao="vazios">
-      <div class="fia-secao-titulo">Ficaram com você <span class="fia-mono">(${lista.length})</span></div>
-      <p class="fia-aviso">Estes só você sabe. Preencha aqui e aplique junto com o resto.</p>
+      <div class="fia-secao-titulo">Só você sabe <span class="fia-mono">(${lista.length})</span></div>
+      <p class="fia-aviso">Nem o anúncio nem o tipo de produto respondem estes. Preencha aqui e aplique junto com o resto.</p>
       ${linhas}
       <button type="button" class="fia-aplicar-secao" data-secao="vazios">Aplicar os que você preencheu <span class="fia-mono" data-conta="secao">(0)</span></button>
     </div>`;

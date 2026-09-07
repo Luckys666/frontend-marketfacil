@@ -49,6 +49,13 @@
 .kw-wrapper .fia-selo { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
 .kw-wrapper .fia-selo-obrig { color: #b91c1c; border: 1px solid #fecaca; background: #fef2f2; }
 .kw-wrapper .fia-selo-extra { color: var(--blue, #0066ff); border: 1px solid #c9dcff; background: #eff6ff; cursor: help; }
+/* 06/09: modelo, linha, fabricante e MPN rendem busca (prioridade vem do proxy). */
+.kw-wrapper .fia-selo-prio { color: #065f46; border: 1px solid #a7f3d0; background: #ecfdf5; cursor: help; }
+/* Palpite apoiado no silêncio do anúncio: entra pré-preenchido, e a linha avisa. Sem cor de alarme. */
+.kw-wrapper .fia-silencio { font-size: .73rem; line-height: 1.5; color: var(--text, #1b2430); margin-top: 6px; }
+/* O que o servidor acrescentou para o campo não ficar pela metade. */
+.kw-wrapper .fia-completado { font-size: .73rem; line-height: 1.5; color: var(--text-muted, #64748b); margin-top: 4px; }
+.kw-wrapper .fia-completado-pq { opacity: .8; }
 
 .kw-wrapper .fia-antes { font-size: .76rem; color: var(--text-muted, #64748b); margin-bottom: 4px; }
 .kw-wrapper .fia-valor { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .86rem; font-family: inherit; }
