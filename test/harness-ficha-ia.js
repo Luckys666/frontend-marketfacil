@@ -25,13 +25,31 @@ function carregar(opts = {}) {
     console, JSON, Object, Array, Math, RegExp, Set, Map, Date, Number, String, Boolean,
     parseInt, parseFloat, isFinite, isNaN, Promise, Error, encodeURIComponent, decodeURIComponent,
     URLSearchParams, AbortController: global.AbortController,
-    setTimeout: (fn) => { try { fn(); } catch (_) {} return 0; }, clearTimeout() {},
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    // Atraso zero (o boot) roda na hora. Atraso maior (o poll do lote, a cada 10 s) fica na
+    // fila: o teste dispara com `box.rodarTimers()` quando quer, e um poll que reagenda a si
+    // mesmo não vira laço infinito no teste.
+    setTimeout: (fn, ms) => {
+      if (!ms) { try { fn(); } catch (_) {} return 0; }
+      box.timers.push({ fn, ms });
+      return box.timers.length;
+    },
+    clearTimeout(id) { if (id > 0 && box.timers[id - 1]) box.timers[id - 1] = null; },
+    localStorage: {
+      getItem: (k) => (box.armazem.has(k) ? box.armazem.get(k) : null),
+      setItem: (k, v) => { box.armazem.set(k, String(v)); },
+      removeItem: (k) => { box.armazem.delete(k); },
+    },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     navigator: { clipboard: { writeText: async () => {} }, userAgent: 'node' },
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
   };
   box.chamadas = [];
+  box.timers = [];
+  box.armazem = new Map(opts.armazem || []);
+  box.rodarTimers = async () => {
+    const fila = box.timers.splice(0).filter(Boolean);
+    for (const t of fila) { try { await t.fn(); } catch (_) {} }
+  };
 
   // `rotas` responde por URL — é o que permite encenar "o anúncio A demora mais que o B",
   // que é o cenário do P1. Sem ela, todo fetch devolve a mesma coisa e a corrida não existe.

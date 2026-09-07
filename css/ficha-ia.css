@@ -201,3 +201,74 @@
    dos outros itens da linha. `flex-basis: 100%` empurra este item pra própria linha sem
    sair do sistema de flex do pai. */
 .kw-wrapper .fia-placar-cota { flex-basis: 100%; margin-top: 4px; font-size: 12px; color: var(--text-muted, #5f6b7a); }
+
+/* ── 07/09/2026: gaveta do SKU, histórico/desfazer, placar da conta e lote ───────────
+   Tudo por estrutura (barra, número, selo), uma cor só, sem alarme. */
+.kw-wrapper .fia-aviso-gaveta { color: var(--text, #1b2430); background: var(--bg-subtle, #f8fafc); border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
+.kw-wrapper .fia-gaveta .fia-valor { font-family: 'DM Mono', monospace; font-size: .8rem; }
+
+.kw-wrapper .fia-historico { display: flex; flex-direction: column; gap: 4px; margin: -6px 0 14px; }
+.kw-wrapper .fia-hist-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; color: var(--text-muted, #64748b); padding: 6px 10px; background: var(--bg-subtle, #f8fafc); border: 1px solid #e2e8f0; border-radius: 6px; }
+.kw-wrapper .fia-hist-desfeita { opacity: .6; }
+.kw-wrapper .fia-hist-hora { font-size: .72rem; }
+.kw-wrapper .fia-hist-rotulo { font-weight: 600; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-hist-campos { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-wrapper .fia-hist-estado { font-size: .72rem; font-style: italic; }
+.kw-wrapper .fia-desfazer { padding: 4px 10px; font-size: .74rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); background: #fff; color: var(--blue, #0066ff); border-radius: 6px; cursor: pointer; }
+.kw-wrapper .fia-desfazer:hover { background: #eff6ff; }
+.kw-wrapper .fia-desfazer.fia-perigo { border-color: #dc2626; color: #b91c1c; background: #fef2f2; }
+.kw-wrapper .fia-desfazer[disabled] { opacity: .55; cursor: progress; }
+
+/* Placar da conta: acima da lista, no mesmo navy do placar da ficha. */
+.kw-wrapper .fia-conta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 12px; background: var(--navy, #0f172a); border-radius: 10px; color: #fff; }
+.kw-wrapper .fia-conta[hidden] { display: none !important; }
+.kw-wrapper .fia-conta-rotulo { font-size: .78rem; font-weight: 600; opacity: .85; }
+.kw-wrapper .fia-conta-barra { flex: 1 1 140px; }
+.kw-wrapper .fia-conta-num { font-size: 1rem; font-weight: 700; cursor: help; }
+.kw-wrapper .fia-conta-sobe, .kw-wrapper .fia-conta-mais { font-family: 'DM Mono', monospace; font-size: .82rem; font-weight: 700; color: var(--green, #00d68f); cursor: help; }
+
+/* Cartão do lote (Fase 4b). */
+.kw-wrapper .fia-lote-card { margin: 0 0 16px; padding: 12px 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+.kw-wrapper .fia-lote-card[hidden] { display: none !important; }
+.kw-wrapper #fia-conta-e-lote[hidden] { display: none !important; }
+.kw-wrapper .fia-lote-abrir { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; font-size: .84rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); border-radius: 7px; background: #fff; color: var(--blue, #0066ff); cursor: pointer; }
+.kw-wrapper .fia-lote-abrir:hover { background: #eff6ff; }
+.kw-wrapper .fia-lote-opcoes { display: flex; flex-direction: column; gap: 6px; }
+.kw-wrapper .fia-lote-opcao { font-size: .84rem; color: var(--text, #1e3a5f); display: flex; align-items: center; gap: 6px; }
+.kw-wrapper .fia-lote-acoes { display: flex; gap: 8px; }
+.kw-wrapper .fia-lote-comecar { padding: 9px 16px; font-size: .84rem; font-weight: 700; border: 0; border-radius: 7px; background: var(--green, #00a06b); color: #fff; cursor: pointer; }
+.kw-wrapper .fia-lote-cancelar, .kw-wrapper .fia-lote-pausar, .kw-wrapper .fia-lote-retomar, .kw-wrapper .fia-lote-novo, .kw-wrapper .fia-lote-ver-grupos { padding: 6px 12px; font-size: .78rem; font-weight: 600; border: 1px solid #d5dbe3; border-radius: 6px; background: #fff; color: var(--text, #1e3a5f); cursor: pointer; }
+.kw-wrapper .fia-lote-ver-grupos { margin-top: 8px; }
+.kw-wrapper .fia-lote-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.kw-wrapper .fia-lote-titulo { font-size: .88rem; font-weight: 700; color: var(--text, #1e3a5f); flex: 1 1 auto; }
+.kw-wrapper .fia-lote-selo { font-size: .74rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid #d5dbe3; color: var(--text, #1e3a5f); background: #fff; cursor: help; }
+.kw-wrapper .fia-lote-rodando { color: var(--green, #00a06b); border-color: #b7ecd6; background: #f0fdf7; }
+.kw-wrapper .fia-lote-concluido { color: var(--green, #00a06b); border-color: #b7ecd6; background: #f0fdf7; }
+.kw-wrapper .fia-lote-erro { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+.kw-wrapper .fia-lote-placar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kw-wrapper .fia-lote-barra { flex: 1 1 140px; background: #e2e8f0; }
+.kw-wrapper .fia-lote-num { font-size: .92rem; font-weight: 700; color: var(--text, #1e3a5f); cursor: help; }
+.kw-wrapper .fia-lote-sug, .kw-wrapper .fia-lote-cred, .kw-wrapper .fia-lote-grupos, .kw-wrapper .fia-lote-erros { font-family: 'DM Mono', monospace; font-size: .78rem; font-weight: 700; color: var(--text-muted, #64748b); cursor: help; }
+.kw-wrapper .fia-lote-sug { color: var(--green, #00a06b); }
+.kw-wrapper .fia-lote-erros { color: #92400e; }
+.kw-wrapper .fia-cta-mini { margin-top: 0; padding: 6px 12px; font-size: .78rem; }
+.kw-wrapper .fia-grupos { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.kw-wrapper .fia-grupo { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.kw-wrapper .fia-grupo-abrir { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; background: var(--bg-subtle, #f8fafc); text-align: left; cursor: pointer; font-size: .82rem; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-grupo-titulo { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.kw-wrapper .fia-grupo-n, .kw-wrapper .fia-grupo-sug { font-size: .76rem; font-weight: 700; color: var(--text-muted, #64748b); white-space: nowrap; }
+.kw-wrapper .fia-grupo-sug { color: var(--green, #00a06b); }
+.kw-wrapper .fia-membros { display: flex; flex-direction: column; }
+.kw-wrapper .fia-membro { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-top: 1px solid #e2e8f0; font-size: .8rem; }
+.kw-wrapper .fia-membro-titulo { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text, #1e3a5f); }
+.kw-wrapper .fia-membro-id { font-size: .72rem; color: var(--text-muted, #64748b); }
+.kw-wrapper .fia-membro-abrir { padding: 4px 10px; font-size: .74rem; font-weight: 600; border: 1px solid var(--blue, #0066ff); background: #fff; color: var(--blue, #0066ff); border-radius: 6px; cursor: pointer; }
+
+@media (max-width: 720px) {
+  .kw-wrapper .fia-conta { padding: 10px 12px; gap: 8px; }
+  .kw-wrapper .fia-conta-barra { flex-basis: 100%; order: 10; }
+  .kw-wrapper .fia-lote-placar { gap: 8px; }
+  .kw-wrapper .fia-lote-barra { flex-basis: 100%; order: 10; }
+  .kw-wrapper .fia-hist-campos { white-space: normal; }
+  .kw-wrapper .fia-membro-titulo { white-space: normal; flex-basis: 100%; }
+}

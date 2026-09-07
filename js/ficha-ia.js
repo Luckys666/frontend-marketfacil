@@ -622,6 +622,44 @@ function entradaDaLinha(item, extraAttrs) {
   return `<select ${attrs}><option value="">escolher…</option>${linhas}</select>`;
 }
 
+/**
+ * A gaveta do SKU (07/09/2026, Lucas: "sku vamos usar também"). O buscador do ML lê o
+ * `SELLER_SKU` (255 caracteres, o comprador não vê) — medido na conta de teste. O proxy só
+ * manda a gaveta com o SKU VAZIO e sem variações; aqui ela nasce DESMARCADA, com o aviso do
+ * ERP à vista: SKU é campo que sistema de estoque lê, e quem decide gravar ali é o vendedor.
+ * O campo não está em `campos` (código fica fora da IA): a linha vive na própria seção e o
+ * `aplicar` recebe o campo pronto (`CAMPO_GAVETA`).
+ */
+const CAMPO_GAVETA = Object.freeze({ id: 'SELLER_SKU', name: 'SKU', value_type: 'string', value_max_length: 255, tags: {}, values: [], _gaveta: true });
+
+function linhaGaveta(g) {
+  const entraram = Array.isArray(g.entraram) && g.entraram.length ? g.entraram : [];
+  const buscas = Number(g.buscas) || entraram.reduce((s, e) => s + (Number(e.buscas) || 0), 0);
+  const max = Number(g.maximo) || 255;
+  const seloGanho = entraram.length
+    ? `<span class="fia-selo fia-selo-ganho" title="${escapeHtml(entraram.map((e) => e.palavra).join(', ') + ' · abrem ' + buscas + ' buscas que o anúncio não alcançava')}">+${entraram.length} · ${buscas} buscas</span>`
+    : '';
+  const combos = (g.combos || []).slice(0, 3).map((c) => `<span class="fia-combo">${escapeHtml(c)}</span>`).join('');
+  const tokens = (g.palavras_novas || []).join(',');
+  return `
+    <div class="fia-secao fia-secao-gaveta" data-secao="gaveta">
+      <div class="fia-secao-titulo">Gaveta de palavras (SKU) <span class="fia-mono">(1)</span>${'' /* a ajuda é o aviso abaixo, à vista de propósito */}</div>
+      <p class="fia-aviso fia-aviso-gaveta">Seu SKU está vazio. A busca do Mercado Livre lê este campo e o comprador não vê. Se você usa SKU no seu ERP ou planilha, deixe desmarcado.</p>
+      <div class="fia-linha fia-nova fia-gaveta" data-campo="SELLER_SKU" data-nova="1"${tokens ? ` data-tokens="${escapeHtml(tokens)}"` : ''}>
+        <div class="fia-linha-topo">
+          <input type="checkbox" class="fia-check-nova" data-campo="SELLER_SKU" data-nova="1" />
+          <span class="fia-nome">SKU</span>
+          ${seloGanho}
+          <span class="fia-marca">🗂</span>
+          <span class="fia-chars fia-mono" title="O SKU aceita até ${max} caracteres. Hífen separa as palavras.">${String(g.valor || '').length}/${max}</span>
+        </div>
+        <input type="text" class="fia-valor" data-campo="SELLER_SKU" data-nova="1" data-max="${max}" maxlength="${max}" value="${escapeHtml(g.valor || '')}" />
+        ${detalhesDaLinha(`<div class="fia-ganho">${escapeHtml(entraram.map((e) => e.palavra).join(', '))} · ${buscas} buscas</div>` + (combos ? `<div class="fia-combos">${combos}</div>` : ''))}
+      </div>
+      <button type="button" class="fia-aplicar-secao" data-secao="gaveta">Gravar no SKU <span class="fia-mono" data-conta="secao">(0)</span></button>
+    </div>`;
+}
+
 function selosDeTamanho(item) {
   const usados = item.caracteres || String(item.valor || '').length;
   if (!aceitaMaisTexto(item.campo)) return '';
@@ -762,17 +800,19 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   // 06/09 (Lucas): "muita explicação pra uma coisa que era pra ser intuitiva". A legenda dos 30
   // caracteres saiu: o "27/30" de cada linha já diz, e o title dele explica para quem parar o mouse.
 
-  if (nadaPraFazer && completo) {
+  const historico = blocoHistorico(historicoDoAnuncio(estadoFicha.itemId));
+  const temGaveta = !!(dados && dados.gaveta_sku && dados.gaveta_sku.valor);
+  if (nadaPraFazer && completo && !temGaveta) {
     // Um 🎉 só. Dois selos de festa para a mesma conquista, colados um no outro, transformam
     // a comemoração em enfeite.
-    el.innerHTML = cabecalho + blocoErro('✅', 'Ficha completa',
+    el.innerHTML = cabecalho + historico + blocoErro('✅', 'Ficha completa',
       'Não há mais nada esperando por você aqui.', false);
     return;
   }
 
   // "Nada passou na régua" é resultado, com caminho — diferente de falha.
-  if (nadaPraFazer) {
-    el.innerHTML = cabecalho + blocoErro('🔎', 'Não achei base no texto deste anúncio',
+  if (nadaPraFazer && !temGaveta) {
+    el.innerHTML = cabecalho + historico + blocoErro('🔎', 'Não achei base no texto deste anúncio',
       'O título e a descrição não contam nada que sirva para estes campos. Escreva mais sobre o produto e tente de novo.', true)
       + secaoSemBase(semBase, campos);
     return;
@@ -854,13 +894,18 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <button type="button" class="fia-aplicar-tudo" title="${escapeHtml(notaTudo)}">Aplicar tudo <span class="fia-mono" data-conta="tudo">(${totalTudo})</span></button>
     </div>` : '';
 
+  // A gaveta do SKU: só vem do proxy com SKU vazio e sem variações; nasce desmarcada.
+  const gaveta = dados && dados.gaveta_sku && dados.gaveta_sku.valor ? dados.gaveta_sku : null;
+
   el.innerHTML = cabecalho
+    + blocoHistorico(historicoDoAnuncio(estadoFicha.itemId))
     + barraTudo
     + secao('Achei no seu anúncio', comEvidencia, true, '', 'achei', 'Aplicar os marcados')
     + secao('Vale trocar', trocas, true,
         'Cada um substitui o valor que está lá hoje.', 'trocar', 'Aplicar as trocas marcadas')
     + secaoNovas
     + secaoPalpites
+    + (gaveta ? linhaGaveta(gaveta) : '')
     // O título diz o que a seção É, não como ela se opera. E o aviso vira três frases
     // curtas: era a frase de maior consequência da tela e a mais difícil de ler.
     + secao('Mudam o link do anúncio', sohUmAUm, false,
@@ -908,9 +953,91 @@ function secaoSemBase(lista, campos) {
     </div>`;
 }
 
+/* ---------- Histórico e desfazer ---------- */
+/**
+ * O que cada "aplicar" mudou neste anúncio, nesta sessão, para poder voltar atrás.
+ *
+ * Lucas (07/09/2026): "se a pessoa aprovar acidentalmente algo não tem como reverter. é
+ * interessante ter." Cada gravação guarda, campo a campo, o valor DE antes e o DE depois. O
+ * "Desfazer" grava o de antes de volta pela MESMA rota (campo que estava vazio volta a ficar
+ * vazio: `value_name: null`), passa pelas mesmas travas, e o proxy não conta como aplicação.
+ * É por anúncio, não por sessão: o histórico de A não aparece em B (mesmo cuidado do P1).
+ */
+const historicoPorAnuncio = new Map();
+const HISTORICO_MAXIMO = 20;
+
+function historicoDoAnuncio(itemId) {
+  return historicoPorAnuncio.get(String(itemId || '').toUpperCase()) || [];
+}
+
+function registrarHistorico(itemId, entrada) {
+  const chave = String(itemId || '').toUpperCase();
+  if (!chave) return null;
+  const lista = historicoPorAnuncio.get(chave) || [];
+  lista.push(entrada);
+  while (lista.length > HISTORICO_MAXIMO) lista.shift();
+  historicoPorAnuncio.set(chave, lista);
+  return lista.length - 1;
+}
+
+/** Fotografa o valor atual de cada campo ANTES do PUT: é o que o "desfazer" grava de volta. */
+function fotografarAntes(itens, campos) {
+  const porId = new Map((campos || []).map((c) => [String(c.id), c]));
+  return (itens || []).map((i) => {
+    const c = porId.get(String(i.id));
+    return {
+      id: String(i.id),
+      nome: (c && c.name) || String(i.id),
+      de: c && c.preenchido ? String(c.valor_atual || '') : '',
+      para: i.remover ? '' : String(i.valor || ''),
+      muda_link: !!(c && c._mudaLink),
+    };
+  });
+}
+
+function horaCurta(ts) {
+  const d = new Date(Number(ts) || Date.now());
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/**
+ * O bloco do histórico: uma linha por gravação, com "Desfazer" no que ainda pode voltar.
+ * Estrutura, não frase: hora, os campos, o botão. Some quando não há nada.
+ */
+function blocoHistorico(lista) {
+  if (!lista || !lista.length) return '';
+  const linhas = lista.map((h, i) => {
+    const nomes = h.campos.map((c) => escapeHtml(c.nome)).join(', ');
+    const rotulo = h.desfazer ? 'Desfeito' : 'Salvo';
+    const perigo = h.campos.some((c) => c.muda_link);
+    const botao = h.desfeito
+      ? '<span class="fia-hist-estado">desfeito</span>'
+      : `<button type="button" class="fia-desfazer${perigo ? ' fia-perigo' : ''}" data-hist="${i}" title="${escapeHtml(perigo ? 'Volta os valores de antes. Este campo muda o link do anúncio de novo.' : 'Volta os valores de antes desta gravação.')}">Desfazer</button>`;
+    return `<div class="fia-hist-linha${h.desfeito ? ' fia-hist-desfeita' : ''}" data-hist="${i}"><span class="fia-hist-hora fia-mono">${horaCurta(h.quando)}</span><span class="fia-hist-rotulo">${rotulo}</span><span class="fia-hist-campos">${nomes}</span>${botao}</div>`;
+  }).join('');
+  return `<div class="fia-historico" title="O que você gravou neste anúncio nesta sessão. Desfazer grava de volta o valor que estava lá antes.">${linhas}</div>`;
+}
+
+async function desfazer(indice) {
+  const lista = historicoDoAnuncio(estadoFicha.itemId);
+  const h = lista[Number(indice)];
+  if (!h || h.desfeito) return;
+  const itens = h.campos.map((c) => ({ id: c.id, valor: c.de, remover: !c.de }));
+  // Marca antes de salvar, porque é o `salvar` que redesenha o histórico; se falhar, volta.
+  h.desfeito = true;
+  const r = await salvar(itens, { desfazendo: true, restaurar: h.resposta });
+  if (!r || !r.ok) h.desfeito = false;
+  return r;
+}
+
 /* ---------- Escrita ---------- */
 function montarAtributo(item, campo) {
   const valor = String(item.valor || '').trim();
+  // Desfazer um campo que estava vazio é APAGAR: `value_name: null` é como a ML remove um
+  // atributo (o proxy traduz para `values: [{id: null, name: null}]` no editor de família).
+  if (item.remover) return { id: item.id, value_id: null, value_name: null };
   if (item.value_id) return { id: item.id, value_id: String(item.value_id), value_name: valor };
   const exato = ((campo && campo.values) || []).find((v) => v && chaveTexto(v.name) === chaveTexto(valor));
   if (exato) return { id: item.id, value_id: String(exato.id), value_name: exato.name };
@@ -968,7 +1095,8 @@ function erroParcial(payload, campo) {
  * Aplica um ou vários campos. Quarto ponto de escrita do app, e passa pela MESMA régua
  * dos outros três: campo bloqueado não vira requisição.
  */
-async function aplicar(itemId, itens, campos, detail, token) {
+async function aplicar(itemId, itens, campos, detail, token, opts) {
+  const o = opts || {};
   const porId = new Map((campos || []).map((c) => [String(c.id), c]));
   const attributes = [];
   const posicaoNoPut = new Map();
@@ -1001,11 +1129,17 @@ async function aplicar(itemId, itens, campos, detail, token) {
     ? { attributes, confirm_rename_variation: true }
     : { attributes };
 
+  // O Agente se identifica para o proxy MEDIR o que foi salvo (placar da conta: "+140",
+  // "▲ 37"). O Bearer aqui é o token do ML; a identidade do app vai em `x-user-id`. O desfazer
+  // vai com origem própria e não conta. Quem decide contar é o proxy.
+  const cabecalhos = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+  cabecalhos['X-MF-Origem'] = o.origem || 'agente-ficha';
+  if (o.userId || estadoFicha.userId) cabecalhos['x-user-id'] = String(o.userId || estadoFicha.userId);
   let resp;
   try {
     resp = await fetch(MFFICHA_PROXY + '/api/fetch-item-update?item_id=' + encodeURIComponent(itemId), {
       method: 'PUT',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers: cabecalhos,
       body: JSON.stringify(corpo),
     });
   } catch (e) {
@@ -1050,7 +1184,10 @@ async function aplicar(itemId, itens, campos, detail, token) {
     if (!Array.isArray(lista) || !lista.length) return null;
     const doML = new Map(lista.filter((a) => a && a.id).map((a) => [String(a.id), String(a.value_name || '')]));
     return attributes
-      .filter((a) => doML.has(String(a.id)) && chaveTexto(doML.get(String(a.id))) === chaveTexto(a.value_name))
+      // Remoção conferida: o atributo sumiu do item (ou voltou sem valor).
+      .filter((a) => (a.value_name === null
+        ? (!doML.has(String(a.id)) || doML.get(String(a.id)) === '')
+        : (doML.has(String(a.id)) && chaveTexto(doML.get(String(a.id))) === chaveTexto(a.value_name))))
       .map((a) => String(a.id));
   };
 
@@ -1256,7 +1393,7 @@ async function carregarCota() {
   }
 }
 
-const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null, precos: null };
+const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null, precos: null, gavetaCampo: null };
 
 /**
  * Qual abertura é a válida. `estadoFicha` é um só, e abrirFichaIA tem cinco awaits: abrir o
@@ -1408,12 +1545,26 @@ async function mostrarVariacoes(ids, produtoId, body, geracao, signal) {
   ligarBotoes();
 }
 
-async function abrirFichaIA(itemId, variacoesDoGrupo) {
+/** O placar da conta e o cartão do lote vivem acima da lista: somem junto com ela. */
+function mostrarContaELote(mostrar) {
+  const bloco = document.querySelector('#fia-conta-e-lote');
+  if (bloco) bloco.hidden = !mostrar;
+}
+
+/**
+ * @param {string} itemId
+ * @param {string[]|null} variacoesDoGrupo  as irmãs, quando o clique veio de uma linha-produto
+ * @param {object} [opcoes]  `respostaPronta`: a resposta que o lote já gravou para este anúncio
+ *                           (Fase 4b) — a ficha abre sem chamar a IA de novo e sem gastar crédito.
+ */
+async function abrirFichaIA(itemId, variacoesDoGrupo, opcoes) {
   const view = document.getElementById('ficha-ia-view');
   const body = document.getElementById('ficha-ia-body');
   const painel = document.getElementById('ficha-ia-painel');
   if (!view || !body) return;
   if (painel) painel.hidden = true;
+  mostrarContaELote(false);
+  const respostaPronta = opcoes && opcoes.respostaPronta && typeof opcoes.respostaPronta === 'object' ? opcoes.respostaPronta : null;
   // O campo de colar link é para espiar anúncio DE OUTRA PESSOA. Deixá-lo embaixo da ficha
   // aberta é oferecer, no meio de um trabalho, a porta que leva para outro assunto.
   mostrarBuscaExterna(false);
@@ -1430,6 +1581,7 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
   estadoFicha.itemId = itemId || null;
   estadoFicha.detail = null;
   estadoFicha.campos = [];
+  estadoFicha.gavetaCampo = null;
   // O aviso de família é do anúncio ANTERIOR até a gente saber deste. Limpar aqui evita
   // um anúncio solto herdar "faz parte de um grupo de variações" do que veio antes.
   // O ID já entra: durante o carregamento o vendedor precisa saber o que está abrindo.
@@ -1524,6 +1676,14 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
     estadoFicha.detail = detail;
     estadoFicha.campos = camposElegiveis(cats, detail, obrigatorios);
 
+    // A resposta do lote já está pronta (Fase 4b): nada de caçar palavra nem chamar a IA.
+    if (respostaPronta) {
+      estadoFicha.resposta = respostaPronta;
+      renderPainel('ficha-ia-body', { estado: 'ok', dados: respostaPronta, campos: estadoFicha.campos, placar: contarPlacar(estadoFicha.campos) });
+      ligarBotoes();
+      return;
+    }
+
     // As palavras que o anúncio não tem vêm ANTES da chamada da ficha, não depois: a IA
     // precisa delas na mão pra propor onde cada uma cabe. Buscar depois custaria uma
     // segunda chamada paga pro mesmo anúncio.
@@ -1605,11 +1765,12 @@ function aoEditarValor(entrada) {
   if (!linha) return;
   const valor = String(entrada.value || '').trim();
 
+  const teto = tetoDaEntrada(entrada);
   const alvo = linha.querySelector('.fia-chars');
-  if (alvo) alvo.textContent = valor.length + '/30';
+  if (alvo) alvo.textContent = valor.length + '/' + teto;
   const sobra = linha.querySelector('.fia-sobra');
   if (sobra) {
-    const resta = 30 - valor.length;
+    const resta = teto - valor.length;
     sobra.textContent = resta > 6 ? 'cabe mais ' + resta : '';
     sobra.hidden = resta <= 6;
   }
@@ -1618,6 +1779,12 @@ function aoEditarValor(entrada) {
   if (marca && valor && !marca.checked) marca.checked = true;
   if (marca && !valor) marca.checked = false;
   recontarBotoes();
+}
+
+/** O teto do contador de caracteres: 30 na ficha; a gaveta do SKU diz o dela em `data-max`. */
+function tetoDaEntrada(entrada) {
+  const n = Number(entrada && typeof entrada.getAttribute === 'function' ? entrada.getAttribute('data-max') : 0);
+  return Number.isFinite(n) && n > 0 ? n : 30;
 }
 
 function recontarBotoes() {
@@ -1730,6 +1897,8 @@ function ligarBotoes() {
     }
     if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
     if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
+    // Desfazer uma gravação: grava de volta o que estava lá antes (o histórico é por anúncio).
+    if (alvo.classList.contains('fia-desfazer')) { await desfazer(alvo.getAttribute('data-hist')); return; }
 
     // (Marcar/desmarcar o bloco virou o checkbox mestre `.fia-marcar-todos`, tratado no `change`.)
     if (alvo.classList.contains('fia-marcar-todos')) {
@@ -1831,7 +2000,8 @@ function travarBotoes(travado) {
   });
 }
 
-async function salvar(itens) {
+async function salvar(itens, opts) {
+  const o = opts || {};
   const body = document.getElementById('ficha-ia-body');
   if (!body || !itens.length) return;
   if (_salvando) return;
@@ -1844,18 +2014,24 @@ async function salvar(itens) {
   const alvo = {
     itemId: estadoFicha.itemId,
     detail: estadoFicha.detail,
-    campos: estadoFicha.campos,
+    // A gaveta do SKU não está em `campos` (código fica fora da IA), mas grava pela mesma
+    // porta e passa pelas mesmas travas (com variações, `motivoBloqueado` recusa). Cópia, não
+    // a constante: o estado local escreve `preenchido` no campo depois de salvar.
+    campos: estadoFicha.campos.concat([estadoFicha.gavetaCampo || (estadoFicha.gavetaCampo = { ...CAMPO_GAVETA })]),
     token: estadoFicha.token,
   };
+  // O valor DE ANTES de cada campo, fotografado antes do PUT: é o que o "Desfazer" grava de volta.
+  const antes = fotografarAntes(itens, alvo.campos);
+  const respostaAntes = estadoFicha.resposta;
   let r;
   try {
-    r = await aplicar(alvo.itemId, itens, alvo.campos, alvo.detail, alvo.token);
+    r = await aplicar(alvo.itemId, itens, alvo.campos, alvo.detail, alvo.token, { origem: o.desfazendo ? 'agente-ficha-desfazer' : 'agente-ficha' });
   } finally {
     _salvando = false;
     travarBotoes(false);
   }
   // O PUT foi feito de verdade (e é do anúncio certo); só a TELA não é mais deste assunto.
-  if (!geracaoVigente(geracao)) return;
+  if (!geracaoVigente(geracao)) return r;
   // Parte gravou, parte não: o erro aparece, e o que ENTROU sai da tela igual ao sucesso.
   // Sem isso, o vendedor via o erro e refazia o que já estava publicado.
   const gravados = new Set((r.gravados || []).map(String));
@@ -1865,30 +2041,47 @@ async function salvar(itens) {
     aviso.className = 'fia-erro';
     aviso.textContent = r.erro;
     body.insertBefore(aviso, body.firstChild);
-    if (!entraram.length) return;
+    if (!entraram.length) return r;
   }
-  // Estado local acompanha o que foi salvo: o placar sobe na hora, sem refetch.
+  // Estado local acompanha o que foi salvo: o placar sobe na hora, sem refetch. Campo
+  // removido (desfazer do que estava vazio) volta a contar como vazio.
   for (const item of entraram) {
+    const valor = item.remover ? '' : String(item.valor || '');
     const campo = alvo.campos.find((c) => c.id === item.id);
-    if (campo) { campo.preenchido = true; campo.valor_atual = item.valor; }
+    if (campo) { campo.preenchido = !!valor; campo.valor_atual = valor || null; }
     const attrs = (alvo.detail.attributes = alvo.detail.attributes || []);
     const idx = attrs.findIndex((a) => a && a.id === item.id);
-    if (idx >= 0) attrs[idx].value_name = item.valor;
-    else attrs.push({ id: item.id, value_name: item.valor });
+    if (!valor) { if (idx >= 0) attrs.splice(idx, 1); }
+    else if (idx >= 0) attrs[idx].value_name = valor;
+    else attrs.push({ id: item.id, value_name: valor });
   }
   // Re-render com o que JÁ está na mão: reabrir chamaria fetch-item + attributes +
   // catalog-quality e MAIS uma chamada paga de IA — e o cache não salva, porque a chave
   // inclui o valor dos campos, que acabou de mudar. Salvar 5 campos um a um custaria 5
   // chamadas de IA. O que sai da tela é só o que foi gravado.
   const salvos = new Set(entraram.map((i) => String(i.id)));
-  if (estadoFicha.resposta) {
+  if (o.desfazendo && o.restaurar && r.ok) {
+    // Desfeito: as sugestões daquela hora voltam, para o vendedor escolher de novo.
+    estadoFicha.resposta = o.restaurar;
+  } else if (estadoFicha.resposta) {
     estadoFicha.resposta = {
       ...estadoFicha.resposta,
       sugestoes: (estadoFicha.resposta.sugestoes || []).filter((x) => !salvos.has(String(x.id))),
       palavras_novas_sugeridas: (estadoFicha.resposta.palavras_novas_sugeridas || []).filter((x) => !salvos.has(String(x.id))),
       palpites: (estadoFicha.resposta.palpites || []).filter((x) => !salvos.has(String(x.id))),
       sem_base: (estadoFicha.resposta.sem_base || []).filter((x) => !salvos.has(String(x.id))),
+      gaveta_sku: salvos.has('SELLER_SKU') ? null : (estadoFicha.resposta.gaveta_sku || null),
     };
+  }
+  // O histórico entra ANTES do render, que é quem o desenha.
+  if (entraram.length) {
+    registrarHistorico(alvo.itemId, {
+      quando: Date.now(),
+      desfazer: !!o.desfazendo,
+      campos: antes.filter((a) => salvos.has(a.id)),
+      resposta: respostaAntes,
+      desfeito: false,
+    });
   }
   renderPainel('ficha-ia-body', {
     estado: 'ok',
@@ -1896,13 +2089,20 @@ async function salvar(itens) {
     campos: estadoFicha.campos,
     placar: contarPlacar(estadoFicha.campos),
   });
+  // O placar da conta acompanha o que acabou de ser salvo ("+N", "▲ N"); a barra da ML segue o
+  // ritmo da ML (até 1 h), e o title dela diz isso.
+  carregarConta();
   // Na falha parcial o aviso vermelho já contou os dois lados; repetir o verde por cima
   // seria dizer "deu certo" na mesma tela que acabou de dizer que não deu.
-  if (!r.ok) return;
+  if (!r.ok) return r;
   const ok = document.createElement('div');
   ok.className = 'fia-ok';
-  ok.textContent = r.salvos === 1 ? '1 campo preenchido agora.' : r.salvos + ' campos preenchidos agora.';
+  const n = r.salvos;
+  ok.textContent = o.desfazendo
+    ? (n === 1 ? 'Desfeito: 1 campo voltou como estava.' : 'Desfeito: ' + n + ' campos voltaram como estavam.')
+    : (n === 1 ? '1 campo preenchido agora.' : n + ' campos preenchidos agora.');
   body.insertBefore(ok, body.firstChild);
+  return r;
 }
 
 /**
@@ -1922,6 +2122,7 @@ function voltarParaLista() {
   if (view) view.hidden = true;
   if (painel) painel.hidden = false;
   mostrarBuscaExterna(true);
+  mostrarContaELote(true);
   // O clique que abriu a ficha passou pelo enterAnalysis do Seletor, que escondeu o
   // #panelView e mostrou o #analysisView. Só desesconder a ficha deixava o vendedor na
   // barra de análise, tendo que clicar num SEGUNDO "voltar" pra ver a lista de novo —
@@ -1943,11 +2144,400 @@ document.addEventListener('click', (ev) => {
   voltarParaLista();
 });
 
+/* ---------- Placar da conta (gamificação, nível 2) ---------- */
+/**
+ * "Ficha ▰▰▰▰▱▱ 812/1.240 ▲ 37 +140": anúncios ativos com ficha completa pelo label da ML,
+ * fichas que o Agente completou e campos que ele salvou neste ciclo. Os números vêm PRONTOS
+ * do proxy (`GET /api/gpt-ficha/conta`); aqui só se desenha. Sem número, o bloco some — falha
+ * nunca vira zero. Nada aqui chama a ML por anúncio.
+ */
+const numeroBR = (n) => { try { return Number(n).toLocaleString('pt-BR'); } catch (e) { return String(n); } };
+const numeroOk = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0;
+
+function htmlDaConta(d) {
+  if (!d || !numeroOk(d.total) || !numeroOk(d.completos) || Number(d.total) <= 0) return '';
+  const total = Number(d.total);
+  const completos = Math.max(0, Math.min(total, Number(d.completos)));
+  const incompletos = numeroOk(d.incompletos) ? Number(d.incompletos) : total - completos;
+  const pct = Math.round((completos / total) * 100);
+  const sobe = numeroOk(d.concluidos_ciclo) && Number(d.concluidos_ciclo) > 0
+    ? `<span class="fia-conta-sobe" title="Fichas que ficaram completas pelo Agente neste ciclo${d.renova_em ? ' (renova ' + escapeHtml(formatarDia(d.renova_em)) + ')' : ''}">▲ ${numeroBR(d.concluidos_ciclo)}</span>`
+    : '';
+  const mais = numeroOk(d.aplicados_ciclo) && Number(d.aplicados_ciclo) > 0
+    ? `<span class="fia-conta-mais" title="Campos da ficha salvos pelo Agente neste ciclo">+${numeroBR(d.aplicados_ciclo)}</span>`
+    : '';
+  const festa = incompletos === 0 ? '<span class="fia-placar-ok" title="O Mercado Livre não sinaliza ficha incompleta em nenhum anúncio ativo">🎉</span>' : '';
+  return `
+    <span class="fia-conta-rotulo">Ficha</span>
+    <div class="fia-barra fia-conta-barra" title="Anúncios ativos com ficha completa, pelo Mercado Livre. Ele atualiza em até 1 hora depois que você salva."><div class="fia-barra-feito" style="width:${pct}%"></div></div>
+    <span class="fia-conta-num fia-mono" title="${numeroBR(completos)} anúncios ativos com ficha completa de ${numeroBR(total)}, pelo Mercado Livre">${numeroBR(completos)}/${numeroBR(total)}</span>
+    ${sobe}${mais}${festa}`;
+}
+
+async function carregarConta(forcar) {
+  // `querySelector`, não `getElementById`: a página sem o bloco não carrega nada.
+  const alvo = document.querySelector('#fia-conta');
+  if (!alvo) return null;
+  try {
+    const uid = await obterUserId();
+    if (!estadoFicha.token) estadoFicha.token = await tokenDoML();
+    if (!uid || !estadoFicha.token) { alvo.setAttribute('hidden', ''); return null; }
+    const r = await fetch(MFFICHA_PROXY + '/api/gpt-ficha/conta' + (forcar ? '?atualizar=1' : ''), {
+      headers: { Authorization: 'Bearer ' + uid, 'X-ML-Token': String(estadoFicha.token) },
+    });
+    if (!r.ok) { alvo.setAttribute('hidden', ''); return null; }
+    const d = await r.json().catch(() => null);
+    const html = htmlDaConta(d);
+    if (!html) { alvo.setAttribute('hidden', ''); return null; }
+    alvo.innerHTML = html;
+    alvo.removeAttribute('hidden');
+    return d;
+  } catch (e) {
+    alvo.setAttribute('hidden', '');
+    return null;
+  }
+}
+
+/* ---------- Preencher em lote (Fase 4b) ---------- */
+/**
+ * O cartão do lote: cria, acompanha (a cada 10 s, com o token do ML fresco — é assim que o
+ * runner segue vivo), pausa, retoma, e abre cada anúncio com a resposta que o lote já gravou
+ * (`abrirFichaIA(id, null, { respostaPronta })`: sem IA, sem crédito novo). O servidor NUNCA
+ * grava no ML: aplicar continua sendo aqui, item a item, com revisão e com o Desfazer.
+ * O placar do lote é o que o proxy derivou do banco (`feitos = com_sugestao + sem_sugestao +
+ * erros + ignorados`); erro nunca some da tela.
+ */
+const LOTE_POLL_MS = 10 * 1000;
+const LOTE_POLL_PAUSADO_MS = 60 * 1000;
+const LOTE_TOKEN_TTL_MS = 5 * 60 * 1000;
+const estadoLote = { id: null, lote: null, statusTexto: '', grupos: null, grupoAberto: null, membros: null, timer: null, tokenEm: 0, erro: '', abrindo: false };
+
+const LOTE_SELO = {
+  criado: ['● Preparando', 'fia-lote-rodando'],
+  rodando: ['● Rodando', 'fia-lote-rodando'],
+  pausado_token: ['◌ Reconectando', 'fia-lote-pausado'],
+  pausado_creditos: ['◌ Sem créditos', 'fia-lote-pausado'],
+  pausado_orcamento: ['◌ Continua amanhã', 'fia-lote-pausado'],
+  pausado_pelo_vendedor: ['◌ Pausado', 'fia-lote-pausado'],
+  concluido: ['✓ Concluído', 'fia-lote-concluido'],
+  erro: ['✕ Parou', 'fia-lote-erro'],
+};
+const LOTE_ATIVO = new Set(['criado', 'rodando', 'pausado_token', 'pausado_creditos', 'pausado_orcamento']);
+
+function chaveLote(uid) { return 'mf_ficha_lote_' + String(uid || ''); }
+function lerLoteGuardado(uid) { try { return String(localStorage.getItem(chaveLote(uid)) || '') || null; } catch (e) { return null; } }
+function guardarLote(uid, id) { try { if (id) localStorage.setItem(chaveLote(uid), String(id)); else localStorage.removeItem(chaveLote(uid)); } catch (e) { /* sem storage */ } }
+
+async function tokenFrescoDoLote() {
+  if (estadoFicha.token && Date.now() - estadoLote.tokenEm < LOTE_TOKEN_TTL_MS) return estadoFicha.token;
+  const t = await tokenDoML();
+  if (t) { estadoFicha.token = t; estadoLote.tokenEm = Date.now(); }
+  return estadoFicha.token;
+}
+
+async function chamarLote(metodo, rota, corpo) {
+  const uid = await obterUserId();
+  const token = await tokenFrescoDoLote();
+  if (!uid) return { status: 0, corpo: null, estado: 'sessao' };
+  let r;
+  try {
+    r = await fetch(MFFICHA_PROXY + '/api/gpt-ficha/lote' + rota, {
+      method: metodo,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + uid, 'X-ML-Token': String(token || '') },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+    });
+  } catch (e) { return { status: 0, corpo: null, estado: 'falha' }; }
+  let c = null;
+  try { c = await r.json(); } catch (e) { c = null; }
+  return { status: r.status, corpo: c, estado: r.ok ? 'ok' : 'erro' };
+}
+
+/** A frase de cada recusa, sem jargão, com o caminho quando há um. */
+function fraseDoLote(status, corpo) {
+  const code = String((corpo && corpo.code) || '');
+  if (status === 401) return 'Sua conexão com o Mercado Livre caiu. Reconecte sua conta.';
+  if (status === 403) return 'Seu plano não está ativo.';
+  if (status === 412) return 'O preenchimento em lote ainda não está liberado na sua conta.';
+  if (status === 429 || code === 'sem_creditos') return (corpo && corpo.error) || 'Seus créditos deste mês acabaram.';
+  if (status === 404) return 'Não encontrei esse preenchimento. Comece outro quando quiser.';
+  if (status === 503) return (corpo && corpo.error) || 'O Mercado Livre não respondeu agora. Tente de novo em instantes.';
+  return (corpo && corpo.error) || 'Não consegui agora. Tente de novo em instantes.';
+}
+
+function htmlDoLote() {
+  const l = estadoLote.lote;
+  const erro = estadoLote.erro ? `<div class="fia-erro">${escapeHtml(estadoLote.erro)}</div>` : '';
+  if (!l) {
+    // Sem lote: o convite, com o custo dito por estrutura (ícone + preço) e a escolha do filtro.
+    if (!estadoLote.abrindo) {
+      return `${erro}<button type="button" class="fia-lote-abrir" title="Analisa seus anúncios em grupo e prepara as sugestões para você revisar. Usa crédito de IA só no anúncio que ganhar sugestão.">${MF_ICONE_IA} Preencher em lote</button>`;
+    }
+    return `${erro}
+      <div class="fia-lote-opcoes">
+        <label class="fia-lote-opcao"><input type="radio" name="fia-lote-filtro" value="ficha_incompleta" checked /> Só as fichas incompletas</label>
+        <label class="fia-lote-opcao"><input type="radio" name="fia-lote-filtro" value="todos" /> Todos os anúncios ativos</label>
+        <p class="fia-aviso">Analiso em grupo e preparo as sugestões. Você revisa e aplica quando quiser. ${MF_ICONE_IA} <span class="mf-ia-custo" aria-hidden="true"></span>crédito por anúncio que ganhar sugestão; ficha sem nada a fazer não gasta.</p>
+        <div class="fia-lote-acoes"><button type="button" class="fia-lote-comecar">Começar</button><button type="button" class="fia-lote-cancelar">Agora não</button></div>
+      </div>`;
+  }
+  const [selo, classe] = LOTE_SELO[l.status] || ['◌ ' + escapeHtml(l.status || ''), 'fia-lote-pausado'];
+  const total = Number(l.total) || 0;
+  const feitos = Number(l.feitos) || 0;
+  const pct = total ? Math.round((feitos / total) * 100) : 0;
+  const filtro = l.filtro === 'todos' ? 'todos os ativos' : 'ficha incompleta';
+  const erros = Number(l.erros) || 0;
+  const texto = estadoLote.statusTexto || '';
+  // Uma ação por estado: retomar, pausar, ou o caminho de fora (plano / conta).
+  let acao = '';
+  if (l.status === 'rodando' || l.status === 'criado') acao = '<button type="button" class="fia-lote-pausar">Pausar</button>';
+  else if (l.status === 'pausado_pelo_vendedor') acao = '<button type="button" class="fia-lote-retomar">Retomar</button>';
+  else if (l.status === 'pausado_creditos') acao = `<a class="fia-cta fia-cta-mini" href="${escapeHtml(urlMinhaConta())}">Ver meu plano →</a>`;
+  else if (l.status === 'pausado_token') acao = `<a class="fia-cta fia-cta-mini" href="${escapeHtml(urlMinhaConta())}">Reconectar conta →</a>`;
+  else if (l.status === 'concluido' || l.status === 'erro') acao = '<button type="button" class="fia-lote-novo" title="Fecha este e deixa você começar outro">Fechar</button>';
+  const gruposHtml = estadoLote.grupos ? htmlDosGrupos() : '';
+  const verGrupos = (Number(l.grupos) || 0) > 0 && !estadoLote.grupos
+    ? `<button type="button" class="fia-lote-ver-grupos">Ver os ${numeroBR(l.grupos)} grupos</button>` : '';
+  return `${erro}
+    <div class="fia-lote-topo">
+      <span class="fia-lote-titulo">Lote · ${filtro}</span>
+      <span class="fia-lote-selo ${classe}" title="${escapeHtml(texto)}">${selo}</span>
+      ${acao}
+    </div>
+    <div class="fia-lote-placar">
+      <div class="fia-barra fia-lote-barra" title="Anúncios analisados de ${numeroBR(total)}"><div class="fia-barra-feito" style="width:${pct}%"></div></div>
+      <span class="fia-lote-num fia-mono" title="analisados de ${numeroBR(total)}">${numeroBR(feitos)}/${numeroBR(total)}</span>
+      <span class="fia-lote-sug" title="Anúncios que ganharam sugestão">◆ ${numeroBR(l.com_sugestao || 0)}</span>
+      <span class="fia-lote-cred" title="Créditos de IA usados neste lote">${MF_ICONE_IA} ${numeroBR(l.creditos_gastos || 0)}</span>
+      <span class="fia-lote-grupos" title="Grupos de anúncios parecidos (a IA roda uma vez por grupo)">${numeroBR(l.grupos || 0)} ${Number(l.grupos) === 1 ? 'grupo' : 'grupos'}</span>
+      ${erros ? `<span class="fia-lote-erros" title="Anúncios em que a análise falhou. Não gastaram crédito.">⚠ ${numeroBR(erros)} ${erros === 1 ? 'erro' : 'erros'}</span>` : ''}
+    </div>
+    ${(l.status === 'erro' && texto) ? `<p class="fia-aviso fia-aviso-risco">${escapeHtml(texto)}</p>` : ''}
+    ${verGrupos}${gruposHtml}`;
+}
+
+const SELO_ITEM = {
+  pronto: ['com sugestão', 'fia-selo-ganho'],
+  sem_sugestao: ['sem sugestão', 'fia-selo-extra'],
+  ignorado: ['ficha completa', 'fia-selo-extra'],
+  erro: ['falhou', 'fia-selo-rotulo'],
+  pendente: ['na fila', 'fia-selo-extra'],
+  agrupado: ['na fila', 'fia-selo-extra'],
+  sem_credito: ['sem crédito', 'fia-selo-rotulo'],
+};
+
+function htmlDosGrupos() {
+  const lista = estadoLote.grupos || [];
+  if (!lista.length) return '<p class="fia-aviso">Nenhum grupo ainda.</p>';
+  const linhas = lista.map((g) => {
+    const aberto = estadoLote.grupoAberto === g.chave;
+    const membros = aberto ? htmlDosMembros() : '';
+    return `
+      <div class="fia-grupo${aberto ? ' fia-grupo-aberto' : ''}" data-chave="${escapeHtml(g.chave)}">
+        <button type="button" class="fia-grupo-abrir" data-chave="${escapeHtml(g.chave)}">
+          <span class="fia-grupo-titulo">${escapeHtml(g.representante_titulo || g.representante_item_id || g.chave)}</span>
+          <span class="fia-grupo-n fia-mono" title="anúncios neste grupo">${numeroBR(g.membros || 0)}</span>
+          <span class="fia-grupo-sug" title="com sugestão">◆ ${numeroBR(g.com_sugestao || 0)}</span>
+        </button>
+        ${membros}
+      </div>`;
+  }).join('');
+  return `<div class="fia-grupos">${linhas}</div>`;
+}
+
+function htmlDosMembros() {
+  const lista = estadoLote.membros;
+  if (!lista) return '<div class="fia-carregando">Abrindo o grupo…</div>';
+  if (!lista.length) return '<p class="fia-aviso">Nenhum anúncio neste grupo.</p>';
+  return `<div class="fia-membros">${lista.map((m) => {
+    const [txt, cls] = SELO_ITEM[m.status] || [escapeHtml(m.status || ''), 'fia-selo-extra'];
+    const abre = m.status === 'pronto' && m.resposta;
+    return `
+      <div class="fia-membro" data-item="${escapeHtml(m.item_id)}">
+        <span class="fia-membro-titulo">${escapeHtml(m.titulo || m.item_id)}</span>
+        <span class="fia-membro-id fia-mono">${escapeHtml(m.item_id)}</span>
+        <span class="fia-selo ${cls}">${txt}</span>
+        ${abre ? `<button type="button" class="fia-membro-abrir" data-item="${escapeHtml(m.item_id)}" title="Abre a ficha com as sugestões já prontas. Não gasta crédito.">Revisar</button>` : ''}
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function renderLote() {
+  const alvo = document.querySelector('#fia-lote');
+  if (!alvo) return;
+  alvo.innerHTML = htmlDoLote();
+  alvo.removeAttribute('hidden');
+}
+
+function pararPoll() {
+  if (estadoLote.timer) { try { clearTimeout(estadoLote.timer); } catch (e) { /* harness */ } estadoLote.timer = null; }
+}
+
+function agendarPoll() {
+  pararPoll();
+  const l = estadoLote.lote;
+  if (!l || !estadoLote.id) return;
+  if (l.status === 'concluido' || l.status === 'erro') return;
+  const ms = (l.status === 'rodando' || l.status === 'criado' || l.status === 'pausado_token') ? LOTE_POLL_MS : LOTE_POLL_PAUSADO_MS;
+  estadoLote.timer = setTimeout(() => { estadoLote.timer = null; return atualizarLote(); }, ms);
+}
+
+function adotarLote(corpo) {
+  const l = corpo && corpo.lote;
+  if (!l || !l.id) return false;
+  estadoLote.id = l.id;
+  estadoLote.lote = l;
+  estadoLote.statusTexto = String((corpo && corpo.status_texto) || l.status_texto || '');
+  estadoLote.erro = '';
+  return true;
+}
+
+/** Lê o progresso (o GET com token também é o que retoma um lote `pausado_token`). */
+async function atualizarLote() {
+  if (!estadoLote.id) return null;
+  const r = await chamarLote('GET', '/' + encodeURIComponent(estadoLote.id));
+  if (r.estado === 'ok' && adotarLote(r.corpo)) {
+    // Grupos abertos acompanham o placar: recarrega a lista sem fechar o que está aberto.
+    if (estadoLote.grupos) await carregarGrupos(true);
+    renderLote();
+    agendarPoll();
+    return estadoLote.lote;
+  }
+  if (r.status === 404) {
+    // O lote sumiu (ou é de outra conta): esquece o id guardado, sem inventar estado.
+    const uid = await obterUserId();
+    guardarLote(uid, null);
+    estadoLote.id = null; estadoLote.lote = null; estadoLote.grupos = null;
+    estadoLote.erro = fraseDoLote(404, r.corpo);
+    renderLote();
+    return null;
+  }
+  // Falha de leitura: mantém o que estava e tenta de novo depois. Nunca zera o placar.
+  agendarPoll();
+  return estadoLote.lote;
+}
+
+async function criarLote(filtro) {
+  estadoLote.erro = '';
+  const r = await chamarLote('POST', '', { filtro: filtro === 'todos' ? 'todos' : 'ficha_incompleta' });
+  const uid = await obterUserId();
+  if (r.status === 201 && adotarLote(r.corpo)) {
+    guardarLote(uid, estadoLote.id);
+    estadoLote.abrindo = false; estadoLote.grupos = null; estadoLote.grupoAberto = null;
+    renderLote();
+    agendarPoll();
+    return estadoLote.lote;
+  }
+  if (r.status === 409 && adotarLote(r.corpo)) {
+    // Já existe um em andamento: é ele que a tela mostra.
+    guardarLote(uid, estadoLote.id);
+    estadoLote.abrindo = false;
+    renderLote();
+    agendarPoll();
+    return estadoLote.lote;
+  }
+  estadoLote.erro = fraseDoLote(r.status, r.corpo);
+  renderLote();
+  return null;
+}
+
+async function pausarOuRetomarLote(acao) {
+  if (!estadoLote.id) return null;
+  const r = await chamarLote('POST', '/' + encodeURIComponent(estadoLote.id) + '/' + acao);
+  if (r.estado === 'ok' && adotarLote(r.corpo)) { renderLote(); agendarPoll(); return estadoLote.lote; }
+  estadoLote.erro = fraseDoLote(r.status, r.corpo);
+  renderLote();
+  return null;
+}
+
+async function carregarGrupos(silencioso) {
+  if (!estadoLote.id) return null;
+  if (!silencioso) { estadoLote.grupos = []; renderLote(); }
+  const r = await chamarLote('GET', '/' + encodeURIComponent(estadoLote.id) + '/grupos?offset=0&limit=50');
+  if (r.estado === 'ok' && r.corpo && Array.isArray(r.corpo.grupos)) {
+    estadoLote.grupos = r.corpo.grupos;
+  } else if (!silencioso) {
+    estadoLote.erro = fraseDoLote(r.status, r.corpo);
+  }
+  if (!silencioso) renderLote();
+  return estadoLote.grupos;
+}
+
+async function abrirGrupo(chave) {
+  if (!estadoLote.id) return null;
+  if (estadoLote.grupoAberto === chave) { estadoLote.grupoAberto = null; estadoLote.membros = null; renderLote(); return null; }
+  estadoLote.grupoAberto = chave;
+  estadoLote.membros = null;
+  renderLote();
+  const r = await chamarLote('GET', '/' + encodeURIComponent(estadoLote.id) + '/grupos/' + encodeURIComponent(chave));
+  if (estadoLote.grupoAberto !== chave) return null;
+  estadoLote.membros = (r.estado === 'ok' && r.corpo && Array.isArray(r.corpo.itens)) ? r.corpo.itens : [];
+  if (r.estado !== 'ok') estadoLote.erro = fraseDoLote(r.status, r.corpo);
+  renderLote();
+  return estadoLote.membros;
+}
+
+function fecharLote() {
+  pararPoll();
+  obterUserId().then((uid) => guardarLote(uid, null));
+  estadoLote.id = null; estadoLote.lote = null; estadoLote.grupos = null; estadoLote.grupoAberto = null; estadoLote.membros = null; estadoLote.erro = '';
+  renderLote();
+}
+
+/** Abre a ficha de um anúncio do lote com a resposta que o lote já gravou. */
+function revisarMembro(itemId) {
+  const m = (estadoLote.membros || []).find((x) => String(x.item_id) === String(itemId));
+  if (!m || !m.resposta) return abrirFichaIA(itemId);
+  return abrirFichaIA(itemId, null, { respostaPronta: m.resposta });
+}
+
+let _loteLigado = false;
+function ligarLote() {
+  const alvo = document.querySelector('#fia-lote');
+  if (!alvo || _loteLigado) return;
+  _loteLigado = true;
+  alvo.addEventListener('click', async (ev) => {
+    const a = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target : null;
+    if (!a) return;
+    const botao = (cls) => a.closest('.' + cls);
+    if (botao('fia-lote-abrir')) { estadoLote.abrindo = true; estadoLote.erro = ''; renderLote(); return; }
+    if (botao('fia-lote-cancelar')) { estadoLote.abrindo = false; estadoLote.erro = ''; renderLote(); return; }
+    if (botao('fia-lote-comecar')) {
+      const marcado = Array.prototype.slice.call(alvo.querySelectorAll('input[name="fia-lote-filtro"]')).find((i) => i.checked);
+      await criarLote(marcado ? marcado.value : 'ficha_incompleta');
+      return;
+    }
+    if (botao('fia-lote-pausar')) { await pausarOuRetomarLote('pausar'); return; }
+    if (botao('fia-lote-retomar')) { await pausarOuRetomarLote('retomar'); return; }
+    if (botao('fia-lote-novo')) { fecharLote(); return; }
+    if (botao('fia-lote-ver-grupos')) { await carregarGrupos(false); return; }
+    const g = botao('fia-grupo-abrir');
+    if (g) { await abrirGrupo(g.getAttribute('data-chave')); return; }
+    const m = botao('fia-membro-abrir');
+    if (m) { await revisarMembro(m.getAttribute('data-item')); }
+  });
+}
+
+async function montarLote() {
+  const alvo = document.querySelector('#fia-lote');
+  if (!alvo) return;
+  ligarLote();
+  const uid = await obterUserId();
+  if (!uid) { alvo.setAttribute('hidden', ''); return; }
+  const guardado = lerLoteGuardado(uid);
+  if (guardado) { estadoLote.id = guardado; await atualizarLote(); if (estadoLote.lote) return; }
+  renderLote();
+}
+
 // O contador do topo carrega junto com a página. `setTimeout` deixa o Bubble terminar de
 // montar o DOM; no harness ele roda na hora.
-setTimeout(() => { carregarCota(); }, 0);
+setTimeout(() => { carregarCota(); carregarConta(); montarLote(); }, 0);
 
 window.MFFicha = {
+  // Placar da conta, lote e desfazer (07/09): expostos para o teste alcançar as bordas.
+  carregarConta, htmlDaConta, criarLote, atualizarLote, carregarGrupos, abrirGrupo, revisarMembro, fecharLote,
+  pausarOuRetomarLote, montarLote, renderLote, htmlDoLote, desfazer, historicoDoAnuncio, fotografarAntes, linhaGaveta,
+  _lote: function () { return estadoLote; },
+  CAMPO_GAVETA,
   motivoBloqueado, renomeiaVariacao, mudaOLink, camposElegiveis, montarPayload,
   formatarPalavrasQueFaltam,
   buscarSugestoes, separarSecoes, contarPlacar, contarTokensNovos, renderPainel,
