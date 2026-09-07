@@ -29,7 +29,9 @@ const sug = (id, valor, extra) => ({ id, acao: 'preencher', valor, caracteres: v
   const dados = {
     ok: true,
     sugestoes: [sug('MATERIAL', 'Malha canelada macia'), sug('MODEL', 'Cropped verao basica', { prioridade: true })],
-    palavras_novas_sugeridas: [],
+    palavras_novas_sugeridas: [
+      { id: 'LINE2', name: 'Linha', valor: 'antifrizz acetinado brilho', atual: 'Finisher Hair', tirado_do_titulo: ['Finisher', 'Hair'], palavra: 'antifrizz', palavras_novas: ['antifrizz', 'acetinado', 'brilho'], buscas: 9, combos: ['pomada antifrizz'], entraram: [{ palavra: 'antifrizz', buscas: 9, combos: [] }], caracteres: 26 },
+    ],
     palpites: [
       { id: 'FONTE', name: 'Fonte do produto', valor: 'Kiran 2024 cropped verao', caracteres: 24, palavras_novas: ['cropp', 'verao'], porque: 'marca e ano', completado_com: ['cropped', 'verao'] },
       { id: 'LINE', name: 'Linha', valor: 'Finisher Hair acetinada', caracteres: 23, palavras_novas: [], porque: 'linha do produto', prioridade: true },
@@ -55,6 +57,7 @@ const sug = (id, valor, extra) => ({ id, acao: 'preencher', valor, caracteres: v
   check('a seção do que sobrou chama "Só você sabe" (não "Ficaram com você")', /Só você sabe/.test(html) && !/Ficaram com você/.test(html));
   check('e ela só tem o campo sem proposta nenhuma (GTIN)', /fia-sem-base[\s\S]*?data-campo="GTIN"/.test(html) && !/fia-sem-base[\s\S]*?data-campo="IS_VEGAN"/.test(html));
   check('palpites nascem marcados (o vendedor corrige na hora)', /data-campo="IS_VEGAN"[\s\S]*?class="fia-check-nova"[^>]*checked/.test(html));
+  check('palavra nova que tirou o título do valor atual diz "no lugar de", não "acrescenta a"', /data-campo="LINE2"[\s\S]*?no lugar de:[\s\S]*?Finisher Hair[\s\S]*?já está no título/.test(html) && !/data-campo="LINE2"[\s\S]{0,600}acrescenta a:/.test(html));
 
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);

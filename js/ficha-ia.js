@@ -535,10 +535,15 @@ function linhaPalavraNova(item) {
   // Duas origens, duas frases. O valor que o anúncio JÁ TEM é fato; o que a análise acabou
   // de propor ainda é proposta — dizer "já está lá" das duas afirmaria que o anúncio diz o
   // que ele ainda não diz.
+  // 06/09: quando o valor atual perdeu palavra do título (o índice já a tinha), a linha não pode
+  // dizer "acrescenta a": ela SUBSTITUI, e diz o que saiu e por quê.
+  const tirou = Array.isArray(item.tirado_do_titulo) && item.tirado_do_titulo.length;
   const acrescimo = item.atual
-    ? (item.atual_proposto
-      ? `<div class="fia-antes">junta com o que achei: <b>${escapeHtml(item.atual)}</b></div>`
-      : `<div class="fia-antes">acrescenta a: <b>${escapeHtml(item.atual)}</b></div>`)
+    ? (tirou
+      ? `<div class="fia-antes">no lugar de: <s>${escapeHtml(item.atual)}</s> <span class="fia-completado-pq">(${escapeHtml(item.tirado_do_titulo.join(' '))} já está no título; a busca não ganha nada repetindo)</span></div>`
+      : (item.atual_proposto
+        ? `<div class="fia-antes">junta com o que achei: <b>${escapeHtml(item.atual)}</b></div>`
+        : `<div class="fia-antes">acrescenta a: <b>${escapeHtml(item.atual)}</b></div>`))
     : '';
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1"${tokensDaLinha(item)}>
