@@ -166,9 +166,12 @@ const RESPOSTA_B = {
     const linhas = body.querySelectorAll('.fia-nova');
     check('as duas propostas aparecem', linhas.length === 2, String(linhas.length));
 
-    const botoes = body.querySelectorAll('.fia-aplicar-um');
-    check('cada proposta tem o seu botão', botoes.length === 2, String(botoes.length));
-    await botoes[1].click();
+    // 06/09 (tela limpa): sem botão por linha. Desmarca a primeira e aplica pela seção — a
+    // segunda é a que tem que ir, com o valor DELA.
+    const checks = body.querySelectorAll('.fia-check-nova');
+    check('cada proposta tem o seu checkbox', checks.length === 2, String(checks.length));
+    checks[0].checked = false;
+    await body.querySelector('.fia-aplicar-secao[data-secao="novas"]').click();
 
     check('o PUT saiu', puts.length === 1, String(puts.length));
     const enviado = ((puts[0] || {}).corpo || {}).attributes || [];
@@ -195,7 +198,8 @@ const RESPOSTA_B = {
     const body = el('ficha-ia-body');
     const inputs = body.querySelectorAll('.fia-valor');
     inputs[1].value = 'Aco escovado premium';        // o vendedor ajustou a segunda
-    await body.querySelectorAll('.fia-aplicar-um')[1].click();
+    body.querySelectorAll('.fia-check-nova')[0].checked = false;
+    await body.querySelector('.fia-aplicar-secao[data-secao="novas"]').click();
 
     const enviado = ((puts[0] || {}).corpo || {}).attributes || [];
     check('foi o texto que o vendedor deixou na linha dele',
@@ -689,7 +693,9 @@ const RESPOSTA_B = {
     await M.abrirFichaIA('MLB1111111111');
     const body = el('ficha-ia-body');
 
-    check('a tela avisa quantos ficam de fora', /ficou de fora|ficaram de fora/.test(body.textContent), body.textContent.slice(0, 200));
+    // 06/09 (tela limpa): o aviso mora no title do "Aplicar tudo"; a seção vermelha mostra o resto.
+    const btTudo = body.querySelector('.fia-aplicar-tudo');
+    check('a tela avisa quantos ficam de fora (no title do Aplicar tudo)', !!btTudo && /ficou de fora|ficaram de fora/.test(btTudo.getAttribute('title') || ''), btTudo && btTudo.getAttribute('title'));
     await body.querySelector('.fia-aplicar-tudo').click();
     const ids = ((puts[0] || {}).attributes || []).map((a) => a.id);
     check('o campo que muda o link NÃO entra no aplicar tudo', ids.join() === 'MATERIAL', ids.join());

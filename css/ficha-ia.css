@@ -51,6 +51,17 @@
 .kw-wrapper .fia-selo-extra { color: var(--blue, #0066ff); border: 1px solid #c9dcff; background: #eff6ff; cursor: help; }
 /* 06/09: modelo, linha, fabricante e MPN rendem busca (prioridade vem do proxy). */
 .kw-wrapper .fia-selo-prio { color: #065f46; border: 1px solid #a7f3d0; background: #ecfdf5; cursor: help; }
+/* 06/09, tela limpa: selos curtos no lugar de frases; o detalhe fica num <details> fechado. */
+.kw-wrapper .fia-selo-ganho { color: var(--green, #00a06b); border: 1px solid #b7ecd6; background: #f0fdf7; cursor: help; text-transform: none; letter-spacing: 0; }
+.kw-wrapper .fia-selo-troca { color: #7c2d12; border: 1px solid #fed7aa; background: #fff7ed; cursor: help; }
+.kw-wrapper .fia-selo-rotulo { color: var(--text, #1b2430); border: 1px solid #d5dbe3; background: #fff; cursor: help; text-transform: none; letter-spacing: 0; }
+.kw-wrapper .fia-secao-ajuda { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid #d5dbe3; color: var(--text-muted, #64748b); background: #fff; font-size: 10px; font-weight: 700; line-height: 14px; text-align: center; cursor: help; vertical-align: 2px; margin-left: 4px; }
+.kw-wrapper .fia-mais { margin-top: 4px; }
+.kw-wrapper .fia-mais > summary { list-style: none; cursor: pointer; width: 18px; height: 18px; border-radius: 50%; color: var(--text-muted, #64748b); font-size: 13px; line-height: 18px; text-align: center; opacity: .7; }
+.kw-wrapper .fia-mais > summary::-webkit-details-marker { display: none; }
+.kw-wrapper .fia-mais > summary:hover, .kw-wrapper .fia-mais[open] > summary { opacity: 1; color: var(--blue, #0066ff); }
+.kw-wrapper .fia-mais[open] { padding: 6px 8px 2px; border-left: 2px solid #e2e8f0; margin-top: 6px; }
+.kw-wrapper .fia-aviso-variacao { margin: 0 0 8px; }
 /* Palpite apoiado no silêncio do anúncio: entra pré-preenchido, e a linha avisa. Sem cor de alarme. */
 .kw-wrapper .fia-silencio { font-size: .73rem; line-height: 1.5; color: var(--text, #1b2430); margin-top: 6px; }
 /* O que o servidor acrescentou para o campo não ficar pela metade. */

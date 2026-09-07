@@ -167,7 +167,7 @@ console.log('\n== render: sucesso ==');
   // 31/08: em vez de um botão de lote só, cada bloco tem o seu e existe um "aplicar tudo".
   check('o botão de aplicar tudo existe', /Aplicar tudo/i.test(txt), txt.slice(0, 160));
   check('e cada bloco tem o seu botão', /Aplicar os marcados|Aplicar as/i.test(txt));
-  check('avisa que o campo caro renomeia', /perde a exposi|muda o link/i.test(txt));
+  check('avisa que o campo caro renomeia', /perde a exposi|muda(r)? o link|troca o link/i.test(txt));
   check('nunca escreve "atributo"', !/atributo/i.test(txt), txt.slice(0, 200));
   check('nunca escreve GPT/OpenAI', !/gpt|openai/i.test(txt));
 }
@@ -179,10 +179,11 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   const html = el('ficha-ia-body').innerHTML;
   const txt = el('ficha-ia-body').textContent;
   check('a seção existe', /palavras novas/i.test(txt), txt.slice(0, 300));
-  check('avisa que quem afirma é o vendedor', /só o que é verdade|s[óo] o que [ée] verdade/i.test(txt));
+  // 06/09 (tela limpa): o aviso da seção virou o "?" do título; continua na tela, como title.
+  check('avisa que quem afirma é o vendedor (title do "?" da seção)', /só o que é verdade|s[óo] o que [ée] verdade/i.test(html));
   check('mostra quantas buscas a palavra abre', /6 buscas/.test(txt), txt.slice(0, 400));
   check('mostra os combos', html.includes('panela antiaderente'));
-  check('avisa que o anúncio não diz isso hoje', /n[ãa]o diz isso/i.test(txt));
+  check('avisa que o anúncio não diz isso hoje (title do "?" da seção)', /n[ãa]o diz isso/i.test(html));
   // O checkbox dela nasce SEM checked — é a trava que impede afirmar por inércia.
   const bloco = html.slice(html.indexOf('fia-nova'));
   check('nasce DESMARCADA', bloco.indexOf('checked') === -1 || bloco.indexOf('data-nova') < bloco.indexOf('checked'),

@@ -67,7 +67,8 @@ console.log('\n== P4 — o botão que custa caro não pode ser igual ao que não
   const cara = secao(body, 'caros');
   const barata = secao(body, 'achei');
   const btCaro = cara && cara.querySelector('button');
-  const btBarato = barata && barata.querySelector('.fia-aplicar-um');
+  // 06/09 (tela limpa): a linha comum não tem mais botão próprio; quem aplica é o da seção.
+  const btBarato = barata && barata.querySelector('.fia-aplicar-secao');
   check('a seção do campo caro tem botão', !!btCaro, String(!!cara));
   check('e ele NÃO diz a mesma coisa que o inofensivo',
     btCaro && btBarato && btCaro.textContent.trim() !== btBarato.textContent.trim(),
@@ -80,24 +81,27 @@ console.log('\n== P4 — o botão que custa caro não pode ser igual ao que não
 console.log('\n== P5 — se um bloco é perigoso, a tela precisa dizer que os outros não são ==');
 {
   const { body } = pintar();
-  const barra = body.querySelector('.fia-tudo-barra');
-  check('a barra do "aplicar tudo" afirma que o resto é seguro',
-    barra && /(nada|nenhum)[^.]*muda o link/i.test(barra.textContent), barra && barra.textContent);
+  // 06/09 (tela limpa): a frase saiu da tela e virou title do botão. Continua afirmando.
+  const barra = body.querySelector('.fia-aplicar-tudo');
+  check('o "aplicar tudo" afirma (no title) que o resto é seguro',
+    barra && /(nada|nenhum)[^.]*muda o link/i.test(barra.getAttribute('title') || ''), barra && barra.getAttribute('title'));
 }
 
 console.log('\n== P6 — "aplicar tudo" avisa quando está substituindo o que o vendedor escreveu ==');
 {
   const { body } = pintar();
-  const barra = body.querySelector('.fia-tudo-barra');
-  check('diz quantos substituem valor existente',
-    barra && /\b1 substitui\b/i.test(barra.textContent), barra && barra.textContent);
+  const barra = body.querySelector('.fia-aplicar-tudo');
+  check('diz (no title) quantos substituem valor existente',
+    barra && /\b1 substitui\b/i.test(barra.getAttribute('title') || ''), barra && barra.getAttribute('title'));
+  const troca = body.querySelectorAll('.fia-linha').find((l) => l.getAttribute('data-campo') === 'MODEL');
+  check('e a linha que substitui leva o selo "substitui"', !!(troca && troca.querySelector('.fia-selo-troca')), troca && troca.textContent.slice(0, 200));
 }
 {
   const semTroca = { ...DADOS, sugestoes: DADOS.sugestoes.filter((s) => s.acao !== 'trocar') };
   const { body } = pintar(semTroca);
-  const barra = body.querySelector('.fia-tudo-barra');
+  const barra = body.querySelector('.fia-aplicar-tudo');
   check('e não inventa aviso quando não há troca nenhuma',
-    barra && !/substitu/i.test(barra.textContent), barra && barra.textContent);
+    barra && !/substitu/i.test(barra.getAttribute('title') || ''), barra && barra.getAttribute('title'));
 }
 
 console.log('\n== P9 — o número entre parênteses significava duas coisas diferentes ==');
@@ -111,8 +115,9 @@ console.log('\n== P9 — o número entre parênteses significava duas coisas dif
 
 console.log('\n== P10 — "X/30" sem legenda em nenhuma das sete telas ==');
 {
-  const { txt } = pintar();
-  check('a tela explica o que é o X/30, uma vez', /lê os primeiros/i.test(txt) && /30 caracteres/i.test(txt), txt.slice(0, 400));
+  const { txt, html } = pintar();
+  // 06/09 (tela limpa): a legenda saiu da tela; a explicação mora no title do "X/30".
+  check('a tela explica o que é o X/30 no title, não como frase solta', /30 primeiros caracteres/.test(html) && !/lê os primeiros/i.test(txt), txt.slice(0, 400));
 }
 
 console.log('\n== P12 — o título da seção diz o CONTEÚDO, não o processo ==');

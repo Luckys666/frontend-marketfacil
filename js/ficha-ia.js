@@ -411,30 +411,38 @@ function linhaSugestao(item, comCheckbox) {
   const ganho = (item.palavras_novas || []).length
     ? `<div class="fia-ganho">+${item.palavras_novas.length} ${item.palavras_novas.length === 1 ? 'palavra nova' : 'palavras novas'}: ${escapeHtml(item.palavras_novas.join(', '))}</div>`
     : '';
-  // O botão do campo que muda o link NÃO pode ser o mesmo botão de sempre. Quem clicou duas
-  // ou três vezes em "Aplicar só este" sem consequência clica de novo no automático — e
-  // aqui o clique reseta a exposição do anúncio.
+  // 06/09 (tela limpa): a linha mostra checkbox, nome, selo(s) e o valor. De onde veio, o que
+  // ganha e o que foi completado ficam num <details> fechado. O botão por linha saiu: quem
+  // aplica é o checkbox + o botão da seção. A ÚNICA exceção é o campo que muda o link: ali o
+  // clique custa a exposição do anúncio e continua tendo o botão vermelho próprio.
   const caro = !!(item.campo && item.campo._mudaLink);
   const botao = caro
     ? `<button type="button" class="fia-aplicar-um fia-perigo" data-campo="${escapeHtml(item.id)}">Corrigir e mudar o link do anúncio</button>`
-    : `<button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}">Aplicar só este</button>`;
+    : '';
+  const seloTroca = item.acao === 'trocar'
+    ? `<span class="fia-selo fia-selo-troca" title="${escapeHtml('Substitui o que está lá hoje: ' + String(item.atual || ''))}">substitui</span>`
+    : '';
   return `
     <div class="fia-linha" data-campo="${escapeHtml(item.id)}"${tokensDaLinha(item)}>
       <div class="fia-linha-topo">
         ${check}
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
-        ${selo}
+        ${selo}${seloTroca}
         <span class="fia-marca">${marca}</span>
         ${selosDeTamanho(item)}
       </div>
-      ${antesDepois}
       ${rotuloDoValor(item)}
       ${entradaDaLinha(item)}
-      ${ganho}
-      ${notaCompletado(item)}
-      <div class="fia-evidencia">${origens}</div>
+      ${detalhesDaLinha(antesDepois + ganho + notaCompletado(item) + `<div class="fia-evidencia">${origens}</div>`)}
       ${botao}
     </div>`;
+}
+
+/** O detalhe da linha, fechado por padrão: um toque abre. Sem texto no gatilho. */
+function detalhesDaLinha(conteudo) {
+  const c = String(conteudo || '').replace(/<div class="fia-evidencia"><\/div>/, '').trim();
+  if (!c) return '';
+  return `<details class="fia-mais"><summary class="fia-mais-toggle" aria-label="detalhes" title="Ver de onde veio">ⓘ</summary>${c}</details>`;
 }
 
 /**
@@ -484,6 +492,11 @@ function linhaPalpite(item) {
     : '';
   // 06/09: palpite apoiado no silêncio do anúncio ENTRA pré-preenchido, e a tela avisa. É o
   // aviso que troca a régua de corte: quem decide é o vendedor, na hora, com a informação.
+  // 06/09 (tela limpa): o aviso vira o selo "rótulo?" com a frase no title. É o único selo que
+  // mexe com honestidade, então fica sempre à vista, mas de um jeito só.
+  const seloSilencio = item.silencio
+    ? '<span class="fia-selo fia-selo-rotulo" title="O anúncio não afirma isso. Confira no rótulo do produto antes de aceitar.">rótulo?</span>'
+    : '';
   const silencio = item.silencio
     ? '<div class="fia-silencio">O anúncio não afirma isso. Confira no rótulo do produto antes de aceitar.</div>'
     : '';
@@ -492,17 +505,13 @@ function linhaPalpite(item) {
       <div class="fia-linha-topo">
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.name || item.id)}</span>
+        ${seloPrioridade(item)}${seloSilencio}
         <span class="fia-marca">🤔</span>
-        ${seloPrioridade(item)}
         ${selosDeTamanho(item)}
       </div>
       ${rotuloDoValor(item)}
       ${entradaDaLinha(item, ' data-nova="1"')}
-      ${ganho}
-      ${notaCompletado(item)}
-      ${silencio}
-      ${item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : ''}
-      <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
+      ${detalhesDaLinha((item.porque ? `<div class="fia-porque">${escapeHtml(item.porque)}</div>` : '') + ganho + notaCompletado(item) + silencio)}
     </div>`;
 }
 
@@ -545,20 +554,26 @@ function linhaPalavraNova(item) {
         ? `<div class="fia-antes">junta com o que achei: <b>${escapeHtml(item.atual)}</b></div>`
         : `<div class="fia-antes">acrescenta a: <b>${escapeHtml(item.atual)}</b></div>`))
     : '';
+  // 06/09 (tela limpa): o ganho vira um selo curto ("+2 · 13 buscas", palavras no title); o
+  // "acrescenta a / no lugar de" e os exemplos de busca vão para o <details>. Sem botão por linha.
+  const entraram = Array.isArray(item.entraram) && item.entraram.length ? item.entraram : [{ palavra: item.palavra, buscas: Number(item.buscas) || 0 }];
+  const buscas = Number(item.buscas) || entraram.reduce((s, e) => s + (Number(e.buscas) || 0), 0);
+  const seloGanho = `<span class="fia-selo fia-selo-ganho" title="${escapeHtml(entraram.map((e) => e.palavra).join(', ') + ' · abrem ' + buscas + ' buscas que o anúncio não alcançava')}">+${entraram.length} · ${buscas} buscas</span>`;
+  const seloTroca = tirou
+    ? `<span class="fia-selo fia-selo-troca" title="${escapeHtml('No lugar de: ' + String(item.atual || '') + ' (' + item.tirado_do_titulo.join(' ') + ' já está no título)')}">substitui</span>`
+    : '';
   return `
     <div class="fia-linha fia-nova" data-campo="${escapeHtml(item.id)}" data-nova="1"${tokensDaLinha(item)}>
       <div class="fia-linha-topo">
         <input type="checkbox" class="fia-check-nova" data-campo="${escapeHtml(item.id)}" data-nova="1" checked />
         <span class="fia-nome">${escapeHtml(item.nome)}</span>
+        ${seloPrioridade(item)}${seloGanho}${seloTroca}
         <span class="fia-marca">🔍</span>
         ${selosDeTamanho(item)}
       </div>
-      ${acrescimo}
       ${rotuloDoValor(item)}
       ${entradaDaLinha(item, ' data-nova="1"')}
-      <div class="fia-ganho">${ganhoDaLinha(item)}</div>
-      <div class="fia-combos">${combos}</div>
-      <button type="button" class="fia-aplicar-um" data-campo="${escapeHtml(item.id)}" data-nova="1">Aplicar só este</button>
+      ${detalhesDaLinha(acrescimo + `<div class="fia-ganho">${ganhoDaLinha(item)}</div>` + (combos ? `<div class="fia-combos">${combos}</div>` : ''))}
     </div>`;
 }
 
@@ -732,8 +747,9 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="Cada palavra nova abre buscas que o anúncio não alcançava.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
       ${linhaCotaDoPlacar(dados && dados.cota)}
       ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
-    </div>
-    <p class="fia-legenda">O Mercado Livre lê os primeiros <b>30 caracteres</b> de cada campo. O número na linha mostra quanto você já usou.</p>`;
+    </div>`;
+  // 06/09 (Lucas): "muita explicação pra uma coisa que era pra ser intuitiva". A legenda dos 30
+  // caracteres saiu: o "27/30" de cada linha já diz, e o title dele explica para quem parar o mouse.
 
   if (nadaPraFazer && completo) {
     // Um 🎉 só. Dois selos de festa para a mesma conquista, colados um no outro, transformam
@@ -772,18 +788,22 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
        <button type="button" class="fia-aplicar-secao" data-secao="${chave}">${rotulo} <span class="fia-mono" data-conta="secao">(${marcados === undefined ? n : marcados})</span></button>`
     : '');
 
+  // O aviso da seção virou um "?" no título (06/09, tela limpa). Só a seção de RISCO (muda o
+  // link) mantém a frase à vista: ali a consequência não pode ficar atrás de um mouse.
+  const ajudaDaSecao = (texto) => (texto
+    ? ` <span class="fia-secao-ajuda" tabindex="0" title="${escapeHtml(texto)}" aria-label="${escapeHtml(texto)}">?</span>`
+    : '');
   const secao = (titulo, itens, comCheckbox, extra, chave, rotuloBotao) => itens.length ? `
     <div class="fia-secao" data-secao="${chave || ''}">
-      <div class="fia-secao-titulo">${titulo} <span class="fia-mono">(${itens.length})</span></div>
-      ${extra || ''}
+      <div class="fia-secao-titulo">${titulo} <span class="fia-mono">(${itens.length})</span>${/^\s*</.test(String(extra || '')) ? '' : ajudaDaSecao(extra)}</div>
+      ${/^\s*</.test(String(extra || '')) ? extra : ''}
       ${itens.map((i) => linhaSugestao(i, comCheckbox)).join('')}
       ${comCheckbox ? botaoDaSecao(chave, itens.length, rotuloBotao || 'Aplicar os desta lista') : ''}
     </div>` : '';
 
   const secaoNovas = palavrasNovas.length ? `
     <div class="fia-secao fia-secao-novas" data-secao="novas">
-      <div class="fia-secao-titulo">Palavras novas <span class="fia-mono">(${palavrasNovas.length})</span></div>
-      <p class="fia-aviso">Seu anúncio não diz isso hoje. Marque só o que é verdade sobre o seu produto.</p>
+      <div class="fia-secao-titulo">Palavras novas <span class="fia-mono">(${palavrasNovas.length})</span>${ajudaDaSecao('Seu anúncio não diz isso hoje. Marque só o que é verdade sobre o seu produto.')}</div>
       ${palavrasNovas.map(linhaPalavraNova).join('')}
       ${botaoDaSecao('novas', palavrasNovas.length, 'Aplicar as palavras marcadas')}
     </div>` : '';
@@ -792,8 +812,7 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   // desde que a tela deixe claríssimo de onde veio a afirmação e que quem decide é ele.
   const secaoPalpites = palpites.length ? `
     <div class="fia-secao fia-secao-palpites" data-secao="palpites">
-      <div class="fia-secao-titulo">Revise antes de aceitar <span class="fia-mono">(${palpites.length})</span></div>
-      <p class="fia-aviso">O anúncio não fala destes campos. Já vieram preenchidos com o que costuma valer num produto assim. Corrija o que não for o seu caso.</p>
+      <div class="fia-secao-titulo">Revise antes de aceitar <span class="fia-mono">(${palpites.length})</span>${ajudaDaSecao('O anúncio não fala destes campos. Já vieram preenchidos com o que costuma valer num produto assim. Corrija o que não for o seu caso.')}</div>
       ${palpites.map(linhaPalpite).join('')}
       ${botaoDaSecao('palpites', palpites.length, 'Aplicar os marcados')}
     </div>` : '';
@@ -815,17 +834,19 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   //      contaminava a tela inteira e a vendedora não clicava em nada;
   //   2. quantos estão SUBSTITUINDO o que ela mesma escreveu. "Aplicar tudo" prometia
   //      preencher e trocava valor no meio do caminho.
+  // A nota virou title do botão (06/09, tela limpa): a informação continua a um mouse de distância,
+  // e a seção vermelha "Mudam o link" já mostra, por estrutura, o que ficou de fora.
+  const notaTudo = `Nada aqui muda o link do seu anúncio.${trocas.length ? ` ${trocas.length} ${trocas.length === 1 ? 'substitui' : 'substituem'} o que você escreveu.` : ''}${sohUmAUm.length ? ` ${sohUmAUm.length} ${sohUmAUm.length === 1 ? 'campo ficou' : 'campos ficaram'} de fora porque ${sohUmAUm.length === 1 ? 'muda' : 'mudam'} o link.` : ''}`;
   const barraTudo = totalTudo ? `
     <div class="fia-tudo-barra">
-      <button type="button" class="fia-aplicar-tudo">Aplicar tudo <span class="fia-mono" data-conta="tudo">(${totalTudo})</span></button>
-      <p class="fia-tudo-nota">Nada aqui muda o link do seu anúncio.${trocas.length ? ` ${trocas.length} ${trocas.length === 1 ? 'substitui' : 'substituem'} o que você escreveu.` : ''}${sohUmAUm.length ? ` ${sohUmAUm.length} ${sohUmAUm.length === 1 ? 'campo ficou' : 'campos ficaram'} de fora porque ${sohUmAUm.length === 1 ? 'muda' : 'mudam'} o link.` : ''}</p>
+      <button type="button" class="fia-aplicar-tudo" title="${escapeHtml(notaTudo)}">Aplicar tudo <span class="fia-mono" data-conta="tudo">(${totalTudo})</span></button>
     </div>` : '';
 
   el.innerHTML = cabecalho
     + barraTudo
     + secao('Achei no seu anúncio', comEvidencia, true, '', 'achei', 'Aplicar os marcados')
     + secao('Vale trocar', trocas, true,
-        '<p class="fia-aviso">Cada um substitui o valor que está lá hoje.</p>', 'trocar', 'Aplicar as trocas marcadas')
+        'Cada um substitui o valor que está lá hoje.', 'trocar', 'Aplicar as trocas marcadas')
     + secaoNovas
     + secaoPalpites
     // O título diz o que a seção É, não como ela se opera. E o aviso vira três frases
@@ -864,8 +885,7 @@ function secaoSemBase(lista, campos) {
 
   return `
     <div class="fia-secao fia-sem-base" data-secao="vazios">
-      <div class="fia-secao-titulo">Só você sabe <span class="fia-mono">(${lista.length})</span></div>
-      <p class="fia-aviso">Nem o anúncio nem o tipo de produto respondem estes. Preencha aqui e aplique junto com o resto.</p>
+      <div class="fia-secao-titulo">Só você sabe <span class="fia-mono">(${lista.length})</span> <span class="fia-secao-ajuda" tabindex="0" title="Nem o anúncio nem o tipo de produto respondem estes. Preencha aqui e aplique junto com o resto." aria-label="Nem o anúncio nem o tipo de produto respondem estes. Preencha aqui e aplique junto com o resto.">?</span></div>
       ${linhas}
       <button type="button" class="fia-aplicar-secao" data-secao="vazios">Aplicar os que você preencheu <span class="fia-mono" data-conta="secao">(0)</span></button>
     </div>`;
@@ -1352,8 +1372,7 @@ async function mostrarVariacoes(ids, produtoId, body, geracao, signal) {
 
   body.innerHTML = `
     <div class="fia-estado-topo">
-      <p class="fia-estado-titulo">Qual variação você quer melhorar?</p>
-      <p class="fia-estado-texto">Cada variação tem a própria ficha. Escolha uma para ver o que dá pra preencher.</p>
+      <p class="fia-estado-titulo">Qual variação? <span class="fia-secao-ajuda" tabindex="0" title="Cada variação tem a própria ficha. Escolha uma para ver o que dá pra preencher." aria-label="Cada variação tem a própria ficha.">?</span></p>
     </div>
     <div class="fia-vars">${itens.map(linhaVariacao).join('')}</div>`;
   ligarBotoes();
@@ -1451,7 +1470,7 @@ async function abrirFichaIA(itemId, variacoesDoGrupo) {
       // Um mesmo produto pode servir mais de um anúncio — a edição propaga entre eles,
       // por desenho do ML. Não é destrutivo, mas surpreende quem não sabe.
       const avisoFamilia = detail.user_product_id
-        ? '<p class="fia-aviso">Este anúncio tem variações. O que você salvar aqui vale só para esta.</p>'
+        ? '<p class="fia-aviso fia-aviso-variacao"><span class="fia-selo fia-selo-extra" title="Este anúncio tem variações. O que você salvar aqui vale só para esta.">só esta variação</span></p>'
         : '';
       nota.innerHTML = cabecalhoDoAnuncio(detail.id, detail.title) + avisoFamilia;
     }
