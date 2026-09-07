@@ -29,6 +29,7 @@ function carregar(opts = {}) {
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     navigator: { clipboard: { writeText: async () => {} }, userAgent: 'node' },
+    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
   };
   box.chamadas = [];
 

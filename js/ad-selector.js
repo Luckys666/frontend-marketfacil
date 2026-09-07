@@ -272,7 +272,15 @@ const HOST = Object.assign({
   // mentira: a conta pode ter 101 pausados sem estoque e a tela só ter olhado ficha. O
   // painel diz o que ELE conferiu.
   textoSemProblemas: 'Tudo certo! Nenhum problema encontrado nos seus anúncios.',
+  // Selo nos botões "Analisar": HTML (um SVG pequeno) que a casa manda quando a análise gasta
+  // crédito de IA. A Análise de Anúncios não gasta e não manda nada: botão igual ao de sempre.
+  iconeBotao: '',
 }, (typeof window !== 'undefined' && window.MFSEL_HOST) || {});
+
+/** Rótulo dos 5 botões "Analisar": com o selo da casa na frente, quando ela tem um. */
+function rotuloAnalisar() {
+  return (HOST.iconeBotao ? String(HOST.iconeBotao) + ' ' : '') + 'Analisar →';
+}
 
 /** Os chips deste painel, na ordem que o host pediu. */
 function chipsDoPainel() {
@@ -1752,7 +1760,7 @@ function relationSubrowHtml(rel) {
       <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
       ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[rid], rid)}</td>` : ''}
       <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(it), rid)}</div></td>
-      <td class="analyze-cell"><button class="btn-analyze-var">Analisar →</button></td>
+      <td class="analyze-cell"><button class="btn-analyze-var">${rotuloAnalisar()}</button></td>
     </tr>`;
   }
   return `<tr class="subrow" data-analyze="${escapeHtml(rid)}" data-title="" data-thumb="">
@@ -1766,7 +1774,7 @@ function relationSubrowHtml(rel) {
     <td class="num fit" data-label="Vendas"><span class="mono cell-stock">—</span></td>
     ${CONFIG.SHOW_VISITS ? '<td class="num fit" data-label="Visitas (30 dias)"><span class="mono cell-stock">—</span></td>' : ''}
     <td data-label="Sinais"><div class="badges"><span class="badge gray" title="Este anúncio não está na página atual da lista — toque em Analisar para ver os detalhes.">fora desta página</span></div></td>
-    <td class="analyze-cell"><button class="btn-analyze-var">Analisar →</button></td>
+    <td class="analyze-cell"><button class="btn-analyze-var">${rotuloAnalisar()}</button></td>
   </tr>`;
 }
 
@@ -1852,7 +1860,7 @@ function renderRows(items) {
         <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${item.sold_quantity != null ? escapeHtml(String(item.sold_quantity)) : '—'}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[id], id)}</td>` : ''}
         <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(item), id)}${relPill}</div></td>
-        <td class="analyze-cell"><button class="btn-analyze">Analisar →</button></td>
+        <td class="analyze-cell"><button class="btn-analyze">${rotuloAnalisar()}</button></td>
       </tr>`);
       if (relOpen) rels.forEach((r) => trs.push(relationSubrowHtml(r)));
     } else {
@@ -1909,7 +1917,7 @@ function renderRows(items) {
         <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${a.sales}</span></td>
         ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${famVisits}</td>` : ''}
         <td data-label="Sinais"><div class="badges">${badges}</div></td>
-        <td class="analyze-cell"><button class="btn-analyze" title="Analisa o produto inteiro (todas as variações de uma vez)">Analisar →</button></td>
+        <td class="analyze-cell"><button class="btn-analyze" title="Analisa o produto inteiro (todas as variações de uma vez)">${rotuloAnalisar()}</button></td>
       </tr>`);
       if (open) {
         row.items.forEach((it) => {
@@ -1925,7 +1933,7 @@ function renderRows(items) {
             <td class="num fit" data-label="Vendas"><span class="mono cell-stock">${it.sold_quantity != null ? escapeHtml(String(it.sold_quantity)) : '—'}</span></td>
             ${CONFIG.SHOW_VISITS ? `<td class="num fit" data-label="Visitas (30 dias)">${visitsCell(state.visitsMap[it.id], it.id)}</td>` : ''}
             <td data-label="Sinais"><div class="badges">${badgesHtml(computeBadges(it), it.id)}</div></td>
-            <td class="analyze-cell"><button class="btn-analyze-var" title="Analisa só esta variação">Analisar →</button></td>
+            <td class="analyze-cell"><button class="btn-analyze-var" title="Analisa só esta variação">${rotuloAnalisar()}</button></td>
           </tr>`);
         });
       }

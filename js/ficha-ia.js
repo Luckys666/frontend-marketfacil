@@ -1018,9 +1018,18 @@ async function aplicar(itemId, itens, campos, detail, token) {
 // valem aqui sem que uma linha delas mude — o CSS do Seletor está LIVE.
 // `resultsId: null` porque esta página não tem #resultsContainer; hostResultsEl()
 // devolve null e os `if (rc)` do seletor seguem valendo.
+// O ícone de crédito de IA: um sparkle só, o mesmo do menu lateral (js/menu-saldo.js), nos
+// botões que gastam e no contador. Vendedor reconhece o selo antes de ler.
+const MF_ICONE_IA = '<svg class="mf-ia" viewBox="0 0 24 24" width="12" height="12" role="img" aria-label="Crédito de IA"><path d="M12 2l2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/></svg>';
+const MF_ICONE_IA_BOTAO = '<svg class="mf-ia" viewBox="0 0 24 24" width="12" height="12" role="img" aria-label="Usa crédito de IA quando encontra sugestão"><title>Usa crédito de IA quando encontra sugestão</title><path d="M12 2l2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/></svg>';
+window.MF_ICONE_IA = MF_ICONE_IA;
+
 window.MFSEL_HOST = {
   root: '.ana-wrapper',
   resultsId: null,
+  // Aqui a análise gasta crédito de IA (quando encontra sugestão): os botões "Analisar" do
+  // Seletor ganham o selo. Na Análise de Anúncios, que não gasta, o host não manda nada.
+  iconeBotao: MF_ICONE_IA_BOTAO,
   // `opts.variacoes` chega quando o clique foi numa linha-produto: são as irmãs da mesma
   // família, que só o Seletor conhece (ele agrupa por family_id). Sem elas, o que a ficha
   // recebe é o produto de UMA variação — e o vendedor não escolhe nada.
@@ -1104,7 +1113,7 @@ function mostrarCotaNoTopo(cota, comprados) {
     return;
   }
   const renova = formatarDia(cota.renova_em);
-  let html = `Você ainda tem <span class="fia-cota-num">${restante}</span> de ${limite} análises este mês`
+  let html = `${MF_ICONE_IA} Você ainda tem <span class="fia-cota-num">${restante}</span> de ${limite} análises este mês`
     + (renova ? ` <span class="fia-cota-renova">· renovam dia ${escapeHtml(renova)}</span>` : '');
   const c = comprados && Number(comprados.restante) > 0 ? comprados : null;
   if (c) {
@@ -1113,6 +1122,12 @@ function mostrarCotaNoTopo(cota, comprados) {
   }
   alvo.innerHTML = html;
   alvo.removeAttribute('hidden');
+  // Avisa o cartão do menu lateral (js/menu-saldo.js) com o MESMO número: menu dizendo 38 e
+  // Agente dizendo 37 na mesma tela vira chamado no suporte. Só com número válido, que é o
+  // que chegou até aqui; sem número, o menu mantém o que estava certo.
+  try {
+    document.dispatchEvent(new CustomEvent('mf:analises-cota', { detail: { cota, comprados: comprados || null } }));
+  } catch (e) { /* navegador sem CustomEvent: o menu se atualiza na próxima página */ }
 }
 
 async function carregarCota() {

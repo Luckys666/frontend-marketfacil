@@ -303,6 +303,12 @@ function criarDocumento() {
       const l = doc._ouvintes.get(tipo) || [];
       const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1);
     },
+    // Dispara no document: e o jeito de um modulo avisar outro na mesma pagina (o Agente
+    // avisa o cartao do menu quando a cota muda). Sem isto, o aviso sumiria no teste.
+    dispatchEvent(ev) {
+      for (const fn of (doc._ouvintes.get(ev.type) || [])) fn.call(doc, ev);
+      return true;
+    },
   };
   body.__documento = doc;
   return doc;

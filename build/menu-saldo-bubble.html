@@ -1,0 +1,38 @@
+<style>
+/* Créditos de IA no menu lateral (elemento bTMDR do reusable "Menu Lateral").
+   É uma LINHA do menu, não um cartão: sem caixa, sem título, alinhada ao texto de
+   "Conexão da conta" (que começa a 40 px), com a barra fina embaixo.
+   Tudo escopado em .mf-saldo. Nasce oculto e só aparece com número do proxy (js/menu-saldo.js). */
+.mf-saldo[hidden] { display: none !important; }
+.mf-saldo {
+  --mf-saldo-azul: #0d5cff;
+  --mf-saldo-texto: #1b2430;
+  --mf-saldo-mudo: #5f6b7a;
+  --mf-saldo-trilho: #e6eaf0;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 2px 16px 6px 40px;
+  font-family: inherit;
+  color: var(--mf-saldo-mudo);
+  font-size: 12px;
+  line-height: 1.3;
+  position: relative;
+}
+.mf-saldo * { box-sizing: border-box; }
+.mf-saldo .mf-saldo-linha { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mf-saldo .mf-saldo-txt { flex: 0 1 auto; min-width: 0; }
+.mf-saldo .mf-saldo-txt b { color: var(--mf-saldo-texto); font-weight: 700; }
+.mf-saldo .mf-ia { width: 12px; height: 12px; fill: currentColor; color: var(--mf-saldo-azul); vertical-align: -1px; flex: 0 0 auto; }
+.mf-saldo .mf-saldo-ajuda {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%;
+  border: 1px solid #d5dbe3; color: var(--mf-saldo-mudo); background: #fff;
+  font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; cursor: help;
+  position: relative; outline: none; user-select: none;
+}
+.mf-saldo .mf-saldo-ajuda:hover, .mf-saldo .mf-saldo-ajuda:focus { border-color: var(--mf-saldo-azul); color: var(--mf-saldo-azul); }
+.mf-saldo .mf-saldo-barra { margin-top: 4px; width: 160px; max-width: 100%; height: 3px; border-radius: 999px; background: var(--mf-saldo-trilho); overflow: hidden; }
+.mf-saldo .mf-saldo-cheio { height: 100%; border-radius: 999px; background: var(--mf-saldo-azul); transition: width .4s ease; }
+.mf-saldo .mf-saldo-rod { margin-top: 3px; font-size: 11px; color: var(--mf-saldo-mudo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+<div class="mf-saldo" hidden></div>

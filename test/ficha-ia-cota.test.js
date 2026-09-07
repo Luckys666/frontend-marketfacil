@@ -298,6 +298,30 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
       `chamadas ${chamadasAntes}->${chamadasDepois} | ${topo2}`);
   }
 
+  console.log('\n== o contador do Agente avisa o menu lateral (mesmo número nos dois lugares) ==');
+  {
+    const { M, box, el } = carregar();
+    el('fia-cota-topo'); // o contador só desenha (e só avisa) se o elemento do topo existir
+    const avisos = [];
+    box.document.addEventListener('mf:analises-cota', (ev) => avisos.push(ev.detail));
+    const cota = { limite: 50, usadas: 13, restante: 37, renova_em: '2026-10-01' };
+    M.mostrarCotaNoTopo(cota, { restante: 300, vence_em: '2027-03-15' });
+    check('disparou 1 aviso', avisos.length === 1, String(avisos.length));
+    check('com a cota e as compradas', !!(avisos[0] && avisos[0].cota && avisos[0].cota.restante === 37 && avisos[0].comprados && avisos[0].comprados.restante === 300), JSON.stringify(avisos[0]));
+    M.mostrarCotaNoTopo(null);
+    check('sem número, não avisa (o menu manteria o que estava certo)', avisos.length === 1, String(avisos.length));
+  }
+
+  console.log('\n== ícone de crédito de IA: o mesmo sparkle do menu, no contador e nos botões do Agente ==');
+  {
+    const { M, box, el } = carregar();
+    el('fia-cota-topo');
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 13, restante: 37, renova_em: '2026-10-01' }, null);
+    check('contador do topo começa com o sparkle', /^\s*<svg class="mf-ia"/.test(el('fia-cota-topo').innerHTML), el('fia-cota-topo').innerHTML.slice(0, 120));
+    check('o Agente entrega o ícone ao Seletor pelo host (botões "Analisar" ganham o selo só aqui)', box.MFSEL_HOST && /<svg class="mf-ia"/.test(String(box.MFSEL_HOST.iconeBotao || '')), String(box.MFSEL_HOST && box.MFSEL_HOST.iconeBotao).slice(0, 120));
+    check('o selo do botão explica quando gasta', /Usa crédito de IA/.test(String(box.MFSEL_HOST.iconeBotao || '')));
+  }
+
   console.log(`\n${pass} passaram, ${fail} falharam`);
   process.exit(fail ? 1 : 0);
 })();

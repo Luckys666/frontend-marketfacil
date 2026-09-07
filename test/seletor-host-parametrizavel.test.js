@@ -57,7 +57,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'ad-selector.js'), 
 check('ad-selector ainda termina em boot() (o teste depende disso)', /\nboot\(\);\n/.test(src));
 
 function carregar(hostConfig) {
-  const patched = src.replace(/\nboot\(\);\n/, '\nwindow.__internos = { HOST, chipsDoPainel };\n');
+  const patched = src.replace(/\nboot\(\);\n/, '\nwindow.__internos = { HOST, chipsDoPainel, rotuloAnalisar };\n');
   const box = mkSandbox(hostConfig);
   vm.createContext(box);
   vm.runInContext(patched, box, { filename: 'ad-selector.js' });
@@ -136,6 +136,20 @@ console.log('\n== chips e filtros de preço são do painel ==');
   check('sem host, a mensagem de tudo certo é a de sempre', /Nenhum problema encontrado/.test(padrao), padrao);
   const proprio = carregar({ chips: ['incomplete_specs'], textoSemProblemas: 'Nenhuma ficha incompleta 🎉' }).__internos.HOST.textoSemProblemas;
   check('o painel pode dizer o que ELE conferiu', proprio === 'Nenhuma ficha incompleta 🎉', proprio);
+}
+
+console.log('\n== selo de crédito de IA nos botões "Analisar": só na casa que pede ==');
+{
+  // A Análise de Anúncios não gasta crédito: o botão dela continua "Analisar →", byte a byte.
+  const semHost = carregar(null).__internos.rotuloAnalisar();
+  check('sem MFSEL_HOST: "Analisar →" exato, sem ícone', semHost === 'Analisar →', semHost);
+  const comHost = carregar({ iconeBotao: '<svg class="mf-ia" aria-label="Crédito de IA"></svg>' }).__internos.rotuloAnalisar();
+  check('com iconeBotao no host: o selo entra antes do texto', /^<svg class="mf-ia"[^>]*><\/svg>\s*Analisar →$/.test(comHost), comHost);
+  // Todo botão "Analisar" passa pelo rótulo: nenhum literal solto no template.
+  const literais = (src.match(/>Analisar →<\/button>/g) || []).length;
+  check('nenhum "Analisar →" chumbado nos templates (todos via rotuloAnalisar)', literais === 0, String(literais));
+  const usos = (src.match(/\$\{rotuloAnalisar\(\)\}<\/button>/g) || []).length;
+  check('os 5 botões usam o rótulo', usos === 5, String(usos));
 }
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
