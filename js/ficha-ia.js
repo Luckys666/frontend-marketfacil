@@ -740,12 +740,24 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
   // recálculo. Quem mantém o número vivo depois é `recontarTokens`.
   const tokensNovos = contarTokensNovos(comEvidencia.concat(trocas, palavrasNovas, palpites));
 
+  // Gamificação, Nível 1 (07/09): o placar explica por ESTRUTURA. Barra = campos preenchidos de
+  // fato; a prévia (hachurada) = o que os checkboxes marcados vão preencher ao salvar, e recua ao
+  // desmarcar (`recontarPrevia`). O número só sobe depois de salvar. "◆ k/n" = campos que rendem
+  // busca (a lista vem do proxy em `prioritarios`; o front só conta). Rótulos viram title.
+  const pctFeito = p.total ? Math.round((p.preenchidos / p.total) * 100) : 0;
+  const prioritarios = new Set((dados && Array.isArray(dados.prioritarios)) ? dados.prioritarios.map(String) : []);
+  const prioNaCategoria = (campos || []).filter((c) => prioritarios.has(String(c.id)));
+  const prioPreenchidos = prioNaCategoria.filter((c) => c.preenchido).length;
+  const seloPrio = prioNaCategoria.length
+    ? `<span class="fia-placar-prio" title="Campos que rendem busca (modelo, linha, fabricante, MPN): ${prioPreenchidos} de ${prioNaCategoria.length} preenchidos">◆ ${prioPreenchidos}/${prioNaCategoria.length}</span>`
+    : '';
   const cabecalho = `
     <div class="fia-placar">
-      <span class="fia-placar-num">${p.preenchidos} de ${p.total}</span>
-      <span class="fia-placar-lbl">campos preenchidos</span>
+      <span class="fia-placar-num" title="campos preenchidos de ${p.total}">${p.preenchidos} de ${p.total}</span>
+      <div class="fia-barra" title="Preenchidos de verdade; a parte listrada é o que você marcou e vai preencher ao salvar."><div class="fia-barra-feito" style="width:${pctFeito}%"></div><div class="fia-barra-previa" id="fia-previa" style="width:0%"></div></div>
+      ${seloPrio}
       <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="Cada palavra nova abre buscas que o anúncio não alcançava.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
-      ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
+      ${completo ? '<span class="fia-placar-ok" title="Todos os campos preenchidos">🎉</span>' : ''}
     </div>`;
   // 06/09 (Lucas): "muita explicação pra uma coisa que era pra ser intuitiva". A legenda dos 30
   // caracteres saiu: o "27/30" de cada linha já diz, e o title dele explica para quem parar o mouse.
@@ -854,6 +866,11 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
         '<p class="fia-aviso fia-aviso-risco">Mudar aqui troca o link do anúncio, e ele recomeça do zero. Só vale se o valor estiver errado.</p>',
         'caros')
     + secaoSemBase(semBase, campos);
+  // A prévia da barra precisa saber quais campos estão VAZIOS e quantos são: guarda no próprio
+  // container, e recalcula agora e a cada marcar/desmarcar (`recontarBotoes`).
+  el.__camposVazios = new Set((campos || []).filter((c) => !c.preenchido).map((c) => String(c.id)));
+  el.__placarTotal = p.total;
+  recontarPrevia(el);
 }
 
 // Campo sem base é RESULTADO. Sumir daqui faz o vendedor achar que a ferramenta não olhou.
@@ -1614,6 +1631,26 @@ function recontarBotoes() {
   const tudo = body.querySelector('[data-conta="tudo"]');
   if (tudo) tudo.textContent = '(' + contar(body) + ')';
   recontarTokens(body);
+  recontarPrevia(body);
+}
+
+/**
+ * A prévia da barra: quantos campos VAZIOS têm uma linha marcada agora. Vira largura em % do
+ * total (a parte listrada), e nunca vira número: o "4 de 10" só muda depois de salvar.
+ */
+function recontarPrevia(body) {
+  const alvo = body.querySelector('#fia-previa');
+  if (!alvo) return;
+  const vazios = body.__camposVazios instanceof Set ? body.__camposVazios : new Set();
+  const total = Number(body.__placarTotal) || 0;
+  const vao = new Set();
+  body.querySelectorAll('.fia-check, .fia-check-nova').forEach((c) => {
+    if (!c.checked) return;
+    const id = String(c.getAttribute('data-campo') || '');
+    if (id && vazios.has(id)) vao.add(id);
+  });
+  const pct = total ? Math.round((vao.size / total) * 100) : 0;
+  alvo.setAttribute('style', 'width:' + pct + '%');
 }
 
 /**

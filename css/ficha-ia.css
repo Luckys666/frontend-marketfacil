@@ -34,6 +34,13 @@
 .kw-wrapper .fia-placar-num { font-family: 'DM Mono', monospace; font-size: 1.4rem; font-weight: 700; }
 .kw-wrapper .fia-placar-lbl { font-size: .82rem; opacity: .8; }
 .kw-wrapper .fia-placar-ok { margin-left: auto; font-size: .82rem; font-weight: 600; color: var(--green, #00d68f); }
+/* Gamificação N1 (07/09): barra mede o preenchido; a prévia (listrada) é o que os marcados vão
+   preencher ao salvar. Uma cor só, sem alarme. */
+.kw-wrapper .fia-barra { position: relative; flex: 1 1 160px; min-width: 120px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.14); overflow: hidden; align-self: center; display: flex; }
+.kw-wrapper .fia-barra-feito { height: 100%; background: var(--green, #00d68f); border-radius: 999px 0 0 999px; transition: width .4s ease; }
+.kw-wrapper .fia-barra-previa { height: 100%; background: repeating-linear-gradient(135deg, rgba(0,214,143,.55) 0 4px, rgba(0,214,143,.2) 4px 8px); transition: width .3s ease; }
+.kw-wrapper .fia-placar-prio { font-family: 'DM Mono', monospace; font-size: .82rem; font-weight: 700; color: #a7f3d0; cursor: help; }
+.kw-wrapper .fia-placar-tokens { cursor: help; }
 
 .kw-wrapper .fia-secao { margin-bottom: 20px; }
 .kw-wrapper .fia-secao-titulo { font-size: .92rem; font-weight: 600; margin-bottom: 10px; color: var(--text, #1e3a5f); }
