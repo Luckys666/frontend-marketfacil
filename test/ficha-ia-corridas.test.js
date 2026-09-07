@@ -255,12 +255,16 @@ const RESPOSTA_B = {
       const body = el('ficha-ia-body');
       const bloco = body.querySelectorAll('.fia-secao').find((s) => (s.getAttribute('data-secao') || '') === 'novas');
 
-      await bloco.querySelectorAll('.fia-marcar').find((b) => b.dataset.marcar === '0').click();
-      check('"Desmarcar todos" limpa o bloco',
+      // 07/09 (tela limpa): os dois botões viraram um checkbox mestre por bloco.
+      const mestre = bloco.querySelector('.fia-marcar-todos');
+      mestre.checked = false;
+      await mestre.dispatchEvent({ type: 'change', target: mestre });
+      check('desmarcar o mestre limpa o bloco',
         bloco.querySelectorAll('.fia-check-nova').every((c) => !c.checked));
 
-      await bloco.querySelectorAll('.fia-marcar').find((b) => b.dataset.marcar === '1').click();
-      check('"Marcar todos" traz de volta',
+      mestre.checked = true;
+      await mestre.dispatchEvent({ type: 'change', target: mestre });
+      check('marcar o mestre traz de volta',
         bloco.querySelectorAll('.fia-check-nova').every((c) => c.checked));
     }
   }

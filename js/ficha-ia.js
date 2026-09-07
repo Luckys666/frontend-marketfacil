@@ -791,12 +791,13 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
    * atalhos existem pro caso oposto: quando ele quer olhar um bloco inteiro com calma,
    * desmarca tudo e marca só o que conferiu.
    */
+  // 07/09 (tela limpa): "Marcar todos / Desmarcar todos" viraram UM checkbox mestre por bloco,
+  // sem texto (title explica). Marca só linha com valor; desmarcar limpa o bloco.
   const botaoDaSecao = (chave, n, rotulo, marcados) => (n
     ? `<div class="fia-secao-acoes">
-         <button type="button" class="fia-marcar" data-marcar="1">Marcar todos</button>
-         <button type="button" class="fia-marcar" data-marcar="0">Desmarcar todos</button>
-       </div>
-       <button type="button" class="fia-aplicar-secao" data-secao="${chave}">${rotulo} <span class="fia-mono" data-conta="secao">(${marcados === undefined ? n : marcados})</span></button>`
+         <label class="fia-secao-todos" title="Marcar ou desmarcar todos deste bloco"><input type="checkbox" class="fia-marcar-todos" checked aria-label="Marcar ou desmarcar todos deste bloco" /></label>
+         <button type="button" class="fia-aplicar-secao" data-secao="${chave}">${rotulo} <span class="fia-mono" data-conta="secao">(${marcados === undefined ? n : marcados})</span></button>
+       </div>`
     : '');
 
   // O aviso da seção virou um "?" no título (06/09, tela limpa). Só a seção de RISCO (muda o
@@ -1691,6 +1692,22 @@ function ligarBotoes() {
       recontarBotoes();
       return;
     }
+    // Checkbox mestre do bloco: marca (só linha com valor) ou desmarca tudo dele. O vendedor
+    // vem conferir e aplicar: quando quer olhar com calma, desmarca tudo e marca o que conferiu.
+    if (a.classList.contains('fia-marcar-todos')) {
+      const bloco = typeof a.closest === 'function' ? a.closest('.fia-secao') : null;
+      const ligar = !!a.checked;
+      if (bloco) {
+        bloco.querySelectorAll('.fia-check, .fia-check-nova').forEach((c) => {
+          const linha = typeof c.closest === 'function' ? c.closest('.fia-linha') : null;
+          const entrada = linha ? linha.querySelector('.fia-valor') : null;
+          const temValor = !!(entrada && String(entrada.value || '').trim());
+          c.checked = ligar && temValor;
+        });
+        recontarBotoes();
+      }
+      return;
+    }
     // troca numa lista de opções conta como edição
     if (a.classList.contains('fia-valor')) aoEditarValor(a);
   });
@@ -1714,21 +1731,8 @@ function ligarBotoes() {
     if (alvo.classList.contains('fia-retry')) { abrirFichaIA(estadoFicha.itemId); return; }
     if (alvo.classList.contains('fia-lote')) { await salvar(marcadosNoLote()); return; }
 
-    // Marcar/desmarcar o bloco inteiro. O vendedor vem conferir e aplicar: quando ele quer
-    // olhar com calma, desmarca tudo e marca só o que conferiu.
-    if (alvo.classList.contains('fia-marcar')) {
-      const bloco = typeof alvo.closest === 'function' ? alvo.closest('.fia-secao') : null;
-      const ligar = alvo.dataset.marcar === '1';
-      if (bloco) {
-        bloco.querySelectorAll('.fia-check, .fia-check-nova').forEach((c) => {
-          // Campo ainda vazio não tem o que aplicar — marcar seria promessa vazia.
-          const linha = typeof c.closest === 'function' ? c.closest('.fia-linha') : null;
-          const entrada = linha ? linha.querySelector('.fia-valor') : null;
-          const temValor = !!(entrada && String(entrada.value || '').trim());
-          c.checked = ligar && temValor;
-        });
-        recontarBotoes();
-      }
+    // (Marcar/desmarcar o bloco virou o checkbox mestre `.fia-marcar-todos`, tratado no `change`.)
+    if (alvo.classList.contains('fia-marcar-todos')) {
       return;
     }
 

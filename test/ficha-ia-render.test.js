@@ -195,7 +195,8 @@ console.log('\n== render: a lista de palavras novas (D9) ==');
   check('o "aplicar tudo" conta tudo que está marcado, menos o campo caro',
     /Aplicar tudo[\s\S]{0,80}\(3\)/.test(html), txt.slice(0, 300));
   check('e a palavra nova nasce marcada', /fia-check-nova[^>]*checked/.test(html), html.slice(html.indexOf('fia-check-nova'), html.indexOf('fia-check-nova') + 120));
-  check('cada bloco tem marcar/desmarcar todos', /Marcar todos[\s\S]{0,200}Desmarcar todos/.test(html));
+  // 07/09 (tela limpa): um checkbox mestre por bloco, sem texto, no lugar dos dois botões.
+  check('cada bloco tem o checkbox mestre de marcar/desmarcar', /fia-marcar-todos/.test(html) && !/Marcar todos/.test(html));
 }
 
 // Campo que já tem valor curto ("Forro duplo", 11 de 30) também recebe palavra nova — o

@@ -69,6 +69,10 @@
 .kw-wrapper .fia-mais > summary:hover, .kw-wrapper .fia-mais[open] > summary { opacity: 1; color: var(--blue, #0066ff); }
 .kw-wrapper .fia-mais[open] { padding: 6px 8px 2px; border-left: 2px solid #e2e8f0; margin-top: 6px; }
 .kw-wrapper .fia-aviso-variacao { margin: 0 0 8px; }
+/* Checkbox mestre do bloco (no lugar de "Marcar todos / Desmarcar todos"). */
+.kw-wrapper .fia-secao-acoes { display: flex; align-items: center; gap: 10px; }
+.kw-wrapper .fia-secao-todos { display: inline-flex; align-items: center; cursor: pointer; padding: 6px; }
+.kw-wrapper .fia-secao-acoes .fia-aplicar-secao { flex: 1 1 auto; }
 /* Palpite apoiado no silêncio do anúncio: entra pré-preenchido, e a linha avisa. Sem cor de alarme. */
 .kw-wrapper .fia-silencio { font-size: .73rem; line-height: 1.5; color: var(--text, #1b2430); margin-top: 6px; }
 /* O que o servidor acrescentou para o campo não ficar pela metade. */
@@ -145,8 +149,6 @@
 
 /* Marcar/desmarcar o bloco inteiro: o vendedor vem conferir, não montar seleção. */
 .kw-wrapper .fia-secao-acoes { display: flex; gap: 8px; margin-top: 10px; }
-.kw-wrapper .fia-marcar { padding: 4px 10px; font-size: .74rem; font-weight: 600; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--text-muted, #64748b); cursor: pointer; }
-.kw-wrapper .fia-marcar:hover { border-color: var(--blue, #0066ff); color: var(--blue, #0066ff); }
 /* Campo que ficou com o vendedor: mesma linha das outras, só sem valor sugerido. */
 .kw-wrapper .fia-vazia { border-style: solid; }
 .kw-wrapper select.fia-valor { appearance: auto; background: #fff; }
