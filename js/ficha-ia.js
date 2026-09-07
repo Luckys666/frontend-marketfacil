@@ -745,7 +745,6 @@ function renderPainel(containerId, { estado, dados, campos, placar }) {
       <span class="fia-placar-num">${p.preenchidos} de ${p.total}</span>
       <span class="fia-placar-lbl">campos preenchidos</span>
       <span class="fia-placar-tokens" id="fia-tokens"${tokensNovos ? '' : ' hidden'} title="Cada palavra nova abre buscas que o anúncio não alcançava.">+${tokensNovos} ${tokensNovos === 1 ? 'palavra nova' : 'palavras novas'}</span>
-      ${linhaCotaDoPlacar(dados && dados.cota)}
       ${completo ? '<span class="fia-placar-ok">Nenhum faltando 🎉</span>' : ''}
     </div>`;
   // 06/09 (Lucas): "muita explicação pra uma coisa que era pra ser intuitiva". A legenda dos 30
@@ -1162,6 +1161,15 @@ async function proxyGet(rota, token, signal) {
   return r.json();
 }
 
+/** A linha de créditos do menu lateral está na tela? (existe, não está oculta e tem largura) */
+function menuDeCreditosVisivel() {
+  const m = document.querySelector('.mf-saldo');
+  if (!m || m.hasAttribute('hidden')) return false;
+  if (typeof m.getBoundingClientRect !== 'function') return true;
+  const r = m.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+
 /**
  * Contador do topo: "Você ainda tem 12 de 50 análises este mês · renovam dia 01/10".
  * Sem número, some. Mostrar "0 de 50" por falha de leitura mandaria o vendedor embora
@@ -1195,7 +1203,11 @@ function mostrarCotaNoTopo(cota, comprados) {
     html += ` <span class="fia-cota-preco">· cada análise que encontra sugestão usa ${preco} ${preco === 1 ? 'crédito' : 'créditos'}</span>`;
   }
   alvo.innerHTML = html;
-  alvo.removeAttribute('hidden');
+  // 07/09 (Lucas): "muita redundância de informação, principalmente sobre os créditos". O número
+  // vive UM lugar: a linha do menu lateral. O contador do topo só aparece quando o menu não está
+  // na tela (celular, onde o menu lateral não existe). Regra de tela, sem número novo.
+  if (menuDeCreditosVisivel()) alvo.setAttribute('hidden', '');
+  else alvo.removeAttribute('hidden');
   // Avisa o cartão do menu lateral (js/menu-saldo.js) com o MESMO número: menu dizendo 38 e
   // Agente dizendo 37 na mesma tela vira chamado no suporte. Só com número válido, que é o
   // que chegou até aqui; sem número, o menu mantém o que estava certo.

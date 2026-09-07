@@ -69,8 +69,10 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
       cota: { limite: 50, usadas: 38, restante: 12, renova_em: '2026-10-01' } };
     M.renderPainel('ficha-ia-body', { estado: 'ok', dados, campos, placar: M.contarPlacar(campos) });
     const html = el('ficha-ia-body').innerHTML;
-    check('placar mostra "38 de 50 análises usadas este mês"', /38 de 50 análises usadas este mês/.test(html), html.slice(0, 600));
-    check('e diz quando renova', /renova dia 01\/10/i.test(html));
+    // 07/09 (Lucas): "muita redundância de informação, principalmente sobre os créditos". O placar
+    // NÃO repete a cota: o número vive na linha do menu lateral (e no topo só quando o menu não
+    // está na tela). A resposta fresca continua alimentando o topo/menu por `mostrarCotaNoTopo`.
+    check('placar NÃO repete a cota (o número vive no menu lateral)', !/análises usadas este mês/.test(html) && !/fia-placar-cota/.test(html) && !/renova dia/.test(html), html.slice(0, 600));
   }
   {
     const { M, el } = carregar();
@@ -296,6 +298,26 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     check('reabrir do cache NÃO reescreve o contador (senão ele volta para trás)',
       chamadasDepois === chamadasAntes && /20[\s\S]*de 50/.test(topo2) && !/38[\s\S]*de 50/.test(topo2),
       `chamadas ${chamadasAntes}->${chamadasDepois} | ${topo2}`);
+  }
+
+  console.log('\n== sem redundância: com a linha do menu na tela, o topo fica escondido (mas avisa) ==');
+  {
+    // 07/09 (Lucas): "muita redundância de informação, principalmente sobre os créditos". Um lugar só.
+    const { M, box, el } = carregar();
+    el('fia-cota-topo');
+    const menu = box.document.createElement('div');
+    menu.setAttribute('class', 'mf-saldo');
+    menu.getBoundingClientRect = () => ({ width: 280, height: 48 });
+    box.document.body.appendChild(menu);
+    const avisos = [];
+    box.document.addEventListener('mf:analises-cota', (ev) => avisos.push(ev.detail));
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 13, restante: 37, renova_em: '2026-10-01' }, null);
+    check('menu visível: o topo fica escondido', el('fia-cota-topo').hasAttribute('hidden'));
+    check('mas o menu recebe o número (um lugar só, e é o menu)', avisos.length === 1 && avisos[0].cota.restante === 37, JSON.stringify(avisos));
+    // Celular: o menu lateral existe no DOM mas está com largura zero → o topo aparece.
+    menu.getBoundingClientRect = () => ({ width: 0, height: 0 });
+    M.mostrarCotaNoTopo({ limite: 50, usadas: 13, restante: 37, renova_em: '2026-10-01' }, null);
+    check('menu sem largura (celular): o topo aparece', !el('fia-cota-topo').hasAttribute('hidden'));
   }
 
   console.log('\n== o contador do Agente avisa o menu lateral (mesmo número nos dois lugares) ==');
