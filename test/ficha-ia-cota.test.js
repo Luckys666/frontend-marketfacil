@@ -312,6 +312,34 @@ const PAYLOAD = { item_id: 'MLB1', campos: [], palavras_que_faltam: [] };
     check('sem número, não avisa (o menu manteria o que estava certo)', avisos.length === 1, String(avisos.length));
   }
 
+  console.log('\n== quanto custa cada ação: o preço vem do proxy e aparece no botão ==');
+  {
+    // Lucas (06/09): "precisamos mostrar quantos créditos vão custar cada coisa… cada análise,
+    // ou também criação, etc." O número vem do servidor (regra de decisão) e o front só pinta:
+    // uma variável CSS no <html> que o selo dos botões "Analisar" lê via content: var(...).
+    const { M, box, el } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo/, () => ({ status: 404, body: {} })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: { limite: 50, usadas: 10, restante: 40, renova_em: '2026-10-01' }, precos: { ficha_analise: 1 } } })],
+    ] });
+    el('fia-cota-topo');
+    await M.carregarCota();
+    check('o preço da análise fica guardado', M._estado().precos && M._estado().precos.ficha_analise === 1, JSON.stringify(M._estado().precos));
+    check('e vira variável CSS no <html> (string entre aspas, para content:)', box.document.documentElement._vars['--mf-custo-ficha'] === '"1"', JSON.stringify(box.document.documentElement._vars));
+    check('o selo do botão tem o lugar do número (mf-ia-custo)', /class="mf-ia-custo"/.test(String(box.MFSEL_HOST.iconeBotao || '')), String(box.MFSEL_HOST.iconeBotao).slice(0, 200));
+    check('o contador do topo diz quanto custa cada análise', /1 crédito/.test(el('fia-cota-topo').innerHTML), el('fia-cota-topo').innerHTML.slice(0, 220));
+  }
+  {
+    const { M, box, el } = carregar({ rotas: [
+      [/get-user-id/, () => ({ body: { response: { user_id: 'user-1' } } })],
+      [/creditos\/saldo/, () => ({ status: 404, body: {} })],
+      [/gpt-ficha\/cota$/, () => ({ body: { ok: true, cota: null } })],
+    ] });
+    el('fia-cota-topo');
+    await M.carregarCota();
+    check('sem preço do servidor, nenhuma variável é gravada (o botão fica só com o ícone)', !('--mf-custo-ficha' in box.document.documentElement._vars), JSON.stringify(box.document.documentElement._vars));
+  }
+
   console.log('\n== ícone de crédito de IA: o mesmo sparkle do menu, no contador e nos botões do Agente ==');
   {
     const { M, box, el } = carregar();

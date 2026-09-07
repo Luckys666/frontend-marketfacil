@@ -172,7 +172,11 @@
 /* Sparkle de crédito de IA: o mesmo do menu lateral. No contador é azul; dentro do botão
    "Analisar" herda a cor do texto, para continuar visível quando o botão inverte no hover. */
 .kw-wrapper .mf-ia { width: 12px; height: 12px; fill: currentColor; color: var(--blue, #0d5cff); vertical-align: -1px; }
-.kw-wrapper .btn-analyze .mf-ia, .kw-wrapper .btn-analyze-var .mf-ia { color: inherit; margin-right: 2px; }
+.kw-wrapper .btn-analyze .mf-ia, .kw-wrapper .btn-analyze-var .mf-ia { color: inherit; margin-right: 1px; }
+/* O preço em créditos ao lado do ícone: o número vem do proxy e chega por variável CSS no
+   <html> (--mf-custo-ficha, string). Sem variável, o span fica vazio e não ocupa espaço. */
+.kw-wrapper .mf-ia-custo::after { content: var(--mf-custo-ficha, ""); font-weight: 800; font-size: .72em; vertical-align: 1px; margin-right: 4px; }
+.kw-wrapper .fia-cota-preco { opacity: .85; }
 /* O placar é `display: flex; flex-wrap: wrap` — um `display: block` aqui quebrava o fluxo
    dos outros itens da linha. `flex-basis: 100%` empurra este item pra própria linha sem
    sair do sistema de flex do pai. */

@@ -143,8 +143,8 @@ console.log('\n== selo de crédito de IA nos botões "Analisar": só na casa que
   // A Análise de Anúncios não gasta crédito: o botão dela continua "Analisar →", byte a byte.
   const semHost = carregar(null).__internos.rotuloAnalisar();
   check('sem MFSEL_HOST: "Analisar →" exato, sem ícone', semHost === 'Analisar →', semHost);
-  const comHost = carregar({ iconeBotao: '<svg class="mf-ia" aria-label="Crédito de IA"></svg>' }).__internos.rotuloAnalisar();
-  check('com iconeBotao no host: o selo entra antes do texto', /^<svg class="mf-ia"[^>]*><\/svg>\s*Analisar →$/.test(comHost), comHost);
+  const comHost = carregar({ iconeBotao: '<svg class="mf-ia" aria-label="Crédito de IA"></svg><span class="mf-ia-custo"></span>' }).__internos.rotuloAnalisar();
+  check('com iconeBotao no host: o selo (ícone + lugar do preço) entra antes do texto', /^<svg class="mf-ia"[^>]*><\/svg><span class="mf-ia-custo"><\/span>\s*Analisar →$/.test(comHost), comHost);
   // Todo botão "Analisar" passa pelo rótulo: nenhum literal solto no template.
   const literais = (src.match(/>Analisar →<\/button>/g) || []).length;
   check('nenhum "Analisar →" chumbado nos templates (todos via rotuloAnalisar)', literais === 0, String(literais));

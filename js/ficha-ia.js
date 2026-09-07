@@ -1049,7 +1049,22 @@ async function aplicar(itemId, itens, campos, detail, token) {
 // O ícone de crédito de IA: um sparkle só, o mesmo do menu lateral (js/menu-saldo.js), nos
 // botões que gastam e no contador. Vendedor reconhece o selo antes de ler.
 const MF_ICONE_IA = '<svg class="mf-ia" viewBox="0 0 24 24" width="12" height="12" role="img" aria-label="Crédito de IA"><path d="M12 2l2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/></svg>';
-const MF_ICONE_IA_BOTAO = '<svg class="mf-ia" viewBox="0 0 24 24" width="12" height="12" role="img" aria-label="Usa crédito de IA quando encontra sugestão"><title>Usa crédito de IA quando encontra sugestão</title><path d="M12 2l2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/></svg>';
+// O selo do botão leva o lugar do PREÇO (`.mf-ia-custo`): o número vem do proxy (tabela de
+// preços em `precos`) e é pintado por variável CSS no <html> (`--mf-custo-ficha`), porque o
+// Seletor redesenha os botões a cada página e a variável já está lá quando ele desenha.
+const MF_ICONE_IA_BOTAO = '<svg class="mf-ia" viewBox="0 0 24 24" width="12" height="12" role="img" aria-label="Usa crédito de IA quando encontra sugestão"><title>Usa crédito de IA quando encontra sugestão</title><path d="M12 2l2.3 7.7L22 12l-7.7 2.3L12 22l-2.3-7.7L2 12l7.7-2.3z"/></svg><span class="mf-ia-custo" aria-hidden="true"></span>';
+
+/**
+ * Guarda a tabela de preços que o proxy mandou e publica o custo da análise como variável CSS.
+ * Sem número válido, nada é gravado: o botão fica só com o ícone (nunca "0").
+ */
+function aplicarPrecos(precos) {
+  if (!precos || typeof precos !== 'object') return;
+  estadoFicha.precos = precos;
+  const n = Number(precos.ficha_analise);
+  if (!Number.isFinite(n) || n <= 0) return;
+  try { document.documentElement.style.setProperty('--mf-custo-ficha', JSON.stringify(String(n))); } catch (e) { /* sem <html>? segue sem número */ }
+}
 window.MF_ICONE_IA = MF_ICONE_IA;
 
 window.MFSEL_HOST = {
@@ -1148,6 +1163,12 @@ function mostrarCotaNoTopo(cota, comprados) {
     const vence = formatarDia(c.vence_em);
     html += ` <span class="fia-cota-compradas">· e <span class="fia-cota-num">${Number(c.restante).toLocaleString('pt-BR')}</span> compradas${vence ? `, vencem dia ${escapeHtml(vence)}` : ''}</span>`;
   }
+  // Quanto custa cada uma, com o número que o proxy mandou (Lucas, 06/09: "mostrar quantos
+  // créditos vão custar cada coisa"). Sem preço lido, a frase não aparece.
+  const preco = Number(estadoFicha.precos && estadoFicha.precos.ficha_analise);
+  if (Number.isFinite(preco) && preco > 0) {
+    html += ` <span class="fia-cota-preco">· cada análise que encontra sugestão usa ${preco} ${preco === 1 ? 'crédito' : 'créditos'}</span>`;
+  }
   alvo.innerHTML = html;
   alvo.removeAttribute('hidden');
   // Avisa o cartão do menu lateral (js/menu-saldo.js) com o MESMO número: menu dizendo 38 e
@@ -1168,8 +1189,10 @@ async function carregarCota() {
     // contador, que continua funcionando na Fase 1).
     let s = null;
     try { s = await proxyGet('/api/creditos/saldo', uid); } catch (e) { s = null; }
+    if (s && s.precos) aplicarPrecos(s.precos);
     if (s && s.ativo && s.saldo) { mostrarCotaNoTopo(s.saldo.mes, s.saldo.comprados); return s.saldo.mes; }
     const r = await proxyGet('/api/gpt-ficha/cota', uid);
+    if (r && r.precos) aplicarPrecos(r.precos);
     const cota = (r && r.cota) || null;
     mostrarCotaNoTopo(cota);
     return cota;
@@ -1178,7 +1201,7 @@ async function carregarCota() {
   }
 }
 
-const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null };
+const estadoFicha = { itemId: null, detail: null, campos: [], token: null, userId: null, resposta: null, precos: null };
 
 /**
  * Qual abertura é a válida. `estadoFicha` é um só, e abrirFichaIA tem cinco awaits: abrir o

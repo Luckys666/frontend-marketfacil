@@ -57,6 +57,9 @@ function carregar(opts = {}) {
     };
   };
 
+  // Variáveis CSS que o módulo grava no <html> (ex.: o custo em créditos de cada ação, que o
+  // botão do Seletor mostra via `content: var(...)`). Registradas para o teste ler.
+  doc.documentElement = { _vars: {}, style: { setProperty(k, v) { doc.documentElement._vars[k] = v; }, getPropertyValue(k) { return doc.documentElement._vars[k] || ''; }, removeProperty(k) { delete doc.documentElement._vars[k]; } } };
   box.document = doc;
   box.window = box; box.globalThis = box;
   box.location = { href: 'https://app.marketfacil.com.br/agente-de-palavras-chave', search: '', pathname: '/agente-de-palavras-chave' };
